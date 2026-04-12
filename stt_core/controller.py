@@ -107,6 +107,45 @@ class SpeechToTextController:
         self.is_listening = enabled
         self._emit_state()
 
+    def restart_listener(self) -> None:
+        """Restart the hotkey listener with current config (called after key/device change)."""
+        # Stop current listener
+        self.running = False
+        self.is_listening = False
+        if self.is_recording:
+            self.stop_recording()
+        self._emit_state()
+        time.sleep(0.3)   # give the evdev read-loop thread time to exit
+
+        # Re-read config
+        self.trigger_key = self.config.get('input', 'trigger_key', default='KEY_F16')
+        self.device_path = self._detect_device()
+        self.running = True
+
+        if not self.device_path:
+            self._emit_error('No input device found for new hotkey')
+            return
+
+        self._listener = HotkeyListener(
+            device_path=self.device_path,
+            trigger_key=self.trigger_key,
+            on_key_down=self.start_recording,
+            on_key_up=self.stop_recording,
+            on_error=lambda e: self._emit_error(str(e)),
+            is_running=lambda: self.running,
+            is_enabled=lambda: self.is_listening,
+        )
+        try:
+            self._listener.validate()
+        except Exception as e:
+            self._emit_error(f'Failed to open device {self.device_path}: {e}')
+            return
+
+        self.is_listening = True
+        self._emit_state()
+        self._listener.start(daemon=True)
+        logger.info('Listener restarted on %s with key %s', self.device_path, self.trigger_key)
+
     def reload_transcriber(self) -> None:
         """Reload transcriber with current config settings."""
         logger.info('Reloading transcriber with new settings')

@@ -14,13 +14,18 @@ class TextOutput:
         if self.method != 'auto':
             return self.method
 
-        for m, bin_name in (
-            ('dotool', 'dotool'),
-            ('ydotool', 'ydotool'),
-            ('xdotool', 'xdotool'),
-            ('wtype', 'wtype'),
-            ('xclip', 'xclip'),
-        ):
+        import os
+        on_wayland = bool(os.environ.get('WAYLAND_DISPLAY'))
+
+        # wtype is Wayland-native; xdotool only works in XWayland/X11 apps
+        if on_wayland:
+            order = [('dotool', 'dotool'), ('ydotool', 'ydotool'),
+                     ('wtype', 'wtype'), ('xdotool', 'xdotool'), ('xclip', 'xclip')]
+        else:
+            order = [('dotool', 'dotool'), ('ydotool', 'ydotool'),
+                     ('xdotool', 'xdotool'), ('wtype', 'wtype'), ('xclip', 'xclip')]
+
+        for m, bin_name in order:
             if shutil.which(bin_name):
                 return m
         return 'none'
@@ -46,6 +51,11 @@ class TextOutput:
             if method == 'xdotool':
                 subprocess.run(['xdotool', 'type', '--delay', str(int(interval * 1000)), text], check=False)
             elif method == 'ydotool':
+                import os, time
+                # On Wayland, give WM ~300ms to restore focus to the original
+                # input window before injecting keystrokes via uinput.
+                if os.environ.get('WAYLAND_DISPLAY'):
+                    time.sleep(0.3)
                 subprocess.run(['ydotool', 'type', text], check=False)
             elif method == 'dotool':
                 p = subprocess.Popen(['dotool'], stdin=subprocess.PIPE)
