@@ -1,7 +1,7 @@
 import logging
+import os
 import shutil
 import subprocess
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -14,16 +14,24 @@ class TextOutput:
         if self.method != 'auto':
             return self.method
 
-        import os
         on_wayland = bool(os.environ.get('WAYLAND_DISPLAY'))
 
-        # wtype is Wayland-native; xdotool only works in XWayland/X11 apps
         if on_wayland:
-            order = [('dotool', 'dotool'), ('ydotool', 'ydotool'),
-                     ('wtype', 'wtype'), ('xdotool', 'xdotool'), ('xclip', 'xclip')]
+            order = [
+                ('wtype', 'wtype'),
+                ('dotool', 'dotool'),
+                ('ydotool', 'ydotool'),
+                ('xdotool', 'xdotool'),
+                ('xclip', 'xclip'),
+            ]
         else:
-            order = [('dotool', 'dotool'), ('ydotool', 'ydotool'),
-                     ('xdotool', 'xdotool'), ('wtype', 'wtype'), ('xclip', 'xclip')]
+            order = [
+                ('dotool', 'dotool'),
+                ('ydotool', 'ydotool'),
+                ('xdotool', 'xdotool'),
+                ('wtype', 'wtype'),
+                ('xclip', 'xclip'),
+            ]
 
         for m, bin_name in order:
             if shutil.which(bin_name):
@@ -51,10 +59,8 @@ class TextOutput:
             if method == 'xdotool':
                 subprocess.run(['xdotool', 'type', '--delay', str(int(interval * 1000)), text], check=False)
             elif method == 'ydotool':
-                import os, time
-                # On Wayland, give WM ~300ms to restore focus to the original
-                # input window before injecting keystrokes via uinput.
                 if os.environ.get('WAYLAND_DISPLAY'):
+                    import time
                     time.sleep(0.3)
                 subprocess.run(['ydotool', 'type', text], check=False)
             elif method == 'dotool':

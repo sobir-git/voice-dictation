@@ -31,6 +31,7 @@ pip install -r "$SCRIPT_DIR/requirements.txt"
 
 echo "Making scripts executable..."
 chmod +x "$SCRIPT_DIR/stt_tray.py" "$SCRIPT_DIR/stt_listener.py" "$SCRIPT_DIR/stt_transcribe.py" || true
+chmod +x "$SCRIPT_DIR/stt_daemon.py" || true
 chmod +x "$SCRIPT_DIR/setup_autostart.sh" "$SCRIPT_DIR/uninstall.sh" || true
 
 echo "Installing desktop entry..."

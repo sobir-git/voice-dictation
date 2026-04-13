@@ -4,14 +4,14 @@ import threading
 import time
 from typing import Callable, Optional
 
-from stt_core.audio_preprocessor import cleanup_processed, preprocess_audio
-from stt_core.audio_recorder import AudioRecorder
-from stt_core.config import Config
-from stt_core.device_detector import DeviceDetector
-from stt_core.hotkey_listener import HotkeyListener
-from stt_core.notifications import Notifier
-from stt_core.text_output import TextOutput
-from stt_core.transcriber import Transcriber
+from speech_to_text.core.audio_preprocessor import cleanup_processed, preprocess_audio
+from speech_to_text.core.audio_recorder import AudioRecorder
+from speech_to_text.core.config import Config
+from speech_to_text.core.device_detector import DeviceDetector
+from speech_to_text.core.hotkey_listener import HotkeyListener
+from speech_to_text.core.notifications import Notifier
+from speech_to_text.core.text_output import TextOutput
+from speech_to_text.core.transcriber import Transcriber
 
 logger = logging.getLogger(__name__)
 
@@ -43,13 +43,7 @@ class SpeechToTextController:
             channels=self.config.get('audio', 'channels'),
             output_file=self.config.get('audio', 'temp_file'),
         )
-        self.transcriber = Transcriber(
-            model_name=self.config.get('transcription', 'model'),
-            compute_type=self.config.get('transcription', 'compute_type'),
-            language=self.config.get('transcription', 'language'),
-            beam_size=self.config.get('transcription', 'beam_size'),
-            vad_filter=self.config.get('transcription', 'vad_filter'),
-        )
+        self.transcriber = self._build_transcriber()
         self.text_output = TextOutput(method=self.config.get('output', 'method'))
         self.notifier = Notifier(
             enabled=self.config.get('notifications', 'enabled'),
@@ -65,6 +59,39 @@ class SpeechToTextController:
         key = self.config.get('input', 'trigger_key', default='KEY_F16')
         return DeviceDetector.detect_trigger_key_device(key)
 
+    def _build_transcriber(self) -> Transcriber:
+        return Transcriber(
+            model_name=self.config.get('transcription', 'model'),
+            compute_type=self.config.get('transcription', 'compute_type'),
+            language=self.config.get('transcription', 'language'),
+            beam_size=self.config.get('transcription', 'beam_size'),
+            vad_filter=self.config.get('transcription', 'vad_filter'),
+        )
+
+    def _build_listener(self) -> HotkeyListener:
+        return HotkeyListener(
+            device_path=self.device_path,
+            trigger_key=self.trigger_key,
+            on_key_down=self.start_recording,
+            on_key_up=self.stop_recording,
+            on_error=lambda e: self._emit_error(str(e)),
+            is_running=lambda: self.running,
+            is_enabled=lambda: self.is_listening,
+        )
+
+    def _start_listener(self, error_prefix: str) -> bool:
+        self._listener = self._build_listener()
+        try:
+            self._listener.validate()
+        except Exception as e:
+            self._emit_error(f'{error_prefix} {self.device_path}: {e}')
+            return False
+
+        self.is_listening = True
+        self._emit_state()
+        self._listener.start(daemon=True)
+        return True
+
     def start(self) -> bool:
         if not self.device_path:
             self._emit_error('No input device found')
@@ -75,24 +102,9 @@ class SpeechToTextController:
             self._emit_error(msg)
             return False
 
-        self._listener = HotkeyListener(
-            device_path=self.device_path,
-            trigger_key=self.trigger_key,
-            on_key_down=self.start_recording,
-            on_key_up=self.stop_recording,
-            on_error=lambda e: self._emit_error(str(e)),
-            is_running=lambda: self.running,
-            is_enabled=lambda: self.is_listening,
-        )
-        try:
-            self._listener.validate()
-        except Exception as e:
-            self._emit_error(f'Failed to open input device {self.device_path}: {e}')
+        if not self._start_listener('Failed to open input device'):
             return False
 
-        self.is_listening = True
-        self._emit_state()
-        self._listener.start(daemon=True)
         threading.Thread(target=self._preload_model, daemon=True).start()
         return True
 
@@ -109,15 +121,13 @@ class SpeechToTextController:
 
     def restart_listener(self) -> None:
         """Restart the hotkey listener with current config (called after key/device change)."""
-        # Stop current listener
         self.running = False
         self.is_listening = False
         if self.is_recording:
             self.stop_recording()
         self._emit_state()
-        time.sleep(0.3)   # give the evdev read-loop thread time to exit
+        time.sleep(0.3)
 
-        # Re-read config
         self.trigger_key = self.config.get('input', 'trigger_key', default='KEY_F16')
         self.device_path = self._detect_device()
         self.running = True
@@ -126,36 +136,15 @@ class SpeechToTextController:
             self._emit_error('No input device found for new hotkey')
             return
 
-        self._listener = HotkeyListener(
-            device_path=self.device_path,
-            trigger_key=self.trigger_key,
-            on_key_down=self.start_recording,
-            on_key_up=self.stop_recording,
-            on_error=lambda e: self._emit_error(str(e)),
-            is_running=lambda: self.running,
-            is_enabled=lambda: self.is_listening,
-        )
-        try:
-            self._listener.validate()
-        except Exception as e:
-            self._emit_error(f'Failed to open device {self.device_path}: {e}')
+        if not self._start_listener('Failed to open device'):
             return
 
-        self.is_listening = True
-        self._emit_state()
-        self._listener.start(daemon=True)
         logger.info('Listener restarted on %s with key %s', self.device_path, self.trigger_key)
 
     def reload_transcriber(self) -> None:
         """Reload transcriber with current config settings."""
         logger.info('Reloading transcriber with new settings')
-        self.transcriber = Transcriber(
-            model_name=self.config.get('transcription', 'model'),
-            compute_type=self.config.get('transcription', 'compute_type'),
-            language=self.config.get('transcription', 'language'),
-            beam_size=self.config.get('transcription', 'beam_size'),
-            vad_filter=self.config.get('transcription', 'vad_filter'),
-        )
+        self.transcriber = self._build_transcriber()
         threading.Thread(target=self._preload_model, daemon=True).start()
 
     def _emit_state(self) -> None:

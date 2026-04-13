@@ -2,6 +2,13 @@
 
 A lightweight voice dictation tool that runs in the system tray and types transcriptions into the active application.
 
+## Project Layout
+
+- `src/speech_to_text/` contains the real application package
+- `src/speech_to_text/core/` contains recording, transcription, hotkey, config, and output logic
+- `src/speech_to_text/gui/` contains tray/UI helpers
+- root-level `stt_*.py` files are thin compatibility wrappers so existing commands still work
+
 ## Features
 
 - System tray app (GTK/AppIndicator) with:
@@ -51,6 +58,8 @@ This will:
 ./venv/bin/python3 stt_tray.py
 ```
 
+The wrapper loads the package from `src/speech_to_text/`.
+
 ## Autostart
 
 ```bash
@@ -59,13 +68,14 @@ This will:
 
 ## Configuration
 
-Copy the example config and edit it:
+Copy the example config into the app config directory and edit it:
 
 ```bash
-cp config.yaml.example config.yaml
+mkdir -p ~/.config/speech-to-text
+cp config.yaml.example ~/.config/speech-to-text/config.yaml
 ```
 
-`config.yaml` is ignored by git.
+The app reads config from `~/.config/speech-to-text/config.yaml`.
 
 ## Uninstall
 

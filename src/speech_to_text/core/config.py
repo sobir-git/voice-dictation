@@ -1,4 +1,5 @@
 import os
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict
 
@@ -11,7 +12,7 @@ class Config:
         self.data_dir = Path(os.path.expanduser('~/.local/share/speech-to-text'))
         self.config_file = self.config_dir / 'config.yaml'
 
-        self.data: Dict[str, Any] = {
+        self.defaults: Dict[str, Any] = {
             'audio': {
                 'sample_rate': 16000,
                 'format': 'S16_LE',
@@ -44,6 +45,7 @@ class Config:
                 'max_size_mb': 10,
             },
         }
+        self.data: Dict[str, Any] = deepcopy(self.defaults)
 
         self._ensure_dirs()
         self.load()
@@ -53,6 +55,7 @@ class Config:
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
     def load(self) -> None:
+        self.data = deepcopy(self.defaults)
         if not self.config_file.exists():
             return
         with open(self.config_file, 'r', encoding='utf-8') as f:
