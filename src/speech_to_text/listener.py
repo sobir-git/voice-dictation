@@ -34,7 +34,7 @@ def main(argv=None):
         return 0
 
     if args.detect_output:
-        print(TextOutput(method='auto').detect_method())
+        print(TextOutput(method='auto')._resolved_method)
         return 0
 
     ok, msg = DeviceDetector.check_permissions()

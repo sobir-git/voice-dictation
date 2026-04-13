@@ -280,7 +280,7 @@ class SettingsDialog(Gtk.Dialog):
         dialog.destroy()
 
     def save(self) -> None:
-        for section in ('transcription', 'input', 'output', 'ui'):
+        for section in ('transcription', 'input', 'output'):
             self.config.data.setdefault(section, {})
         self.config.data['transcription'].update(
             {

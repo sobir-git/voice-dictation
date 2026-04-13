@@ -34,6 +34,17 @@ chmod +x "$SCRIPT_DIR/stt_tray.py" "$SCRIPT_DIR/stt_listener.py" "$SCRIPT_DIR/st
 chmod +x "$SCRIPT_DIR/stt_daemon.py" || true
 chmod +x "$SCRIPT_DIR/setup_autostart.sh" "$SCRIPT_DIR/uninstall.sh" || true
 
+echo "Installing default config..."
+CONFIG_DIR="$HOME/.config/speech-to-text"
+CONFIG_FILE="$CONFIG_DIR/config.yaml"
+if [[ ! -f "$CONFIG_FILE" ]]; then
+  mkdir -p "$CONFIG_DIR"
+  cp "$SCRIPT_DIR/config.yaml.example" "$CONFIG_FILE"
+  echo "  Created $CONFIG_FILE — edit this file to customize settings."
+else
+  echo "  Config already exists at $CONFIG_FILE — skipping."
+fi
+
 echo "Installing desktop entry..."
 DESKTOP_DIR="$HOME/.local/share/applications"
 mkdir -p "$DESKTOP_DIR"
@@ -43,7 +54,7 @@ cat > "$DESKTOP_DIR/speech-to-text.desktop" << EOF
 Type=Application
 Name=Speech-to-Text
 Comment=Voice dictation using Whisper
-Exec=$VENV_DIR/bin/python3 $SCRIPT_DIR/stt_tray.py
+Exec=systemctl --user start speech-to-text.service
 Icon=audio-input-microphone
 Terminal=false
 Categories=Utility;AudioVideo;
@@ -54,6 +65,6 @@ echo ""
 echo "Install complete."
 echo ""
 echo "You can now:"
-echo "  - Run from terminal: $VENV_DIR/bin/python3 $SCRIPT_DIR/stt_tray.py"
+echo "  - Run from terminal: systemctl --user start speech-to-text.service"
 echo "  - Launch from applications menu: 'Speech-to-Text'"
 echo "  - Enable autostart: $SCRIPT_DIR/setup_autostart.sh"

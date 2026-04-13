@@ -23,7 +23,9 @@ output:
 notifications:
   enabled: true
   audio_feedback: true
-  show_indicator: true
+
+ui:
+  cursor_indicator: false
 
 logging:
   level: INFO

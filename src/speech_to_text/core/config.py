@@ -44,6 +44,9 @@ class Config:
                 'file': '~/.local/share/speech-to-text/app.log',
                 'max_size_mb': 10,
             },
+            'ui': {
+                'cursor_indicator': False,
+            },
         }
         self.data: Dict[str, Any] = deepcopy(self.defaults)
 

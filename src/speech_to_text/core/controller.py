@@ -142,9 +142,10 @@ class SpeechToTextController:
         logger.info('Listener restarted on %s with key %s', self.device_path, self.trigger_key)
 
     def reload_transcriber(self) -> None:
-        """Reload transcriber with current config settings."""
+        """Reload transcriber and text output with current config settings."""
         logger.info('Reloading transcriber with new settings')
         self.transcriber = self._build_transcriber()
+        self.text_output = TextOutput(method=self.config.get('output', 'method'))
         threading.Thread(target=self._preload_model, daemon=True).start()
 
     def _emit_state(self) -> None:
@@ -202,6 +203,7 @@ class SpeechToTextController:
             if not text:
                 return
 
+            logger.debug('Transcribed text: %r', text)
             add_space = self.config.get('output', 'add_space')
             interval = self.config.get('output', 'type_interval')
             self.text_output.type_text(text, add_space=add_space, interval=interval)
