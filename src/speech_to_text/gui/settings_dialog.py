@@ -107,7 +107,7 @@ class KeyCaptureDialog(Gtk.Dialog):
                                 continue
                             names = ecodes.KEY.get(event.code, f'KEY_{event.code}')
                             key_name = names[0] if isinstance(names, list) else names
-                            self._result = (key_name, device.path, device.name)
+                            self._result = (key_name, device.name)
                             self._listening = False
                             GLib.idle_add(self._on_captured)
                             return
@@ -122,7 +122,7 @@ class KeyCaptureDialog(Gtk.Dialog):
                     pass
 
     def _on_captured(self):
-        key_name, _, device_name = self._result
+        key_name, device_name = self._result
         self._prompt.set_markup('<b>Key captured!</b> Click "Use This Key" to confirm.')
         self._key_label.set_markup(
             f'  Key:    <b>{friendly_key_name(key_name)}</b>  <small>({key_name})</small>'
@@ -151,7 +151,6 @@ class SettingsDialog(Gtk.Dialog):
         self.set_default_size(500, 420)
         self.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL, Gtk.STOCK_SAVE, Gtk.ResponseType.OK)
         self._captured_key = str(self.config.get('input', 'trigger_key', default='') or '')
-        self._captured_device = str(self.config.get('input', 'device_path', default='') or '')
 
         notebook = Gtk.Notebook()
         self.get_content_area().pack_start(notebook, True, True, 0)
@@ -209,16 +208,10 @@ class SettingsDialog(Gtk.Dialog):
         grid.attach(self._new_start_label('Hotkey:'), 0, 0, 1, 1)
         grid.attach(box, 1, 0, 1, 1)
 
-        grid.attach(self._new_start_label('Device:'), 0, 1, 1, 1)
-        self._device_label = Gtk.Label(halign=Gtk.Align.START)
-        self._device_label.set_line_wrap(True)
-        self._refresh_device_label()
-        grid.attach(self._device_label, 1, 1, 1, 1)
-
         hint = Gtk.Label()
-        hint.set_markup('<small><i>Hold the hotkey to record, release to transcribe.</i></small>')
+        hint.set_markup('<small><i>Hold the hotkey to record, release to transcribe. The app listens to all keyboards that can emit the key.</i></small>')
         hint.set_xalign(0)
-        grid.attach(hint, 0, 2, 2, 1)
+        grid.attach(hint, 0, 1, 2, 1)
         return grid
 
     def _build_output_tab(self) -> Gtk.Grid:
@@ -263,20 +256,13 @@ class SettingsDialog(Gtk.Dialog):
             return
         self._key_badge.set_markup('<i>Not set - click Capture Key...</i>')
 
-    def _refresh_device_label(self) -> None:
-        if self._captured_device:
-            self._device_label.set_markup(f'<small>{self._captured_device}</small>')
-            return
-        self._device_label.set_markup('<small><i>Auto-detect</i></small>')
-
     def _on_capture_clicked(self, _widget) -> None:
         dialog = KeyCaptureDialog(self)
         if dialog.run() == Gtk.ResponseType.OK:
             result = dialog.get_result()
             if result:
-                self._captured_key, self._captured_device, _ = result
+                self._captured_key, _ = result
                 self._refresh_key_badge()
-                self._refresh_device_label()
         dialog.destroy()
 
     def save(self) -> None:
@@ -291,7 +277,7 @@ class SettingsDialog(Gtk.Dialog):
                 'vad_filter': self.vad_check.get_active(),
             }
         )
-        self.config.data['input'].update({'trigger_key': self._captured_key, 'device_path': self._captured_device})
+        self.config.data['input'].update({'trigger_key': self._captured_key})
         self.config.data['output'].update(
             {'method': self.out_combo.get_active_text() or 'auto', 'add_space': self.space_check.get_active()}
         )

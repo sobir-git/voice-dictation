@@ -35,7 +35,6 @@ class SpeechToTextController:
         self.is_processing = False
 
         self.trigger_key = self.config.get('input', 'trigger_key', default='KEY_F16')
-        self.device_path = self._detect_device()
 
         self.recorder = AudioRecorder(
             sample_rate=self.config.get('audio', 'sample_rate'),
@@ -52,13 +51,6 @@ class SpeechToTextController:
 
         self._listener: Optional[HotkeyListener] = None
 
-    def _detect_device(self) -> str:
-        path = self.config.get('input', 'device_path')
-        if path and os.path.exists(path):
-            return path
-        key = self.config.get('input', 'trigger_key', default='KEY_F16')
-        return DeviceDetector.detect_trigger_key_device(key)
-
     def _build_transcriber(self) -> Transcriber:
         return Transcriber(
             model_name=self.config.get('transcription', 'model'),
@@ -70,7 +62,6 @@ class SpeechToTextController:
 
     def _build_listener(self) -> HotkeyListener:
         return HotkeyListener(
-            device_path=self.device_path,
             trigger_key=self.trigger_key,
             on_key_down=self.start_recording,
             on_key_up=self.stop_recording,
@@ -84,7 +75,7 @@ class SpeechToTextController:
         try:
             self._listener.validate()
         except Exception as e:
-            self._emit_error(f'{error_prefix} {self.device_path}: {e}')
+            self._emit_error(f'{error_prefix}: {e}')
             return False
 
         self.is_listening = True
@@ -93,10 +84,6 @@ class SpeechToTextController:
         return True
 
     def start(self) -> bool:
-        if not self.device_path:
-            self._emit_error('No input device found')
-            return False
-
         has_permissions, msg = DeviceDetector.check_permissions()
         if not has_permissions:
             self._emit_error(msg)
@@ -129,17 +116,12 @@ class SpeechToTextController:
         time.sleep(0.3)
 
         self.trigger_key = self.config.get('input', 'trigger_key', default='KEY_F16')
-        self.device_path = self._detect_device()
         self.running = True
-
-        if not self.device_path:
-            self._emit_error('No input device found for new hotkey')
-            return
 
         if not self._start_listener('Failed to open device'):
             return
 
-        logger.info('Listener restarted on %s with key %s', self.device_path, self.trigger_key)
+        logger.info('Listener restarted with key %s', self.trigger_key)
 
     def reload_transcriber(self) -> None:
         """Reload transcriber and text output with current config settings."""

@@ -27,7 +27,6 @@ class Config:
                 'vad_filter': True,
             },
             'input': {
-                'device_path': '',
                 'trigger_key': 'KEY_F16',
             },
             'output': {
