@@ -4,7 +4,6 @@ import os
 import subprocess
 import threading
 
-from speech_to_text.gui.gtk import GLib
 
 
 class MicrophoneTest:
@@ -28,7 +27,7 @@ class MicrophoneTest:
 
     def _emit(self, level, message, done=False):
         if not self._stop.is_set():
-            GLib.idle_add(self.callback, level, message, done)
+            self.callback(level, message, done)
 
     def _run(self):
         env = os.environ.copy()

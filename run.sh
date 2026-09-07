@@ -1,20 +1,28 @@
 #!/bin/bash
-# Activate input permissions inherited by the daemon and tray.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PYTHON_CMD="$SCRIPT_DIR/venv/bin/python3"
-ENTRY="$SCRIPT_DIR/stt_tray.py"
-if [[ "${1:-}" != '--daemon' && "${1:-}" != '--background' && -f "$HOME/.config/systemd/user/speech-to-text.service" ]] && command -v gdbus >/dev/null; then
-  systemctl --user start speech-to-text.service
-  gdbus wait --session --timeout=10 com.github.voice-dictation.stt-tray
-fi
 if [[ "${1:-}" == '--daemon' ]]; then
-  ENTRY="$SCRIPT_DIR/stt_daemon.py"
   shift
+  STT_ARGS=("$SCRIPT_DIR/venv/bin/python3" "$SCRIPT_DIR/stt_daemon.py" "$@")
+else
+  if [[ ! -x "$SCRIPT_DIR/target/release/voice-dictation" ]]; then
+    cargo build --manifest-path "$SCRIPT_DIR/Cargo.toml" --locked --release
+  fi
+  STT_LOCK_DIR="${XDG_RUNTIME_DIR:-/tmp/speech-to-text-$(id -u)}/speech-to-text"
+  umask 077
+  mkdir -p "$STT_LOCK_DIR"
+  exec 9>"$STT_LOCK_DIR/desktop.lock"
+  if ! flock -n 9; then
+    if command -v xdotool >/dev/null; then
+      xdotool search --onlyvisible --name '^Voice Dictation$' windowactivate >/dev/null 2>&1 || true
+    fi
+    exit 0
+  fi
+  export VOICE_DICTATION_PROJECT="$SCRIPT_DIR"
+  STT_ARGS=("$SCRIPT_DIR/target/release/voice-dictation" "$@")
 fi
 if [[ " $(id -nG) " == *" input "* ]]; then
-  exec "$PYTHON_CMD" "$ENTRY" "$@"
+  exec "${STT_ARGS[@]}"
 fi
-# bash %q quoting preserves spaces and shell metacharacters in paths/arguments.
-printf -v STT_COMMAND '%q ' "$PYTHON_CMD" "$ENTRY" "$@"
+printf -v STT_COMMAND '%q ' "${STT_ARGS[@]}"
 exec sg input -c "$STT_COMMAND"

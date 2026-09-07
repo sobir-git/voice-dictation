@@ -17,7 +17,7 @@ from speech_to_text.core.hotkey_listener import HotkeyListener
 from speech_to_text.core.transcriber import Transcriber
 from speech_to_text.core.text_output import TextOutput
 from speech_to_text.daemon import IPCServer
-from speech_to_text.gui.ipc_client import DaemonClient
+from speech_to_text.core.ipc_client import DaemonClient
 from evdev import ecodes
 
 

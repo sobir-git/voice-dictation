@@ -4,13 +4,12 @@ import socket
 import threading
 
 from speech_to_text.core.runtime import SOCKET_PATH, ensure_daemon
-from speech_to_text.gui.gtk import GLib
 
 logger = logging.getLogger(__name__)
 
 
 class DaemonClient:
-    """Reconnect after daemon restarts; all UI callbacks run on GTK's main thread."""
+    """Reconnect after daemon restarts; callbacks run on the reader thread."""
 
     def __init__(self, socket_path, on_message, reconnect=None):
         self.socket_path = socket_path
@@ -64,7 +63,7 @@ class DaemonClient:
                 self._close()
             if self._stop.is_set():
                 break
-            GLib.idle_add(self.on_message, {'type': 'disconnected'})
+            self.on_message( {'type': 'disconnected'})
             if self.reconnect:
                 try:
                     self.reconnect()
@@ -82,7 +81,7 @@ class DaemonClient:
                     return
                 self._sock = sock
             logger.info('Connected to daemon at %s', self.socket_path)
-            GLib.idle_add(self.on_message, {'type': 'connected'})
+            self.on_message( {'type': 'connected'})
             buffer = b''
             while not self._stop.is_set():
                 try:
@@ -99,7 +98,7 @@ class DaemonClient:
                     try:
                         msg = json.loads(line)
                         if isinstance(msg, dict):
-                            GLib.idle_add(self.on_message, msg)
+                            self.on_message( msg)
                     except (ValueError, UnicodeError):
                         logger.warning('Invalid message from daemon')
         finally:
