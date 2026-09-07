@@ -49,6 +49,7 @@ def preprocess_audio(input_file: str, output_file: str | None = None) -> str:
     try:
         cmd = [
             'ffmpeg',
+            '-nostdin', '-hide_banner', '-loglevel', 'error',
             '-y',
             '-i', input_file,
             '-af', 'highpass=f=80,lowpass=f=8000,loudnorm=I=-16:TP=-1.5:LRA=11',
@@ -63,6 +64,7 @@ def preprocess_audio(input_file: str, output_file: str | None = None) -> str:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             timeout=30,
+            umask=0o077,
         )
 
         if result.returncode == 0 and os.path.exists(output_file):
@@ -70,12 +72,15 @@ def preprocess_audio(input_file: str, output_file: str | None = None) -> str:
             return output_file
         else:
             logger.warning('ffmpeg preprocessing failed: %s', result.stderr.decode()[:200])
+            cleanup_processed(output_file, input_file)
             return input_file
 
     except subprocess.TimeoutExpired:
+        cleanup_processed(output_file, input_file)
         logger.warning('ffmpeg preprocessing timed out')
         return input_file
     except Exception as e:
+        cleanup_processed(output_file, input_file)
         logger.warning('ffmpeg preprocessing error: %s', e)
         return input_file
 

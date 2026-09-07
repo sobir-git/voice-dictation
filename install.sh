@@ -54,7 +54,7 @@ cat > "$DESKTOP_DIR/speech-to-text.desktop" << EOF
 Type=Application
 Name=Speech-to-Text
 Comment=Voice dictation using Whisper
-Exec=systemctl --user start speech-to-text.service
+Exec="$SCRIPT_DIR/run.sh"
 Icon=audio-input-microphone
 Terminal=false
 Categories=Utility;AudioVideo;
@@ -65,6 +65,6 @@ echo ""
 echo "Install complete."
 echo ""
 echo "You can now:"
-echo "  - Run from terminal: systemctl --user start speech-to-text.service"
+echo "  - Run from terminal: $SCRIPT_DIR/run.sh"
 echo "  - Launch from applications menu: 'Speech-to-Text'"
 echo "  - Enable autostart: $SCRIPT_DIR/setup_autostart.sh"

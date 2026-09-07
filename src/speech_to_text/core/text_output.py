@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 class TextOutput:
     def __init__(self, method: str = 'auto'):
+        self.method = method
         self._resolved_method = self._resolve_method(method)
         self._ydotoold_socket_path = self._ydotoold_socket()
         label = 'auto-detected' if method == 'auto' else 'configured'
@@ -21,9 +22,9 @@ class TextOutput:
         on_wayland = bool(os.environ.get('WAYLAND_DISPLAY'))
 
         if on_wayland:
-            order = ['wtype', 'dotool', 'ydotool', 'xdotool', 'xclip']
+            order = ['wtype', 'dotool', 'ydotool']
         else:
-            order = ['dotool', 'ydotool', 'xdotool', 'wtype', 'xclip']
+            order = ['xdotool', 'dotool', 'ydotool', 'wtype']
 
         for m in order:
             if shutil.which(m) and self._probe(m):
@@ -38,6 +39,10 @@ class TextOutput:
                   fallback drops keystrokes.
         """
         try:
+            if method == 'xdotool':
+                return subprocess.run(['xdotool', 'getdisplaygeometry'], capture_output=True, timeout=2).returncode == 0
+            if method == 'dotool':
+                return os.access('/dev/uinput', os.W_OK)
             if method == 'wtype':
                 r = subprocess.run(['wtype', ''], capture_output=True, timeout=2)
                 return r.returncode == 0
@@ -60,53 +65,52 @@ class TextOutput:
         return None
 
     def type_text(self, text: str, add_space: bool = True, interval: float = 0.0) -> None:
+        if self.method == 'none':
+            return  # Explicit history-only mode.
+        if self._resolved_method == 'none':
+            self._resolved_method = self._resolve_method(self.method)
         method = self._resolved_method
         if method == 'none':
-            logger.warning("No working text output method available; text dropped: %r", text)
-            return
-
+            raise RuntimeError('No working text output tool. Text is saved in History.')
         out = text + (' ' if add_space else '')
-
-        if method in ('xdotool', 'ydotool', 'dotool', 'wtype'):
-            self._type_with_tool(method, out, interval)
+        delay = str(int(interval * 1000))
+        env = None
+        payload = None
+        if method == 'xdotool':
+            # X11 temporarily maps non-ASCII keysyms. Zero delay can restore the
+            # mapping before the application reads the event.
+            if not out.isascii():
+                delay = str(max(12, int(delay)))
+            cmd = ['xdotool', 'type', '--clearmodifiers', '--delay', delay, '--file', '-']
+            payload = out.encode()
+        elif method == 'ydotool':
+            path = self._ydotoold_socket()
+            if not path:
+                raise RuntimeError('ydotoold is unavailable. Text is saved in History.')
+            env = {**os.environ, 'YDOTOOL_SOCKET': path}
+            cmd = ['ydotool', 'type', f'--key-delay={delay}', '--file', '-']
+            payload = out.encode()
+        elif method == 'wtype':
+            cmd = ['wtype', '-d', delay, '--', out]
+        elif method == 'dotool':
+            cmd = ['dotool']
+            # Each line is a type command, never executable dotool instructions.
+            lines = out.split('\n')
+            payload = ('\nkey enter\n'.join('type ' + line for line in lines) + '\n').encode()
         elif method == 'xclip':
-            self._copy_clipboard_xclip(out)
-
-    def _type_with_tool(self, method: str, text: str, interval: float) -> None:
+            cmd = ['xclip', '-selection', 'clipboard']
+            payload = out.encode()
+        else:
+            raise ValueError(f'Unknown text output method: {method}')
+        started = time.monotonic()
         try:
-            if method == 'xdotool':
-                subprocess.run(
-                    ['xdotool', 'type', '--delay', str(int(interval * 1000)), text],
-                    check=False,
-                )
-            elif method == 'ydotool':
-                if os.environ.get('WAYLAND_DISPLAY'):
-                    time.sleep(0.3)
-                key_delay = int(interval * 1000)
-                env = None
-                if self._ydotoold_socket_path:
-                    env = os.environ.copy()
-                    env['YDOTOOL_SOCKET'] = self._ydotoold_socket_path
-                subprocess.run(
-                    ['ydotool', 'type', f'--key-delay={key_delay}', text],
-                    check=False, env=env,
-                )
-            elif method == 'dotool':
-                p = subprocess.Popen(['dotool'], stdin=subprocess.PIPE)
-                assert p.stdin is not None
-                p.stdin.write(f'type {text}\n'.encode('utf-8'))
-                p.stdin.close()
-            elif method == 'wtype':
-                subprocess.run(['wtype', text], check=False)
-        except Exception as e:
-            logger.error("Failed to output text via %s: %s", method, e)
-
-    def _copy_clipboard_xclip(self, text: str) -> None:
-        try:
-            subprocess.run(
-                ['xclip', '-selection', 'clipboard'],
-                input=text.encode('utf-8'),
-                check=False,
-            )
-        except Exception as e:
-            logger.error("Failed to copy to clipboard: %s", e)
+            subprocess.run(cmd, input=payload, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                           timeout=max(10, len(out) * interval * 2 + 5), env=env, check=True)
+        except subprocess.CalledProcessError as exc:
+            # Do not log the command: it contains the user's dictation.
+            logger.error('Text output failed: method=%s exit=%s', method, exc.returncode)
+            raise RuntimeError(f'{method} exited with status {exc.returncode}. Text is saved in History.') from None
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            logger.error('Text output failed: method=%s error=%s', method, type(exc).__name__)
+            raise RuntimeError(f'{method} could not deliver text. Text is saved in History.') from None
+        logger.debug('Text output delivered: method=%s characters=%d elapsed=%.3fs', method, len(out), time.monotonic()-started)

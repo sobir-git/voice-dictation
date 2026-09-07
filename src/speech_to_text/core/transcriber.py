@@ -1,5 +1,6 @@
 import logging
 import os
+import threading
 from typing import List, Optional
 
 from faster_whisper import WhisperModel
@@ -22,22 +23,19 @@ class Transcriber:
         self.beam_size = beam_size
         self.vad_filter = vad_filter
         self.model: Optional[WhisperModel] = None
+        self._model_lock = threading.Lock()
 
     def load_model(self):
-        if self.model is not None:
-            return
-
-        try:
-            logger.info(
-                "Loading Whisper model: %s (compute_type: %s)",
-                self.model_name,
-                self.compute_type,
-            )
-            self.model = WhisperModel(self.model_name, compute_type=self.compute_type)
-            logger.info("Model loaded successfully")
-        except Exception as e:
-            logger.error("Failed to load Whisper model: %s", e)
-            raise
+        with self._model_lock:
+            if self.model is not None:
+                return
+            logger.info('Loading Whisper model: %s (compute_type: %s)', self.model_name, self.compute_type)
+            try:
+                self.model = WhisperModel(self.model_name, compute_type=self.compute_type, local_files_only=True)
+            except FileNotFoundError:
+                logger.info('Model is not cached; downloading %s', self.model_name)
+                self.model = WhisperModel(self.model_name, compute_type=self.compute_type)
+            logger.info('Model loaded successfully')
 
     def _validate_audio_file(self, file_path: str) -> None:
         if not os.path.exists(file_path):
@@ -69,7 +67,7 @@ class Transcriber:
                 text = segment.text.strip()
                 if text:
                     results.append(text)
-                    logger.debug("Segment: %s", text)
+
 
             if not results:
                 logger.warning("No speech detected in audio")

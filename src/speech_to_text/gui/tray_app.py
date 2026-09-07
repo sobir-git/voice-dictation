@@ -1,151 +1,199 @@
 import logging
+import threading
 
+from speech_to_text.core.app_logging import setup_logging
 from speech_to_text.core.config import Config
-from speech_to_text.gui.gtk import AppIndicator, Gio, Gtk
-from speech_to_text.gui.history_dialog import HistoryDialog
+from speech_to_text.core.diagnostics import microphones
+from speech_to_text.core.runtime import SOCKET_PATH, ensure_daemon
+from speech_to_text.gui.gtk import AppIndicator, Gio, GLib, Gtk
 from speech_to_text.gui.history_manager import HistoryManager
-from speech_to_text.gui.ipc_client import DaemonClient, SOCKET_PATH
-from speech_to_text.gui.settings_dialog import SettingsDialog
+from speech_to_text.gui.ipc_client import DaemonClient
 
-ICON_LISTENING = 'audio-input-microphone'
-ICON_PAUSED = 'microphone-sensitivity-muted'
-ICON_RECORDING = 'media-record'
-ICON_PROCESSING = 'emblem-synchronizing'
-ICON_DISCONNECTED = 'network-error'
+logger = logging.getLogger(__name__)
 
 
 class STTTrayApp(Gtk.Application):
-    """Pure tray client for the daemon process."""
-
     def __init__(self):
-        super().__init__(
-            application_id='com.github.voice-dictation.stt-tray',
-            flags=Gio.ApplicationFlags.IS_SERVICE,
-        )
+        super().__init__(application_id='com.github.voice-dictation.stt-tray',
+                         flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
+        self.add_main_option('background', 0, GLib.OptionFlags.NONE, GLib.OptionArg.NONE, 'Start in the tray', None)
         self.config = Config()
+        setup_logging(self.config, 'tray')
         self.history = HistoryManager()
-        self.logger = logging.getLogger(__name__)
-
-        self.is_listening = False
-        self.is_recording = False
-        self.is_processing = False
-        self.is_connected = False
-
-        self.indicator: AppIndicator.Indicator | None = None
-        self.status_item: Gtk.MenuItem | None = None
-        self.toggle_item: Gtk.MenuItem | None = None
-
-        self.client = DaemonClient(SOCKET_PATH, self._on_daemon_message)
+        self.is_listening = self.is_recording = self.is_processing = self.is_connected = False
+        self.model_ready = False
+        self.capture_ready = False
+        self.cancel_requested = False
+        self.last_error = ''
+        self.microphone_name = ''
+        self.window = None
+        self.indicator = None
+        self.hud = None
+        self.client = DaemonClient(SOCKET_PATH, self._on_daemon_message, reconnect=ensure_daemon)
 
     def do_startup(self):
         Gtk.Application.do_startup(self)
         self.hold()
-
-        self.indicator = AppIndicator.Indicator.new(
-            'speech-to-text',
-            ICON_DISCONNECTED,
-            AppIndicator.IndicatorCategory.APPLICATION_STATUS,
-        )
+        self.indicator = AppIndicator.Indicator.new('speech-to-text', 'audio-input-microphone',
+                                                   AppIndicator.IndicatorCategory.APPLICATION_STATUS)
         self.indicator.set_status(AppIndicator.IndicatorStatus.ACTIVE)
-        self.indicator.set_menu(self._build_menu())
-
+        menu = Gtk.Menu()
+        self.status_item = self._menu_item(menu, 'Connecting…')
+        self.status_item.set_sensitive(False)
+        self._menu_item(menu, 'Open Voice Dictation', lambda *_: self.open_window())
+        self.toggle_item = self._menu_item(menu, 'Enable listening', self._on_toggle)
+        menu.append(Gtk.SeparatorMenuItem())
+        self._menu_item(menu, 'History', lambda *_: self.open_window('history'))
+        self._menu_item(menu, 'Settings', lambda *_: self.open_window('settings'))
+        self._menu_item(menu, 'Diagnostics', lambda *_: self.open_window('diagnostics'))
+        self._menu_item(menu, 'Cancel dictation', lambda *_: self.client.send({'cmd': 'cancel'}))
+        menu.append(Gtk.SeparatorMenuItem())
+        self._menu_item(menu, 'Quit tray', lambda *_: self.quit())
+        menu.show_all()
+        self.indicator.set_menu(menu)
         self.client.start()
-        self.logger.info('STT Tray started (IS_SERVICE, connecting to daemon)')
+        self._load_microphone_name()
+        logger.info('Tray started')
 
     def do_activate(self):
-        pass
+        self.open_window()
 
-    def _build_menu(self):
-        menu = Gtk.Menu()
-        self.status_item = self._build_menu_item('⊘ Connecting...', sensitive=False)
-        self.toggle_item = self._build_menu_item('Enable', self._on_toggle, sensitive=False)
-        menu.append(self.status_item)
-        menu.append(self.toggle_item)
+    def do_command_line(self, command_line):
+        if '--background' not in command_line.get_arguments():
+            self.open_window()
+        return 0
 
-        menu.append(Gtk.SeparatorMenuItem())
+    def do_shutdown(self):
+        self.client.stop()
+        if self.window:
+            self.window.destroy()
+        if self.hud:
+            self.hud.destroy()
+        Gtk.Application.do_shutdown(self)
 
-        menu.append(self._build_menu_item('Settings...', self._on_settings))
-        menu.append(self._build_menu_item('History...', self._on_history))
-
-        menu.append(Gtk.SeparatorMenuItem())
-        menu.append(self._build_menu_item('Quit Tray', self._on_quit))
-
-        menu.show_all()
-        return menu
-
-    def _build_menu_item(self, label: str, callback=None, sensitive: bool = True) -> Gtk.MenuItem:
-        item = Gtk.MenuItem(label=label)
-        item.set_sensitive(sensitive)
-        if callback is not None:
+    @staticmethod
+    def _menu_item(menu, title, callback=None):
+        item = Gtk.MenuItem(label=title)
+        if callback:
             item.connect('activate', callback)
+        menu.append(item)
         return item
 
-    def _on_daemon_message(self, msg: dict):
-        msg_type = msg.get('type')
-        if msg_type == 'connected':
+    def open_window(self, page='dictation'):
+        if self.window is None:
+            from speech_to_text.gui.main_window import DictationWindow
+            self.window = DictationWindow(self)
+        self.window.show_page(page)
+        if self.last_error:
+            self.window.show_error(self.last_error)
+        self.window.show()
+        self.window.present()
+
+    def _load_microphone_name(self):
+        def load():
+            node = self.config.get('audio', 'pipewire_node')
+            name = next((m['description'] for m in microphones() if m['name'] == node), '')
+            GLib.idle_add(self._set_microphone_name, name)
+        threading.Thread(target=load, name='microphone-name', daemon=True).start()
+
+    def _set_microphone_name(self, name):
+        self.microphone_name = name
+        if self.window:
+            self.window.update_state()
+        return False
+
+    def _on_daemon_message(self, msg):
+        kind = msg.get('type')
+        if kind == 'connected':
             self.is_connected = True
-            self.toggle_item.set_sensitive(True)
-        elif msg_type == 'disconnected':
-            self.is_connected = False
-            self.is_listening = False
-            self.is_recording = False
-            self.is_processing = False
-            self.toggle_item.set_sensitive(False)
-        elif msg_type == 'state':
+        elif kind == 'disconnected':
+            self.is_connected = self.is_listening = self.is_recording = self.is_processing = False
+        elif kind == 'state':
             self.is_listening = msg.get('listening', False)
             self.is_recording = msg.get('recording', False)
             self.is_processing = msg.get('processing', False)
-        elif msg_type == 'transcription':
-            try:
-                self.history.add(msg.get('text', ''))
-            except Exception:
-                pass
-        elif msg_type == 'error':
-            self.logger.error('Daemon error: %s', msg.get('message'))
-
+            self.model_ready = msg.get('model_ready', False)
+            self.capture_ready = msg.get('capture_ready', False)
+            if self.is_recording or not self.is_processing:
+                self.cancel_requested = False
+            if msg.get('last_error'):
+                self.last_error = msg['last_error']
+        elif kind == 'audio_level':
+            was_ready = self.capture_ready
+            self.capture_ready = True
+            if self.window:
+                self.window.signal.level = msg.get('level', 0)
+                self.window.signal.queue_draw()
+            if not was_ready:
+                self._update_ui()
+            return False
+        elif kind == 'cancelled':
+            self.cancel_requested = self.is_processing
+        elif kind == 'transcription':
+            if self.window:
+                self.window.transcription(msg.get('text', ''), msg.get('duration', 0))
+        elif kind == 'config_reloaded':
+            self.config.load()
+            setup_logging(self.config, 'tray')
+            self._load_microphone_name()
+            if self.window:
+                self.window.save_status.set_text('Changes applied.')
+        elif kind == 'error':
+            self.last_error = msg.get('message', 'Unknown error')
+            logger.error('Daemon: %s', self.last_error)
+            if self.window:
+                self.window.save_status.set_text(self.last_error)
         self._update_ui()
         return False
 
-    def _update_ui(self) -> None:
+    def _update_ui(self):
         if not self.is_connected:
-            self._set_status(ICON_DISCONNECTED, 'Disconnected', '⊘ Daemon not running', 'Enable')
+            icon, text = 'network-error', 'Reconnecting…'
+        elif self.is_recording:
+            icon, text = 'media-record', 'Recording' if self.capture_ready else 'Opening microphone…'
+        elif self.is_processing:
+            icon, text = 'emblem-synchronizing', 'Transcribing…'
+        elif self.is_listening:
+            icon, text = 'audio-input-microphone', 'Ready' if self.model_ready else 'Loading model…'
+        else:
+            icon, text = 'microphone-sensitivity-muted', 'Paused'
+        self.indicator.set_icon_full(icon, text)
+        self.status_item.set_label(text)
+        self.toggle_item.set_label('Pause listening' if self.is_listening else 'Enable listening')
+        self.toggle_item.set_sensitive(self.is_connected)
+        if self.window:
+            self.window.update_state()
+            if self.last_error:
+                self.window.show_error(self.last_error)
+        self._update_hud(text)
+
+    def _update_hud(self, text):
+        show = self.config.get('ui', 'cursor_indicator') and (self.is_recording or self.is_processing)
+        if not show:
+            if self.hud:
+                self.hud.hide()
             return
+        if self.hud is None:
+            self.hud = Gtk.Window(type=Gtk.WindowType.POPUP)
+            self.hud.get_style_context().add_class('dictation')
+            self.hud.set_accept_focus(False)
+            self.hud.set_focus_on_map(False)
+            self.hud.set_keep_above(True)
+            self.hud.set_skip_taskbar_hint(True)
+            self.hud_label = Gtk.Label()
+            self.hud_label.set_margin_top(12)
+            self.hud_label.set_margin_bottom(12)
+            self.hud_label.set_margin_start(20)
+            self.hud_label.set_margin_end(20)
+            self.hud.add(self.hud_label)
+            self.hud.set_position(Gtk.WindowPosition.CENTER)
+        self.hud_label.set_text(('● ' if self.is_recording else '◌ ') + text)
+        if not self.hud.get_visible():
+            display = self.hud.get_display()
+            pointer = display.get_default_seat().get_pointer()
+            _, x, y = pointer.get_position()
+            self.hud.move(x + 20, y + 24)
+        self.hud.show_all()
 
-        if self.is_processing:
-            self._set_status(ICON_PROCESSING, 'Processing', '◐ Processing...')
-            return
-
-        if self.is_recording:
-            self._set_status(ICON_RECORDING, 'Recording', '● Recording...')
-            return
-
-        if self.is_listening:
-            self._set_status(ICON_LISTENING, 'Listening', '● Listening', 'Pause')
-            return
-
-        self._set_status(ICON_PAUSED, 'Paused', '○ Paused', 'Enable')
-
-    def _set_status(self, icon: str, title: str, status_label: str, toggle_label: str | None = None) -> None:
-        self.indicator.set_icon_full(icon, title)
-        self.status_item.set_label(status_label)
-        if toggle_label is not None:
-            self.toggle_item.set_label(toggle_label)
-
-    def _on_toggle(self, _widget) -> None:
+    def _on_toggle(self, *_):
         self.client.send({'cmd': 'set_listening', 'value': not self.is_listening})
-
-    def _on_settings(self, _widget) -> None:
-        dialog = SettingsDialog(None, self.config, self.client)
-        if dialog.run() == Gtk.ResponseType.OK:
-            dialog.save()
-            self.logger.info('Settings saved and reload_config sent to daemon')
-        dialog.destroy()
-
-    def _on_history(self, _widget) -> None:
-        dialog = HistoryDialog(None, self.history)
-        dialog.run()
-        dialog.destroy()
-
-    def _on_quit(self, _widget) -> None:
-        self.client.stop()
-        self.quit()

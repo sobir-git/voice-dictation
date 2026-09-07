@@ -24,6 +24,9 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     exit 0
 fi
 
+systemctl --user disable --now speech-to-text-daemon.service 2>/dev/null || true
+rm -f "$SYSTEMD_DIR/speech-to-text-daemon.service"
+
 if systemctl --user is-active "$UNIT_NAME" >/dev/null 2>&1; then
     echo "Stopping service..."
     systemctl --user stop "$UNIT_NAME" || true

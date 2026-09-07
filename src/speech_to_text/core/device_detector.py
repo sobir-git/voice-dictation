@@ -33,11 +33,11 @@ class DeviceDetector:
 
         for path in glob.glob('/dev/input/event*'):
             try:
-                dev = InputDevice(path)
-                caps = dev.capabilities(verbose=False)
-                keys = caps.get(ecodes.ecodes.get('EV_KEY', 1), [])
-                if key_code in keys:
-                    return path
+                with InputDevice(path) as dev:
+                    caps = dev.capabilities(verbose=False)
+                    keys = caps.get(ecodes.EV_KEY, [])
+                    if key_code in keys:
+                        return path
             except Exception:
                 continue
 

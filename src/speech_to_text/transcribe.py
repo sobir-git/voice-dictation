@@ -13,7 +13,7 @@ def main(argv=None):
     args = p.parse_args(argv)
 
     cfg = Config()
-    setup_logging(cfg)
+    setup_logging(cfg, 'cli')
 
     t = Transcriber(
         model_name=cfg.get('transcription', 'model'),

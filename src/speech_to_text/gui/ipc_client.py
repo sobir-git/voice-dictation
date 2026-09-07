@@ -1,90 +1,106 @@
 import json
-import os
+import logging
 import socket
 import threading
-import time
 
+from speech_to_text.core.runtime import SOCKET_PATH, ensure_daemon
 from speech_to_text.gui.gtk import GLib
 
-SOCKET_PATH = '/tmp/stt_daemon.sock'
+logger = logging.getLogger(__name__)
 
 
 class DaemonClient:
-    """Persistent IPC client for the tray app."""
+    """Reconnect after daemon restarts; all UI callbacks run on GTK's main thread."""
 
-    def __init__(self, socket_path: str, on_message):
+    def __init__(self, socket_path, on_message, reconnect=None):
         self.socket_path = socket_path
         self.on_message = on_message
-        self._running = True
-        self._sock: socket.socket | None = None
+        self.reconnect = reconnect
+        self._stop = threading.Event()
+        self._sock = None
         self._lock = threading.Lock()
-        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread = threading.Thread(target=self._loop, name='ipc-client', daemon=True)
 
-    def start(self) -> None:
+    def start(self):
         self._thread.start()
 
-    def stop(self) -> None:
-        self._running = False
+    def stop(self):
+        self._stop.set()
         self._close()
 
-    def send(self, msg: dict) -> None:
+    def send(self, msg):
         data = (json.dumps(msg) + '\n').encode()
+        failed = False
         with self._lock:
-            if self._sock:
-                try:
-                    self._sock.sendall(data)
-                except Exception:
-                    self._close()
+            sock = self._sock
+            if sock is None:
+                return False
+            try:
+                sock.sendall(data)
+            except OSError:
+                failed = True
+        if failed:
+            logger.warning('IPC send failed', exc_info=False)
+            self._close()
+        return not failed
 
-    def _close(self) -> None:
+    def _close(self):
         with self._lock:
-            if self._sock:
-                try:
-                    self._sock.close()
-                except Exception:
-                    pass
-                self._sock = None
+            sock, self._sock = self._sock, None
+        if sock:
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            sock.close()
 
-    def _loop(self) -> None:
-        while self._running:
+    def _loop(self):
+        while not self._stop.is_set():
             try:
                 self._connect_and_read()
-            except Exception:
-                pass
-            if self._running:
-                GLib.idle_add(self.on_message, {'type': 'disconnected'})
-                time.sleep(2)
-
-    def _connect_and_read(self) -> None:
-        while self._running:
-            if os.path.exists(self.socket_path):
+            except (OSError, ValueError) as exc:
+                logger.debug('IPC reconnect needed: %s', exc)
+            finally:
+                self._close()
+            if self._stop.is_set():
                 break
-            time.sleep(1)
-
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.settimeout(5)
-        sock.connect(self.socket_path)
-        sock.settimeout(None)
-        with self._lock:
-            self._sock = sock
-
-        GLib.idle_add(self.on_message, {'type': 'connected'})
-
-        buffer = b''
-        while self._running:
-            chunk = sock.recv(4096)
-            if not chunk:
-                break
-            buffer += chunk
-            while b'\n' in buffer:
-                line, buffer = buffer.split(b'\n', 1)
-                line = line.strip()
-                if not line:
-                    continue
+            GLib.idle_add(self.on_message, {'type': 'disconnected'})
+            if self.reconnect:
                 try:
-                    msg = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                GLib.idle_add(self.on_message, msg)
+                    self.reconnect()
+                except Exception:
+                    logger.warning('Daemon recovery failed', exc_info=True)
+            self._stop.wait(2)
 
-        self._close()
+    def _connect_and_read(self):
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            sock.settimeout(0.5)
+            sock.connect(self.socket_path)
+            with self._lock:
+                if self._stop.is_set():
+                    return
+                self._sock = sock
+            logger.info('Connected to daemon at %s', self.socket_path)
+            GLib.idle_add(self.on_message, {'type': 'connected'})
+            buffer = b''
+            while not self._stop.is_set():
+                try:
+                    chunk = sock.recv(4096)
+                except socket.timeout:
+                    continue
+                if not chunk:
+                    return
+                buffer += chunk
+                if len(buffer) > 1024 * 1024:
+                    raise ValueError('IPC message exceeds 1 MiB')
+                while b'\n' in buffer:
+                    line, buffer = buffer.split(b'\n', 1)
+                    try:
+                        msg = json.loads(line)
+                        if isinstance(msg, dict):
+                            GLib.idle_add(self.on_message, msg)
+                    except (ValueError, UnicodeError):
+                        logger.warning('Invalid message from daemon')
+        finally:
+            sock.close()

@@ -2,7 +2,10 @@ audio:
   sample_rate: 16000
   format: S16_LE
   channels: 1
-  temp_file: /tmp/stt_recording.wav
+  temp_file: /tmp/stt_recording.wav  # prefix; each recording gets a unique private file
+  device: default
+  pipewire_node: ""  # choose a microphone in Settings → Input
+  preprocess: true
 
 transcription:
   model: base.en

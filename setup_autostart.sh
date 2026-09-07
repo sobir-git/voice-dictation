@@ -1,42 +1,49 @@
 #!/bin/bash
-
 set -euo pipefail
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-APP_NAME="speech-to-text"
-UNIT_NAME="${APP_NAME}.service"
 SYSTEMD_DIR="$HOME/.config/systemd/user"
-
-PYTHON_CMD="python3"
-if [[ -x "$SCRIPT_DIR/venv/bin/python3" ]]; then
-  PYTHON_CMD="$SCRIPT_DIR/venv/bin/python3"
-fi
-
-SERVICE_CONTENT="[Unit]
-Description=Speech-to-Text Tray
+mkdir -p "$SYSTEMD_DIR"
+# systemd expands % specifiers even in quotes.
+UNIT_DIR="${SCRIPT_DIR//%/%%}"
+cat > "$SYSTEMD_DIR/speech-to-text-daemon.service" <<EOF
+[Unit]
+Description=Voice Dictation speech service
+PartOf=graphical-session.target
 After=graphical-session.target
 
 [Service]
 Type=simple
-WorkingDirectory=$SCRIPT_DIR
-ExecStart=$PYTHON_CMD $SCRIPT_DIR/stt_tray.py
+WorkingDirectory=$UNIT_DIR
+ExecStart="$UNIT_DIR/run.sh" --daemon
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=10
+
+[Install]
+WantedBy=graphical-session.target
+EOF
+cat > "$SYSTEMD_DIR/speech-to-text.service" <<EOF
+[Unit]
+Description=Voice Dictation tray
+PartOf=graphical-session.target
+Wants=speech-to-text-daemon.service
+After=graphical-session.target speech-to-text-daemon.service
+
+[Service]
+Type=simple
+WorkingDirectory=$UNIT_DIR
+ExecStart="$UNIT_DIR/run.sh" --background
 Restart=on-failure
 RestartSec=2
 
 [Install]
-WantedBy=default.target
-"
-
-echo "Installing systemd user service..."
-mkdir -p "$SYSTEMD_DIR"
-echo "$SERVICE_CONTENT" > "$SYSTEMD_DIR/$UNIT_NAME"
-
+WantedBy=graphical-session.target
+EOF
+systemd-analyze --user verify "$SYSTEMD_DIR/speech-to-text-daemon.service" "$SYSTEMD_DIR/speech-to-text.service"
 systemctl --user daemon-reload
-systemctl --user enable --now "$UNIT_NAME" || true
-
-if [[ -f "$HOME/.config/autostart/${APP_NAME}.desktop" ]]; then
-  echo "Removing old XDG autostart entry..."
-  rm -f "$HOME/.config/autostart/${APP_NAME}.desktop"
-fi
-
-echo "Done."
+# Remove the old default.target link when upgrading a previous installation.
+systemctl --user disable speech-to-text.service >/dev/null 2>&1 || true
+systemctl --user enable speech-to-text-daemon.service speech-to-text.service
+systemctl --user restart speech-to-text-daemon.service speech-to-text.service
+rm -f "$HOME/.config/autostart/speech-to-text.desktop"
+echo 'Voice Dictation services installed and started.'

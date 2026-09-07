@@ -1,4 +1,6 @@
 import os
+import math
+import tempfile
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict
@@ -18,6 +20,9 @@ class Config:
                 'format': 'S16_LE',
                 'channels': 1,
                 'temp_file': '/tmp/stt_recording.wav',
+                'device': 'default',
+                'pipewire_node': '',
+                'preprocess': True,
             },
             'transcription': {
                 'model': 'base.en',
@@ -57,17 +62,67 @@ class Config:
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
     def load(self) -> None:
-        self.data = deepcopy(self.defaults)
-        if not self.config_file.exists():
-            return
-        with open(self.config_file, 'r', encoding='utf-8') as f:
-            loaded = yaml.safe_load(f) or {}
-        self._deep_update(self.data, loaded)
+        candidate = deepcopy(self.defaults)
+        if self.config_file.exists():
+            with open(self.config_file, 'r', encoding='utf-8') as f:
+                loaded = yaml.safe_load(f)
+            if loaded is None:
+                loaded = {}
+            if not isinstance(loaded, dict):
+                raise ValueError('Config must contain named sections, not a list or scalar')
+            self._deep_update(candidate, loaded)
+        self.validate(candidate)
+        self.data = candidate
+
+    @staticmethod
+    def validate(data):
+        from evdev import ecodes
+        for section in ('audio', 'transcription', 'input', 'output', 'logging', 'notifications', 'ui'):
+            if not isinstance(data.get(section), dict):
+                raise ValueError(f'Config section {section} must be a mapping')
+        for section, key, low, high in (
+            ('audio', 'sample_rate', 8000, 192000), ('audio', 'channels', 1, 8),
+            ('transcription', 'beam_size', 1, 10), ('logging', 'max_size_mb', 1, 1000)):
+            value = data[section][key]
+            if type(value) is not int or not low <= value <= high:
+                raise ValueError(f'{section}.{key} must be an integer between {low} and {high}')
+        for section, key in (('audio', 'preprocess'), ('transcription', 'vad_filter'),
+                             ('output', 'add_space'), ('notifications', 'enabled'),
+                             ('notifications', 'audio_feedback'), ('ui', 'cursor_indicator')):
+            if type(data[section][key]) is not bool:
+                raise ValueError(f'{section}.{key} must be true or false')
+        key = data['input']['trigger_key']
+        if not isinstance(key, str) or key not in ecodes.ecodes or not key.startswith(('KEY_', 'BTN_')):
+            raise ValueError(f'Unknown hotkey: {key}')
+        if data['output']['method'] not in ('auto', 'xdotool', 'ydotool', 'dotool', 'wtype', 'xclip', 'none'):
+            raise ValueError('Unknown output method')
+        interval = data['output']['type_interval']
+        if type(interval) not in (int, float) or not math.isfinite(interval) or not 0 <= interval <= 1:
+            raise ValueError('output.type_interval must be between 0 and 1 seconds')
+        for section, key in (('audio', 'temp_file'), ('audio', 'device'), ('audio', 'format'),
+                             ('transcription', 'model'), ('transcription', 'compute_type'), ('logging', 'file')):
+            if not isinstance(data[section][key], str) or not data[section][key].strip():
+                raise ValueError(f'{section}.{key} must be a nonempty string')
+        if not isinstance(data['audio']['pipewire_node'], str):
+            raise ValueError('audio.pipewire_node must be a string')
+        if data['transcription']['language'] is not None and not isinstance(data['transcription']['language'], str):
+            raise ValueError('transcription.language must be a language code or null')
+        if data['logging']['level'] not in ('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'):
+            raise ValueError('Unknown logging level')
 
     def save(self) -> None:
+        self.validate(self.data)
         self._ensure_dirs()
-        with open(self.config_file, 'w', encoding='utf-8') as f:
-            yaml.safe_dump(self.data, f, sort_keys=False)
+        fd, path = tempfile.mkstemp(prefix='.config-', dir=self.config_dir)
+        try:
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                yaml.safe_dump(self.data, f, sort_keys=False)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(path, self.config_file)
+        finally:
+            if os.path.exists(path):
+                os.unlink(path)
 
     def get(self, section: str, key: str, default=None):
         return self.data.get(section, {}).get(key, default)
