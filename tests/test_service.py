@@ -79,6 +79,32 @@ class ServiceTests(unittest.TestCase):
         self.log.close()
         self.temp.cleanup()
 
+    def test_remote_recording_ownership_and_temporary_microphone(self):
+        # Keep a synthetic WAV growing, just like the recorder, without opening a mic.
+        recorder = self.root/'bin/arecord'
+        recorder.write_text("#!/usr/bin/python3\nimport os,sys,time,wave\n"
+                            "open(os.environ['STT_SOCKET_PATH']+'.node','w').write(os.environ.get('PIPEWIRE_NODE',''))\n"
+                            "with wave.open(sys.argv[-1], 'wb') as wav:\n"
+                            " wav.setparams((1,2,16000,0,'NONE','not compressed'))\n"
+                            " while True:\n  wav.writeframes(b'\\0'*3200); time.sleep(.05)\n")
+        original = self.request({'cmd': 'get_config'}, 'config')['config']
+        self.request({'cmd': 'start_recording', 'pipewire_node': 'phonemic2_src'}, 'recording_started')
+        deadline = time.monotonic() + 2
+        node_file = Path(self.env['STT_SOCKET_PATH']+'.node')
+        while not node_file.exists() and time.monotonic() < deadline:
+            time.sleep(.02)
+        self.assertEqual(node_file.read_text(), 'phonemic2_src')
+        other = self.connect()
+        error = self.request({'cmd': 'stop_recording'}, 'error', other)
+        self.assertIn('own', error['message'])
+        self.request({'cmd': 'abort_recording'}, 'recording_stopped')
+        state = self.request({'cmd': 'get_state'}, 'state')
+        self.assertFalse(state['recording'])
+        self.assertFalse(state['processing'])
+        current = self.request({'cmd': 'get_config'}, 'config')['config']
+        self.assertEqual(current['audio'], original['audio'])
+        self.assertEqual(json.loads(self.config.read_text())['custom']['preserve'], 17)
+
     def test_rust_adapter_connects_and_exits_without_stopping_service(self):
         adapter = subprocess.Popen([str(BINARY), '--adapter'], env=self.env,
                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE,

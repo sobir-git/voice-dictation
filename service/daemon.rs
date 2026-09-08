@@ -76,6 +76,7 @@ pub struct Daemon {
     flow: Flow,
     capture: Option<Capture>,
     capture_id: u64,
+    recording_client: Option<u64>,
     capture_ready: bool,
     recording_started: Instant,
     worker: mpsc::SyncSender<Work>,
@@ -201,6 +202,7 @@ impl Daemon {
             },
             capture: None,
             capture_id: 0,
+            recording_client: None,
             capture_ready: false,
             recording_started: Instant::now(),
             worker,
@@ -322,6 +324,7 @@ impl Daemon {
             }
             Event::Disconnect(id) => {
                 self.clients.remove(&id);
+                if self.recording_client == Some(id) { self.discard_remote_recording(); }
                 if self.key_capture.as_ref().is_some_and(|k| k.client == id) { self.end_key_capture(); }
                 if self.test.as_ref().is_some_and(|t| t.client == id) { self.stop_test(); }
             }
@@ -332,7 +335,9 @@ impl Daemon {
                 }
             }
             Event::Key(KeyEvent::Down) => self.start_recording(),
-            Event::Key(KeyEvent::Up) => self.stop_recording(),
+            Event::Key(KeyEvent::Up) => {
+                if self.recording_client.is_none() { self.stop_recording(); }
+            },
             Event::Key(KeyEvent::Missing) => self.error("No readable keyboard supports the hotkey. Check the input group; waiting for a keyboard.".into()),
             Event::Key(KeyEvent::Captured(key)) => {
                 if let Some(capture) = &self.key_capture {
@@ -404,6 +409,9 @@ impl Daemon {
         self.broadcast_state();
     }
     fn start_recording(&mut self) {
+        self.start_recording_from(self.config.clone());
+    }
+    fn start_recording_from(&mut self, config: Config) {
         if !self.flow.can_record() {
             if self.flow.listening && !self.flow.recording {
                 self.error("Wait for pending dictation or text output to finish.".into());
@@ -417,7 +425,7 @@ impl Daemon {
         self.capture_id += 1;
         let id = self.capture_id;
         let send = self.server.send.clone();
-        match Capture::start(&self.config, move |level, db| {
+        match Capture::start(&config, move |level, db| {
             let _ = send.try_send(Event::Level(id, level, db));
         }) {
             Ok(capture) => {
@@ -435,6 +443,7 @@ impl Daemon {
             return;
         }
         self.flow.recording = false;
+        self.recording_client = None;
         self.capture_ready = false;
         if let Some(capture) = self.capture.take() {
             match capture.finish() {
@@ -461,7 +470,16 @@ impl Daemon {
         self.flush_output();
         self.broadcast_state();
     }
+    fn discard_remote_recording(&mut self) {
+        self.capture.take();
+        self.flow.recording = false;
+        self.recording_client = None;
+        self.capture_ready = false;
+        self.flush_output();
+        self.broadcast_state();
+    }
     fn cancel(&mut self) {
+        self.recording_client = None;
         self.flow.cancel();
         self.generation
             .store(self.flow.generation, Ordering::Release);
@@ -504,6 +522,38 @@ impl Daemon {
     }
     fn command(&mut self, id: u64, message: &Value) -> Result<()> {
         match message["cmd"].as_str().unwrap_or("") {
+            "start_recording" => {
+                if id == 0 || !self.clients.contains_key(&id) {
+                    bail!("Recording requires a connected client")
+                }
+                if !self.flow.can_record() || self.key_capture.is_some() || self.test.is_some() {
+                    bail!("Dictation is paused or busy")
+                }
+                let node = message["pipewire_node"].as_str().unwrap_or("");
+                if node.is_empty() || node.len() > 256 || node.chars().any(char::is_control) {
+                    bail!("A microphone node is required")
+                }
+                let config = self.config.changed(&json!({"audio":{
+                    "device":"pipewire", "pipewire_node":node
+                }}))?;
+                self.start_recording_from(config);
+                if !self.flow.recording {
+                    bail!("Could not start recording: {}", self.last_error)
+                }
+                self.recording_client = Some(id);
+                self.reply(id, json!({"type":"recording_started"}));
+            }
+            "stop_recording" | "abort_recording" => {
+                if self.recording_client != Some(id) {
+                    bail!("This client does not own the recording")
+                }
+                if message["cmd"] == "abort_recording" {
+                    self.discard_remote_recording();
+                } else {
+                    self.stop_recording();
+                }
+                self.reply(id, json!({"type":"recording_stopped"}));
+            }
             "get_state" => self.reply(id, self.state()),
             "get_config" => {
                 self.config_reply(id);
@@ -871,6 +921,45 @@ mod tests {
             .unwrap();
         assert!(!daemon.flow.listening);
         assert!(daemon.config.flag("ui", "cursor_indicator"));
+    }
+    #[test]
+    fn remote_recording_requires_owner_and_ignores_hotkey_release() {
+        let (_root, mut daemon) = isolated();
+        daemon.flow.recording = true;
+        daemon.recording_client = Some(7);
+        assert!(daemon.command(8, &json!({"cmd":"stop_recording"})).is_err());
+        daemon.event(Event::Key(KeyEvent::Up));
+        assert!(daemon.flow.recording);
+        daemon.command(7, &json!({"cmd":"stop_recording"})).unwrap();
+        assert!(!daemon.flow.recording);
+        assert_eq!(daemon.recording_client, None);
+    }
+    #[test]
+    fn remote_disconnect_discards_only_its_recording() {
+        let (_root, mut daemon) = isolated();
+        daemon.flow.recording = true;
+        daemon.flow.pending = 1;
+        daemon.recording_client = Some(7);
+        daemon.event(Event::Disconnect(8));
+        assert!(daemon.flow.recording);
+        daemon.event(Event::Disconnect(7));
+        assert!(!daemon.flow.recording);
+        assert_eq!(daemon.flow.pending, 1);
+        assert_eq!(daemon.flow.generation, 0);
+    }
+    #[test]
+    fn remote_start_respects_pause_and_existing_recording() {
+        let (_root, mut daemon) = isolated();
+        let (send, _receive) = mpsc::sync_channel(64);
+        daemon.clients.insert(7, send);
+        let request = json!({"cmd":"start_recording", "pipewire_node":"phonemic2_src"});
+        daemon.flow.listening = false;
+        assert!(daemon.command(7, &request).is_err());
+        daemon.flow.listening = true;
+        daemon.flow.recording = true;
+        assert!(daemon.command(7, &request).is_err());
+        assert_eq!(daemon.recording_client, None);
+        assert!(!daemon.config.path.exists());
     }
     #[test]
     fn queue_is_bounded_and_typing_blocks_new_capture() {

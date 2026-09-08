@@ -70,3 +70,17 @@ optionally compares Rust against faster-whisper using synthesized speech. The na
 probe requires Xvfb, xdotool, xclip and Pillow. The tray probe requires dbus-next.
 Install probe dependencies from `requirements-dev.txt`.
 Review diagnostics before sharing; they include local device names and paths.
+
+## PhoneMic recording control
+
+The sibling PhoneMic app can start and stop dictation from its phone page.
+Enable **Trigger laptop dictation** there and keep this daemon listening. Mobile
+recordings use the phone microphone without changing the saved desktop input.
+Text uses the normal history and output flow after release.
+
+Local socket clients can send `start_recording` with a `pipewire_node`, then
+`stop_recording` to submit or `abort_recording` to discard. Wait for
+`recording_started` and an `audio_level` event before sending microphone audio.
+Only the initiating connection can stop or abort that recording; disconnecting
+it discards the capture. Hotkey release does not stop a client-owned recording.
+The socket remains private to the local user; no HTTP control endpoint is added.
