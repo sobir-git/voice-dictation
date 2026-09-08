@@ -3,27 +3,11 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-APP_NAME="speech-to-text"
-VENV_DIR="$SCRIPT_DIR/venv"
-
-PYTHON=python3
-if ! command -v "$PYTHON" >/dev/null 2>&1; then
-  echo "python3 not found"
-  exit 1
-fi
-
-echo "Setting up speech-service environment..."
-"$PYTHON" -m venv "$VENV_DIR"
-
-source "$VENV_DIR/bin/activate"
-
-pip install --upgrade pip
-pip install -r "$SCRIPT_DIR/requirements.txt"
-
-echo "Making scripts executable..."
-chmod +x "$SCRIPT_DIR/stt_listener.py" "$SCRIPT_DIR/stt_transcribe.py" || true
-chmod +x "$SCRIPT_DIR/stt_daemon.py" || true
-chmod +x "$SCRIPT_DIR/setup_autostart.sh" "$SCRIPT_DIR/uninstall.sh" || true
+echo "Building the native desktop and speech service..."
+command -v cargo >/dev/null
+command -v cmake >/dev/null
+command -v ffmpeg >/dev/null
+command -v arecord >/dev/null
 
 echo "Installing default config..."
 CONFIG_DIR="$HOME/.config/speech-to-text"

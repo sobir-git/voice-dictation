@@ -1,0 +1,3 @@
+[build]
+# Bound memory use during the first CTranslate2/oneDNN build.
+jobs = 4

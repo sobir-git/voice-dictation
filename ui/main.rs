@@ -1,4 +1,5 @@
 mod bridge;
+mod hud;
 mod view;
 use fire_ui::*;
 use fire_ui_native::{run_with, WindowOptions};
@@ -28,7 +29,7 @@ const ACTIONS: [&str; 12] = [
     "Next",
     "Debug: off",
 ];
-const FIELDS: [(&str, &str, &str); 10] = [
+const FIELDS: [(&str, &str, &str); 11] = [
     ("Microphone", "audio", "pipewire_node"),
     ("Model", "transcription", "model"),
     ("Compute type", "transcription", "compute_type"),
@@ -39,6 +40,7 @@ const FIELDS: [(&str, &str, &str); 10] = [
     ("Space after text", "output", "add_space"),
     ("Notifications", "notifications", "enabled"),
     ("Audio feedback", "notifications", "audio_feedback"),
+    ("Floating indicator", "ui", "cursor_indicator"),
 ];
 type Control = Button<Label>;
 
@@ -458,7 +460,7 @@ impl Desktop {
             );
         }
         let _ = cx.show(self.search, self.page == 1);
-        let language_y = 115. + 10. * gap - self.settings_scroll;
+        let language_y = 115. + FIELDS.len() as f32 * gap - self.settings_scroll;
         let _ = cx.show(
             self.language,
             self.page == 2 && language_y >= 114. && language_y + 36. <= h - 169.,
@@ -475,6 +477,10 @@ impl Desktop {
             "connected" => {
                 self.connected = true;
                 self.request(cx, json!({"cmd":"get_config"}));
+            }
+            "shutdown" => {
+                let _ = cx.close_window();
+                return;
             }
             "disconnected" => {
                 self.closing = false;
@@ -662,7 +668,7 @@ impl Desktop {
                     m["name"].clone(),
                 )
             }));
-        } else if [4, 5, 7, 8, 9].contains(&index) {
+        } else if [4, 5, 7, 8, 9, 10].contains(&index) {
             let (_, s, k) = FIELDS[index];
             let old = self.config[s][k].as_bool().unwrap_or(false);
             self.config[s][k] = json!(!old);
@@ -901,7 +907,7 @@ impl Widget for Desktop {
             if position.x >= self.sidebar {
                 let h = cx.bounds().height;
                 let gap = if h < 800. { 42. } else { 46. };
-                let max = (11. * gap - (h - 169. - 115.)).max(0.);
+                let max = ((FIELDS.len() + 1) as f32 * gap - (h - 169. - 115.)).max(0.);
                 self.settings_scroll = (self.settings_scroll - delta.y).clamp(0., max);
                 self.refresh(cx);
                 cx.stop();
@@ -944,12 +950,19 @@ impl Widget for Desktop {
     }
 }
 fn main() -> Result<(), String> {
+    if std::env::args().any(|a| a == "--hud") {
+        return hud::run();
+    }
     let demo = std::env::args().any(|a| a == "--demo");
     let mut connection: Option<bridge::Bridge> = None;
     let mut state = json!({"type":"state","listening":true,"recording":false,"processing":false,"model_ready":true,"hotkey":"KEY_RIGHTCTRL","output_method":"xdotool","last_error":""});
     run_with(
         Desktop::new(),
         WindowOptions {
+            font: Some(
+                fire_ui_native::system_font()
+                    .ok_or("No system font found; set FIRE_UI_FONT to a font file")?,
+            ),
             title: "Voice Dictation".into(),
             size: Size::new(1060., 860.),
             background: BACK,

@@ -1,55 +1,72 @@
 # Voice Dictation
 
-Local voice dictation for Linux with a native [Fire UI](https://github.com/sobir-git/fire-ui)
-desktop. Hold your hotkey, speak, and release to type into the active application.
-
-```sh
-./run.sh
-```
-
-The dark desktop includes dictation status and live microphone levels, an editable
-transcript for copying, searchable history, microphone/hotkey/model settings, and
-diagnostics. Closing waits for an in-flight settings save and leaves the speech service running. Reopen it from
-the application launcher. The old GTK interface and tray have been removed.
-
-## Setup
-
-Requires Rust 1.88+, Python 3, a native linker, `alsa-utils` and the Python packages
-in `requirements.txt`. Linux native graphics needs X11/Wayland and OpenGL libraries;
-`ffmpeg`, `pactl`, and PipeWire ALSA support enable audio preprocessing and mic selection.
-No GTK or AppIndicator dependency is required.
+Local Linux voice dictation with a native [Fire UI](https://github.com/sobir-git/fire-ui)
+desktop and a Rust speech service. Hold your hotkey, speak, and release to type.
+Whisper runs through CTranslate2, with Silero voice activity detection. Python is
+used only for development probes and optional comparison against faster-whisper.
 
 ```sh
 ./install.sh
 ./setup_autostart.sh
+./run.sh
 ```
 
+The desktop includes microphone levels, an editable transcript, searchable history,
+settings and diagnostics. Closing it leaves dictation running. The tray reopens the
+desktop, pauses dictation and cancels pending work. Quit Voice Dictation closes the
+app and stops the service; opening the app starts it again. Enable Floating indicator in
+Settings for a passive recording/transcribing widget near the pointer. It currently
+uses X11/XWayland and does not take keyboard focus or intercept clicks.
+
+## Requirements
+
+Rust, CMake, a C++ compiler, `alsa-utils`, `ffmpeg`, and
+native X11/OpenGL libraries, including `libxkbcommon-x11-0` on Debian/Ubuntu.
+A system font is required; `FIRE_UI_FONT` can select a font file.
+The first build compiles CTranslate2 and oneDNN;
+ONNX Runtime is downloaded for Silero. Inference currently targets the CPU.
+
 Global hotkeys require the `input` group. The launcher activates it when needed.
-GNOME Wayland uses `ydotoold` for typing; X11 normally uses `xdotool`.
-Configuration remains in `~/.config/speech-to-text/config.yaml` and dictation history
-in `~/.local/share/speech-to-text/history.db`. Installation preserves both.
+GNOME Wayland normally uses `ydotoold`; X11 normally uses `xdotool`. PipeWire ALSA
+support and `pactl` enable microphone selection. Only the headless service autostarts.
+
+Configuration stays in `~/.config/speech-to-text/config.yaml`; the project example
+is not active. SQLite history stays in `~/.local/share/speech-to-text/history.db`.
+Existing faster-whisper models are reused from the Hugging Face cache. Installation
+preserves configuration, history and models. Uncached models download on first use.
+
+```sh
+./target/release/speech-service --transcribe recording.wav
+journalctl --user -u speech-to-text-daemon.service
+```
+
+File transcription prints JSON without typing text or adding a history entry.
+Output failures during dictation leave text in History. Cancellation suppresses
+pending output but cannot retract text already typed.
 
 ## Development
 
-The Rust client in `ui/` uses Fire UI's published `v0.1.0` Git tag. The Python adapter
-in `src/speech_to_text/desktop.py` connects it to the existing headless daemon over
-its private Unix socket. The daemon still owns audio capture, hotkeys, Whisper,
-ordered transcription, history writes and text output. No speech inference runs
-on the UI thread. Microphone tests keep samples in memory and never transcribe them.
+`ui/` uses the GitHub Fire UI dependency pinned in Cargo.toml. `service/` owns the
+daemon, socket protocol, headless adapter and tray. No speech inference runs on the
+UI thread. Microphone tests keep samples in memory and never transcribe them.
+
+Fire UI is also our project. Consume its public APIs here and propose reusable
+framework improvements through [upstream issues or PRs](https://github.com/sobir-git/fire-ui).
+The app pins the published [Fire UI v0.4.0 release](https://github.com/sobir-git/fire-ui/releases/tag/v0.4.0).
 
 ```sh
 cargo test --locked
 cargo clippy --locked --all-targets -- -D warnings
-PYTHONPATH=src ./venv/bin/python3 -m unittest discover -s tests -v
+cargo build --locked
+python3 -m unittest discover -s tests -v
 cargo build --release --locked
 python3 tools/native_probe.py
+dbus-run-session -- ./venv/bin/python3 tools/tray_probe.py
+python3 tools/service_ui_probe.py
 ```
 
-The native probe uses Xvfb, xdotool and Pillow with synthetic dictations. It does
-not open a microphone or change live settings. `--demo` runs the same preview manually.
-Settings in a smaller window scroll with the wheel. The diagnostics report contains
-local device names and paths; review it before sharing.
-
-Whisper downloads an uncached model on first use. Cached models load locally.
-Output failures leave the text recoverable in History; cancellation cannot retract
-text already typed. `journalctl --user -u speech-to-text-daemon.service` shows service logs.
+The probes use temporary data and synthetic dictations. `tools/migration_probe.py`
+optionally compares Rust against faster-whisper using synthesized speech. The native
+probe requires Xvfb, xdotool, xclip and Pillow. The tray probe requires dbus-next.
+Install probe dependencies from `requirements-dev.txt`.
+Review diagnostics before sharing; they include local device names and paths.

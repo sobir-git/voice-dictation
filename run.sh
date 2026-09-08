@@ -1,11 +1,16 @@
 #!/bin/bash
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export VOICE_DICTATION_PROJECT="$SCRIPT_DIR"
 if [[ "${1:-}" == '--daemon' ]]; then
   shift
-  STT_ARGS=("$SCRIPT_DIR/venv/bin/python3" "$SCRIPT_DIR/stt_daemon.py" "$@")
+  if [[ ! -x "$SCRIPT_DIR/target/release/speech-service" ]]; then
+    echo 'Build the Rust speech service with ./install.sh first.' >&2
+    exit 1
+  fi
+  STT_ARGS=("$SCRIPT_DIR/target/release/speech-service" "$@")
 else
-  if [[ ! -x "$SCRIPT_DIR/target/release/voice-dictation" ]]; then
+  if [[ ! -x "$SCRIPT_DIR/target/release/voice-dictation" || ! -x "$SCRIPT_DIR/target/release/speech-service" ]]; then
     cargo build --manifest-path "$SCRIPT_DIR/Cargo.toml" --locked --release
   fi
   STT_LOCK_DIR="${XDG_RUNTIME_DIR:-/tmp/speech-to-text-$(id -u)}/speech-to-text"
@@ -18,7 +23,6 @@ else
     fi
     exit 0
   fi
-  export VOICE_DICTATION_PROJECT="$SCRIPT_DIR"
   STT_ARGS=("$SCRIPT_DIR/target/release/voice-dictation" "$@")
 fi
 if [[ " $(id -nG) " == *" input "* ]]; then

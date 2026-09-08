@@ -17,10 +17,11 @@ impl Bridge {
         let project = std::env::var_os("VOICE_DICTATION_PROJECT")
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|| env!("CARGO_MANIFEST_DIR").into());
-        let python = project.join("venv/bin/python3");
-        let mut process = Process::new(python)
-            .args(["-m", "speech_to_text.desktop"])
-            .env("PYTHONPATH", project.join("src"))
+        let service = std::env::current_exe()
+            .map_err(|e| e.to_string())?
+            .with_file_name("speech-service");
+        let mut process = Process::new(service)
+            .arg("--adapter")
             .current_dir(&project)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

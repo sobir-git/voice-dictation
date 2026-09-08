@@ -1,1 +1,0 @@
-"""Voice dictation application package."""

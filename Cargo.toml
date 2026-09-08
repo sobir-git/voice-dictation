@@ -5,10 +5,33 @@ edition = "2021"
 [[bin]]
 name = "voice-dictation"
 path = "ui/main.rs"
+[lib]
+path = "service/lib.rs"
+[[bin]]
+name = "speech-service"
+path = "service/main.rs"
 [dependencies]
-fire-ui = { git = "https://github.com/sobir-git/fire-ui", tag = "v0.1.0" }
-fire-ui-widgets = { git = "https://github.com/sobir-git/fire-ui", tag = "v0.1.0" }
-fire-ui-native = { git = "https://github.com/sobir-git/fire-ui", tag = "v0.1.0" }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+rusqlite = { version = "0.38", features = ["bundled"] }
+evdev = "0.13"
+libc = "0.2"
+fs2 = "0.4"
+tempfile = "3"
+hound = "3.5"
+signal-hook = "0.3"
+log = "0.4"
+ksni = { version = "0.3.6", features = ["blocking"] }
+ct2rs = { version = "0.10.1", default-features = false, features = ["ruy", "dnnl", "openmp-runtime-comp"] }
+rustfft = "6"
+tokenizers = { version = "0.22", default-features = false, features = ["fancy-regex"] }
+voice_activity_detector = "0.2.1"
+hf-hub = { version = "0.4", default-features = false, features = ["ureq"] }
+
+fire-ui = { git = "https://github.com/sobir-git/fire-ui", tag = "v0.4.0" }
+fire-ui-widgets = { git = "https://github.com/sobir-git/fire-ui", tag = "v0.4.0" }
+fire-ui-native = { git = "https://github.com/sobir-git/fire-ui", tag = "v0.4.0", features = ["clipboard", "accessibility"] }
 serde_json = "1"
 [profile.release]
 opt-level = 3

@@ -1,11 +1,13 @@
 # Voice Dictation
 
-The UI is native Rust on Fire UI. The Python speech daemon owns recording, global
-hotkeys, transcription, history writes and text output. Keep those operations off
-the UI thread. `desktop.py` is a headless adapter, not another UI implementation.
+The UI is native Rust on Fire UI. The Rust speech daemon in `service/` owns
+recording, global hotkeys, CTranslate2 inference, history writes and text output.
+Keep those operations off the UI thread. The adapter is headless, not another UI.
 
-Use the published Fire UI tag in Cargo.toml. Close reusable framework gaps in
-`../fire-ui` through public capabilities; do not copy a framework into this app.
+Consume [Fire UI](https://github.com/sobir-git/fire-ui) through public APIs, pinned
+to a published Git tag or commit in Cargo.toml. Keep framework code upstream.
+Fire UI is also our project; propose
+reusable framework improvements through GitHub issues or pull requests in that repo.
 The previous GTK UI belongs only in Git history. No compatibility UI or aliases.
 
 Keep the app dark, fast to resize, and quiet when idle. Preserve user configuration,

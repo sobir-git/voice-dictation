@@ -180,7 +180,7 @@ impl Desktop {
                         Rect::new(x + label_width, y, width - label_width, 36.),
                     );
                 }
-                let y = 115. + 10. * gap - self.settings_scroll;
+                let y = 115. + FIELDS.len() as f32 * gap - self.settings_scroll;
                 if y >= 114. && y + 36. <= h - 169. {
                     self.caption(
                         cx,
