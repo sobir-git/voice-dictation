@@ -222,21 +222,23 @@ impl Engine {
         }
         if let Self::Canary { session, .. } = self {
             let language = config.string("transcription", "language");
-            return Ok(session
-                .run(
-                    samples,
-                    &transcribe_cpp::RunOptions {
-                        // Canary does not advertise language detection. English
-                        // is the safe fallback for an empty legacy setting.
-                        language: Some(if language.is_empty() {
-                            "en".into()
-                        } else {
-                            language.into()
-                        }),
-                        ..Default::default()
-                    },
-                )?
-                .text);
+            let options = transcribe_cpp::RunOptions {
+                language: Some(if language.is_empty() { "en" } else { language }.into()),
+                ..Default::default()
+            };
+            let mut text = Vec::new();
+            // Canary is designed for <40 s inputs. Bound decoder output and
+            // prefer quiet boundaries so long dictations do not cut words.
+            let mut remaining = samples;
+            while !remaining.is_empty() {
+                let end = canary_chunk_end(remaining);
+                let part = session.run(&remaining[..end], &options)?.text;
+                if !part.trim().is_empty() {
+                    text.push(part.trim().to_owned());
+                }
+                remaining = &remaining[end..];
+            }
+            return Ok(text.join(" "));
         }
         let Self::Whisper {
             model, tokenizer, ..
@@ -346,6 +348,24 @@ impl Engine {
         Ok(None)
     }
 }
+// At 16 kHz, look for the quietest 20 ms frame in the last five
+// seconds of a 30 s window. Every sample belongs to exactly one chunk.
+fn canary_chunk_end(samples: &[f32]) -> usize {
+    const MAX: usize = 30 * 16000;
+    const SEARCH: usize = 25 * 16000;
+    const FRAME: usize = 320;
+    if samples.len() <= MAX {
+        return samples.len();
+    }
+    let (frame, _) = samples[SEARCH..MAX]
+        .chunks_exact(FRAME)
+        .enumerate()
+        .map(|(i, frame)| (i, frame.iter().map(|v| v * v).sum::<f32>()))
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .unwrap();
+    SEARCH + frame * FRAME + FRAME / 2
+}
+
 /// Whisper's periodic Hann STFT, Slaney mel filters and global log compression.
 pub fn log_mel(samples: &[f32], bins: usize) -> Vec<f32> {
     fn hz_to_mel(hz: f32) -> f32 {
@@ -445,6 +465,21 @@ pub fn speech_samples(samples: &[f32]) -> Result<Vec<f32>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn canary_chunks_preserve_audio_and_choose_quiet_boundaries() {
+        let mut samples = vec![0.5; 95 * 16000 + 123];
+        samples[28 * 16000..28 * 16000 + 320].fill(0.);
+        assert_eq!(canary_chunk_end(&samples), 28 * 16000 + 160);
+        let mut consumed = 0;
+        while consumed < samples.len() {
+            let end = canary_chunk_end(&samples[consumed..]);
+            assert!(end > 0 && end <= 30 * 16000);
+            consumed += end;
+        }
+        assert_eq!(consumed, samples.len());
+        assert_eq!(canary_chunk_end(&[]), 0);
+        assert_eq!(canary_chunk_end(&samples[..30 * 16000]), 30 * 16000);
+    }
     #[test]
     fn mel_features_match_faster_whisper_reference() {
         // NumPy/faster-whisper reference for a 440 Hz + 1700 Hz signal, zero-padded to 30 s.
