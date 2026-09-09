@@ -77,7 +77,7 @@ def main():
                         check_button_alignment(snapshot)
                         with Image.open(output/(name+'.png')) as screenshot:
                             for node in snapshot['nodes']:
-                                if node['role'] == 'Heading' and node['label'] in {'Dictation', 'Dictation history', 'Settings', 'Service status'}:
+                                if node['role'] == 'Heading' and node['label'] in {'Dictation', 'History', 'Settings', 'Service status'}:
                                     b = node['bounds']
                                     region = screenshot.crop((b['x'], b['y'], b['x']+b['width'], b['y']+b['height']))
                                     assert sum(max(pixel[:3]) > 160 for pixel in region.getdata()) > 20, ('Missing title pixels', name, node)
@@ -93,9 +93,11 @@ def main():
                     click_control('Search dictations', 'focus')
                     x('type','--clearmodifiers','--delay',5,'tomorrow')
                     time.sleep(.5)
-                    click_control('Copy text')
+                    click_control('Copy')
                     copied=subprocess.check_output(['xclip','-selection','clipboard','-o'],env=env,timeout=3).decode()
                     assert 'Three ideas for tomorrow' in copied, copied
+                    click_control('Favorite')
+                    assert '"cmd":"favorite_history"' in (output/'native.log').read_text()
                     shot('03a-history-search')
                     click_control('Settings')
                     shot('04-settings')

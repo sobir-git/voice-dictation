@@ -1,4 +1,5 @@
 mod bridge;
+mod history;
 mod hud;
 mod preferences;
 mod recording;
@@ -6,12 +7,13 @@ mod view;
 use fire_ui::*;
 use fire_ui_native::{run_with, WindowOptions};
 use fire_ui_widgets::*;
+use history::{HistoryCommand, HistoryRow};
 use preferences::{PreferenceCommand, Preferences};
 use recording::{Recording, RecordingCommand};
 use serde_json::{json, Value};
 use std::{collections::VecDeque, sync::Arc, time::Duration};
 
-const ACTIONS: [&str; 12] = [
+const ACTIONS: [&str; 13] = [
     "Pause dictation",
     "Copy text",
     "Cancel dictation",
@@ -24,6 +26,7 @@ const ACTIONS: [&str; 12] = [
     "Previous",
     "Next",
     "Debug: off",
+    "Open recordings folder",
 ];
 const FIELDS: [(&str, &str, &str); 11] = [
     ("Microphone", "audio", "pipewire_node"),
@@ -59,7 +62,7 @@ enum Command {
     Page(usize),
     Action(usize),
     Setting(usize, Value),
-    History(usize),
+    History(usize, usize),
     Search(EditorOutput),
     Transcript(EditorOutput),
     Language(EditorOutput),
@@ -144,7 +147,7 @@ struct Desktop {
     recording: Child<Surface<Recording>>,
     meter: Child<Progress>,
     actions: Vec<Child<Control>>,
-    rows: Vec<Child<Control>>,
+    rows: Vec<Child<Surface<HistoryRow>>>,
     search: Child<Editor>,
     transcript: Child<Editor>,
     page: usize,
@@ -208,7 +211,11 @@ impl Desktop {
                 .map(|(i, l)| c.connect(control(l), move |_| Command::Action(i)))
                 .collect(),
             rows: (0..8)
-                .map(|i| c.connect(control(""), move |_| Command::History(i)))
+                .map(|i| {
+                    c.connect(Surface::new(HistoryRow::new()), move |action| {
+                        Command::History(i, *action)
+                    })
+                })
                 .collect(),
             search: c.connect(
                 Element::leaf(
@@ -355,37 +362,13 @@ impl Desktop {
                 !self.loaded || self.saving,
             ),
         );
-        self.visible_rows = (((cx.bounds().height - 440.).max(0.) / 64.) as usize + 1).clamp(1, 8);
+        self.visible_rows = (((cx.bounds().height - 520.).max(0.) / 200.) as usize + 1).clamp(1, 8);
         self.history_page = self
             .history_page
             .min(self.history.len().saturating_sub(1) / self.visible_rows);
         for (i, row) in self.rows.iter().enumerate() {
             if let Some(item) = self.history.get(self.history_page * self.visible_rows + i) {
-                let text = item["text"].as_str().unwrap_or("").replace('\n', " ");
-                let limit = (((cx.bounds().width - 210.).max(90.) / 8.) as usize).min(90);
-                let mut excerpt: String = text.chars().take(limit).collect();
-                if text.chars().count() > limit {
-                    excerpt.push('…');
-                }
-                let _ = cx.send(
-                    *row,
-                    ButtonCommand::Style(
-                        if item["text"].as_str() == Some(self.diagnostics.as_str()) {
-                            ButtonStyle::Primary
-                        } else {
-                            ButtonStyle::Secondary
-                        },
-                    ),
-                );
-                Self::button_text(
-                    cx,
-                    *row,
-                    format!(
-                        "{}    {}",
-                        item["timestamp"].as_str().unwrap_or(""),
-                        excerpt
-                    ),
-                );
+                let _ = cx.send(*row, HistoryCommand::Sync(Arc::new(item.clone())));
             }
         }
         let _ = cx.send(
@@ -412,6 +395,7 @@ impl Desktop {
                 8 => !self.notice.is_empty(),
                 9..=10 => self.page == 1,
                 11 => self.page == 3,
+                12 => self.page == 1,
                 _ => false,
             };
             let _ = cx.show(*b, visible);
@@ -429,7 +413,7 @@ impl Desktop {
         }
         let _ = cx.show(self.search, self.page == 1);
         let _ = cx.show(self.preferences, self.page == 2);
-        let _ = cx.show(self.transcript, self.page != 2);
+        let _ = cx.show(self.transcript, self.page == 0 || self.page == 3);
         let _ = cx.show(self.recording, self.page == 0);
         let _ = cx.show(self.meter, self.page == 2 && self.test_active);
         let _ = cx.show(self.section, self.page == 0);
@@ -447,19 +431,13 @@ impl Desktop {
         let _ = cx.send(self.hotkey, format!("Dictation hotkey: {key}"));
         let _ = cx.send(
             self.title,
-            [
-                "Dictation",
-                "Dictation history",
-                "Settings",
-                "Service status",
-            ][self.page]
-                .into(),
+            ["Dictation", "History", "Settings", "Service status"][self.page].into(),
         );
         let _ = cx.send(
             self.subtitle,
             [
                 "Private speech recognition, on your device.",
-                "Find a previous dictation, edit it, and copy it.",
+                "Your recordings and transcriptions.",
                 "Changes apply when you save.",
                 "Connection details and recent service activity.",
             ][self.page]
@@ -592,6 +570,9 @@ impl Desktop {
                         .history_page
                         .min(self.history.len().saturating_sub(1) / self.visible_rows);
                 }
+            }
+            "history_changed" => {
+                self.request(cx, json!({"cmd":"history","search":self.search_text}));
             }
             "diagnostics" => {
                 self.diagnostics = format!(
@@ -743,6 +724,7 @@ impl Widget for Desktop {
                         json!({"cmd":"set_log_level","value":if debug {"INFO"} else {"DEBUG"}}),
                     );
                 }
+                12 => self.request(cx, json!({"cmd":"open_recordings"})),
                 _ => {}
             },
             Command::Setting(i, value) => {
@@ -760,10 +742,20 @@ impl Widget for Desktop {
                     self.refresh(cx);
                 }
             }
-            Command::History(i) => {
+            Command::History(i, action) => {
                 if let Some(item) = self.history.get(self.history_page * self.visible_rows + i) {
-                    self.diagnostics = item["text"].as_str().unwrap_or("").into();
-                    let _ = cx.send(self.transcript, Edit::Set(self.diagnostics.clone()));
+                    let id = item["id"].as_i64().unwrap_or_default();
+                    match action {
+                        0 => {
+                            let _ = cx.copy(item["text"].as_str().unwrap_or("").to_owned());
+                            self.notice = "Copied to clipboard.".into();
+                        }
+                        1 => self.request(cx, json!({"cmd":"favorite_history","id":id,"favorite":!item["favorite"].as_bool().unwrap_or(false)})),
+                        2 => self.request(cx, json!({"cmd":"retry_history","id":id})),
+                        3 => self.request(cx, json!({"cmd":"delete_history","id":id})),
+                        4 => self.request(cx, json!({"cmd":"play_history","id":id})),
+                        _ => {}
+                    }
                     self.refresh(cx);
                 }
             }

@@ -112,11 +112,13 @@ pub fn demo(output: Output, wake: &WakeHandle<Desktop>, state: &mut Value) {
                 }
                 "history" => {
                     json!({"type":"history","search":value["search"].as_str().unwrap_or(""),"items":[
-                        {"id":3,"timestamp":"Today, 11:42","text":"A thought worth keeping.\n\nLet's make the next version simpler, faster, and a pleasure to use."},
-                        {"id":2,"timestamp":"Today, 10:18","text":"Remember to leave room for the unexpected. Good tools should get out of the way."},
-                        {"id":1,"timestamp":"Yesterday, 17:06","text":"Three ideas for tomorrow: finish the prototype, take a walk, and call home."}
+                        {"id":4,"timestamp":"Today, 11:48","text":"","failed":true,"favorite":false,"audio_path":"/tmp/synthetic-failed.wav","duration":4.0},
+                        {"id":3,"timestamp":"Today, 11:42","text":"A thought worth keeping.\n\nLet's make the next version simpler, faster, and a pleasure to use.","failed":false,"favorite":true,"audio_path":"/tmp/synthetic-three.wav","duration":12.0},
+                        {"id":2,"timestamp":"Today, 10:18","text":"Remember to leave room for the unexpected. Good tools should get out of the way.","failed":false,"favorite":false,"audio_path":"/tmp/synthetic-two.wav","duration":8.0},
+                        {"id":1,"timestamp":"Yesterday, 17:06","text":"Three ideas for tomorrow: finish the prototype, take a walk, and call home.","failed":false,"favorite":false,"audio_path":"/tmp/synthetic-one.wav","duration":6.0}
                     ]})
                 }
+                "favorite_history" | "delete_history" => json!({"type":"history_changed"}),
                 "save_config" => json!({"type":"config_reloaded"}),
                 "clear_error" => {
                     state["last_error"] = json!("");

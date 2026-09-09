@@ -84,7 +84,15 @@ impl Desktop {
                 );
             }
             1 => {
-                let mut entries = vec![Entry::natural(self.search)];
+                let tools = row_at(
+                    cx,
+                    origin,
+                    natural,
+                    Flow::gap(unit).align(Align::Center),
+                    &[Entry::fill(self.search), Entry::natural(self.actions[12])],
+                );
+                let list_y = top + tools.size.height + unit * 1.5;
+                let mut entries = vec![];
                 for (i, row) in self.rows.iter().enumerate() {
                     if i < self.visible_rows
                         && self
@@ -97,12 +105,12 @@ impl Desktop {
                 }
                 let list = column_at(
                     cx,
-                    origin,
+                    Point::new(padding, list_y),
                     body,
                     Flow::gap(unit).align(Align::Stretch),
                     &entries,
                 );
-                let y = top + list.size.height + unit;
+                let y = list_y + list.size.height + unit;
                 let toolbar = row_at(
                     cx,
                     Point::new(padding, y),
@@ -112,17 +120,9 @@ impl Desktop {
                         Entry::natural(self.actions[9]),
                         Entry::natural(self.actions[10]),
                         Entry::fill(self.spacer),
-                        Entry::natural(self.actions[1]),
                     ],
                 );
-                let y = y + toolbar.size.height + unit;
-                column_at(
-                    cx,
-                    Point::new(padding, y),
-                    Constraints::tight(Size::new(width, (bottom - y - unit * 2.).max(0.))),
-                    Flow::default(),
-                    &[Entry::fill(self.transcript)],
-                );
+                let _ = toolbar;
             }
             2 => {
                 let action_height = cx.measure(self.actions[5], natural).size.height;
