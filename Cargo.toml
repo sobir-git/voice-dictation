@@ -47,3 +47,16 @@ incremental = false
 opt-level = 1
 debug = 1
 incremental = false
+
+# Native speech libraries otherwise produce multi-gigabyte debug archives.
+[profile.dev.package.onednn-src]
+opt-level = 3
+debug = 0
+
+[profile.dev.package.ct2rs]
+opt-level = 3
+debug = 0
+
+[profile.dev.package.ort-sys]
+opt-level = 3
+debug = 0
