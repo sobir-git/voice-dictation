@@ -11,8 +11,30 @@ use rustfft::{num_complex::Complex32, FftPlanner};
 use std::{
     path::{Path, PathBuf},
     process::Command,
+    sync::mpsc,
     time::Duration,
 };
+
+pub const PARAKEET_MODEL: &str = "parakeet-unified-en-0.6b";
+
+fn parakeet_stream_options() -> transcribe_cpp::StreamOptions {
+    transcribe_cpp::StreamOptions {
+        family: Some(transcribe_cpp::StreamExtension::ParakeetBuffered(
+            transcribe_cpp::ParakeetBufferedStreamOptions {
+                left_ms: Some(5600),
+                chunk_ms: Some(1040),
+                right_ms: Some(1040),
+            },
+        )),
+        ..Default::default()
+    }
+}
+
+pub enum StreamInput {
+    Audio(Vec<f32>),
+    Finish,
+    Cancel,
+}
 
 pub fn model_path(name: &str) -> Result<PathBuf> {
     let local = expand(name);
@@ -70,15 +92,61 @@ pub fn read_audio(path: &Path, preprocess: bool) -> Result<Vec<f32>> {
         .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
         .collect())
 }
-pub struct Engine {
-    model: Whisper,
-    tokenizer: tokenizers::Tokenizer,
-    pub identity: (String, String),
+pub enum Engine {
+    Whisper {
+        model: Whisper,
+        tokenizer: Box<tokenizers::Tokenizer>,
+        identity: (String, String),
+    },
+    Parakeet {
+        session: transcribe_cpp::Session,
+        identity: (String, String),
+    },
 }
 impl Engine {
     pub fn load(config: &Config) -> Result<Self> {
         let name = config.string("transcription", "model");
         let compute = config.string("transcription", "compute_type");
+        if name == PARAKEET_MODEL || name.ends_with(".gguf") {
+            let path = if name == PARAKEET_MODEL {
+                let api = hf_hub::api::sync::Api::new()?
+                    .model("handy-computer/parakeet-unified-en-0.6b-gguf".into());
+                api.get("parakeet-unified-en-0.6b-Q8_0.gguf")?
+            } else {
+                let path = expand(name);
+                if !path.is_file() {
+                    bail!("Parakeet model does not exist: {}", path.display())
+                }
+                path
+            };
+            let model = transcribe_cpp::Model::load_with(
+                path,
+                &transcribe_cpp::ModelOptions {
+                    backend: transcribe_cpp::Backend::Cpu,
+                    device: None,
+                },
+            )?;
+            if !model.capabilities().supports_streaming {
+                bail!("The selected Parakeet model does not support streaming")
+            }
+            let mut session = model.session()?;
+            // transcribe.cpp prepares some kernels lazily. Exercise the actual
+            // stream path while the daemon is loading in the background so the
+            // user's first dictation does not pay that one-time cost.
+            {
+                let run = transcribe_cpp::RunOptions {
+                    language: Some("en".into()),
+                    ..Default::default()
+                };
+                let mut stream = session.stream(&run, &parakeet_stream_options())?;
+                stream.feed(&vec![0.; 33_280])?;
+                stream.finalize()?;
+            }
+            return Ok(Self::Parakeet {
+                session,
+                identity: (name.into(), compute.into()),
+            });
+        }
         let compute_type = match compute {
             "int8" => ComputeType::INT8,
             "int8_float32" => ComputeType::INT8_FLOAT32,
@@ -102,17 +170,40 @@ impl Engine {
         )?;
         let tokenizer = tokenizers::Tokenizer::from_file(path.join("tokenizer.json"))
             .map_err(|e| anyhow::anyhow!("Tokenizer: {e}"))?;
-        Ok(Self {
+        Ok(Self::Whisper {
             model,
-            tokenizer,
+            tokenizer: Box::new(tokenizer),
             identity: (name.into(), compute.into()),
         })
     }
     pub fn matches(&self, c: &Config) -> bool {
-        self.identity.0 == c.string("transcription", "model")
-            && self.identity.1 == c.string("transcription", "compute_type")
+        let identity = match self {
+            Self::Whisper { identity, .. } | Self::Parakeet { identity, .. } => identity,
+        };
+        identity.0 == c.string("transcription", "model")
+            && identity.1 == c.string("transcription", "compute_type")
     }
-    pub fn transcribe(&self, samples: &[f32], config: &Config) -> Result<String> {
+    pub fn supports_streaming(&self) -> bool {
+        matches!(self, Self::Parakeet { .. })
+    }
+    pub fn transcribe(&mut self, samples: &[f32], config: &Config) -> Result<String> {
+        if let Self::Parakeet { session, .. } = self {
+            return Ok(session
+                .run(
+                    samples,
+                    &transcribe_cpp::RunOptions {
+                        language: Some("en".into()),
+                        ..Default::default()
+                    },
+                )?
+                .text);
+        }
+        let Self::Whisper {
+            model, tokenizer, ..
+        } = self
+        else {
+            unreachable!()
+        };
         let samples = if config.flag("transcription", "vad_filter") {
             speech_samples(samples)?
         } else {
@@ -123,17 +214,17 @@ impl Engine {
             if chunk.len() < 1600 {
                 continue;
             }
-            let mut features = log_mel(chunk, self.model.n_mels());
+            let mut features = log_mel(chunk, model.n_mels());
             let view = StorageView::new(
-                &[1, self.model.n_mels(), 3000],
+                &[1, model.n_mels(), 3000],
                 &mut features,
                 Default::default(),
             )?;
             let mut prompt = vec!["<|startoftranscript|>".to_string()];
-            if self.model.is_multilingual() {
+            if model.is_multilingual() {
                 let language = config.string("transcription", "language");
                 let token = if language.is_empty() {
-                    self.model
+                    model
                         .detect_language(&view)?
                         .first()
                         .and_then(|d| d.first())
@@ -143,13 +234,13 @@ impl Engine {
                 } else {
                     format!("<|{language}|>")
                 };
-                if self.tokenizer.token_to_id(&token).is_none() {
+                if tokenizer.token_to_id(&token).is_none() {
                     bail!("Unsupported language: {language}")
                 }
                 prompt.extend([token, "<|transcribe|>".into()]);
             }
             prompt.push("<|notimestamps|>".into());
-            let results = self.model.generate(
+            let results = model.generate(
                 &view,
                 &[prompt],
                 &WhisperOptions {
@@ -166,8 +257,7 @@ impl Engine {
                     continue;
                 }
                 if let Some(ids) = result.sequences_ids.first() {
-                    let decoded = self
-                        .tokenizer
+                    let decoded = tokenizer
                         .decode(&ids.iter().map(|n| *n as u32).collect::<Vec<_>>(), true)
                         .map_err(|e| anyhow::anyhow!("Decode: {e}"))?;
                     if !decoded.trim().is_empty() {
@@ -177,6 +267,43 @@ impl Engine {
             }
         }
         Ok(text.join(" "))
+    }
+
+    pub fn stream(
+        &mut self,
+        receive: &mpsc::Receiver<StreamInput>,
+        mut preview: impl FnMut(String, String),
+    ) -> Result<Option<String>> {
+        let Self::Parakeet { session, .. } = self else {
+            bail!("The selected model does not support streaming")
+        };
+        let run = transcribe_cpp::RunOptions {
+            language: Some("en".into()),
+            ..Default::default()
+        };
+        let options = parakeet_stream_options();
+        let mut stream = session.stream(&run, &options)?;
+        while let Ok(input) = receive.recv() {
+            match input {
+                StreamInput::Audio(samples) => {
+                    let update = stream.feed(&samples)?;
+                    if update.committed_changed || update.tentative_changed {
+                        let text = stream.text();
+                        preview(text.committed, text.tentative);
+                    }
+                }
+                StreamInput::Finish => {
+                    stream.finalize()?;
+                    return Ok(Some(stream.text().full));
+                }
+                StreamInput::Cancel => {
+                    stream.reset();
+                    return Ok(None);
+                }
+            }
+        }
+        stream.reset();
+        Ok(None)
     }
 }
 /// Whisper's periodic Hann STFT, Slaney mel filters and global log compression.

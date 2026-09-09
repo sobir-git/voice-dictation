@@ -19,7 +19,7 @@ fn main() -> Result<()> {
         );
         let samples = read_audio(path, config.flag("audio", "preprocess"))?;
         let started = std::time::Instant::now();
-        let engine = Engine::load(&config)?;
+        let mut engine = Engine::load(&config)?;
         let loaded = started.elapsed();
         let text = engine.transcribe(&samples, &config)?;
         println!(

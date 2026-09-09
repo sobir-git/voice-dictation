@@ -28,6 +28,7 @@ rustfft = "6"
 tokenizers = { version = "0.22", default-features = false, features = ["fancy-regex"] }
 voice_activity_detector = "0.2.1"
 hf-hub = { version = "0.4", default-features = false, features = ["ureq"] }
+transcribe-cpp = { version = "0.2.3", default-features = false, features = ["openmp"] }
 
 fire-ui = { git = "https://github.com/sobir-git/fire-ui", tag = "v0.7.0" }
 fire-ui-widgets = { git = "https://github.com/sobir-git/fire-ui", tag = "v0.7.0" }

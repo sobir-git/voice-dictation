@@ -542,6 +542,16 @@ impl Desktop {
                     self.request(cx, json!({"cmd":"history","search":self.search_text}));
                 }
             }
+            "transcription_preview" => {
+                self.transcript_text = format!(
+                    "{}{}",
+                    v["committed"].as_str().unwrap_or(""),
+                    v["tentative"].as_str().unwrap_or("")
+                );
+                if self.page == 0 {
+                    let _ = cx.send(self.transcript, Edit::Set(self.transcript_text.clone()));
+                }
+            }
             "config" => {
                 self.state["log_level"] = v["config"]["logging"]["level"].clone();
                 if self.loaded {

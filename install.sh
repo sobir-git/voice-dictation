@@ -30,7 +30,7 @@ cat > "$DESKTOP_DIR/speech-to-text.desktop" << EOF
 [Desktop Entry]
 Type=Application
 Name=Voice Dictation
-Comment=Voice dictation using Whisper
+Comment=Fast, local streaming voice dictation
 Exec="$SCRIPT_DIR/run.sh"
 Icon=audio-input-microphone
 Terminal=false

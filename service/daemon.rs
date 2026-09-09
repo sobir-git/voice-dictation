@@ -2,7 +2,7 @@ use crate::{
     audio::{self, Capture},
     companion::Companion,
     config::{key_code, Config},
-    engine::Engine,
+    engine::{Engine, StreamInput, PARAKEET_MODEL},
     history::History,
     hotkey::{Hotkeys, KeyEvent},
     ipc::Server,
@@ -27,6 +27,7 @@ pub enum Event {
     Command(u64, Value),
     Key(KeyEvent),
     Level(u64, f32, f32),
+    Preview(u64, String, String),
     Model((String, String), Result<()>),
     Transcribed(u64, Result<String>, f64),
     Delivered(u64, Result<()>),
@@ -36,6 +37,7 @@ pub enum Event {
 enum Work {
     Load(Config),
     Transcribe(NamedTempFile, Config, u64),
+    Stream(Config, u64, mpsc::Receiver<StreamInput>),
 }
 #[derive(Default)]
 struct Flow {
@@ -80,6 +82,7 @@ pub struct Daemon {
     capture_ready: bool,
     recording_started: Instant,
     worker: mpsc::SyncSender<Work>,
+    live_stream: Option<mpsc::Sender<StreamInput>>,
     generation: Arc<AtomicU64>,
     hotkeys: Option<Hotkeys>,
     companion: Option<Companion>,
@@ -111,14 +114,14 @@ impl Daemon {
         thread::spawn(move || {
             let mut engine: Option<Engine> = None;
             while let Ok(work) = receive.recv() {
-                if let Work::Transcribe(_, _, generation) = &work {
+                if let Work::Transcribe(_, _, generation) | Work::Stream(_, generation, _) = &work {
                     if *generation != current.load(Ordering::Acquire) {
                         let _ = events.send(Event::Transcribed(*generation, Ok(String::new()), 0.));
                         continue;
                     }
                 }
                 let config = match &work {
-                    Work::Load(c) | Work::Transcribe(_, c, _) => c,
+                    Work::Load(c) | Work::Transcribe(_, c, _) | Work::Stream(c, _, _) => c,
                 };
                 let identity = (
                     config.string("transcription", "model").to_owned(),
@@ -143,6 +146,13 @@ impl Daemon {
                                 Work::Transcribe(_, _, generation) => {
                                     let _ = events.send(Event::Transcribed(generation, Err(e), 0.));
                                 }
+                                Work::Stream(_, generation, receive) => {
+                                    while !matches!(
+                                        receive.recv(),
+                                        Ok(StreamInput::Finish | StreamInput::Cancel) | Err(_)
+                                    ) {}
+                                    let _ = events.send(Event::Transcribed(generation, Err(e), 0.));
+                                }
                             }
                             continue;
                         }
@@ -154,13 +164,35 @@ impl Daemon {
                     let result =
                         crate::engine::read_audio(file.path(), config.flag("audio", "preprocess"))
                             .and_then(|samples| {
-                                engine.as_ref().unwrap().transcribe(&samples, &config)
+                                engine.as_mut().unwrap().transcribe(&samples, &config)
                             });
                     let _ = events.send(Event::Transcribed(
                         generation,
                         result,
                         started.elapsed().as_secs_f64(),
                     ));
+                } else if let Work::Stream(_, generation, receive) = work {
+                    let started = Instant::now();
+                    let preview_events = events.clone();
+                    let result =
+                        engine
+                            .as_mut()
+                            .unwrap()
+                            .stream(&receive, |committed, tentative| {
+                                let _ = preview_events
+                                    .send(Event::Preview(generation, committed, tentative));
+                            });
+                    if let Ok(None) = result {
+                        let _ = events.send(Event::Transcribed(generation, Ok(String::new()), 0.));
+                    } else {
+                        let _ = events.send(Event::Transcribed(
+                            generation,
+                            result.and_then(|text| {
+                                text.ok_or_else(|| anyhow::anyhow!("Streaming was cancelled"))
+                            }),
+                            started.elapsed().as_secs_f64(),
+                        ));
+                    }
                 }
             }
         });
@@ -206,6 +238,7 @@ impl Daemon {
             capture_ready: false,
             recording_started: Instant::now(),
             worker,
+            live_stream: None,
             generation,
             hotkeys,
             companion,
@@ -220,7 +253,10 @@ impl Daemon {
             quitting: false,
         };
         if !probe {
-            daemon.worker.send(Work::Load(daemon.config.clone()))?;
+            daemon
+                .worker
+                .send(Work::Load(daemon.config.clone()))
+                .map_err(|_| anyhow::anyhow!("Speech model worker stopped"))?;
         }
         Ok(daemon)
     }
@@ -353,6 +389,11 @@ impl Daemon {
                     if let Some(companion) = &self.companion { companion.update(state, &self.config); }
                 }
             }
+            Event::Preview(generation, committed, tentative) => {
+                if generation == self.flow.generation && self.flow.recording {
+                    self.broadcast(json!({"type":"transcription_preview","committed":committed,"tentative":tentative}));
+                }
+            }
             Event::Model(identity, result) => {
                 if identity != (self.config.string("transcription","model").to_owned(), self.config.string("transcription","compute_type").to_owned()) { return; }
                 self.ready = result.is_ok();
@@ -425,7 +466,17 @@ impl Daemon {
         self.capture_id += 1;
         let id = self.capture_id;
         let send = self.server.send.clone();
-        match Capture::start(&config, move |level, db| {
+        let model = config.string("transcription", "model");
+        let streaming = (model == PARAKEET_MODEL || model.ends_with(".gguf"))
+            && config.number("audio", "sample_rate") == 16000
+            && config.number("audio", "channels") == 1
+            && config.string("audio", "format") == "S16_LE";
+        let (stream_send, stream_receive) = mpsc::channel();
+        let audio = streaming.then_some(stream_send.clone());
+        match Capture::start(&config, move |samples, level, db| {
+            if let Some(audio) = &audio {
+                let _ = audio.send(StreamInput::Audio(samples));
+            }
             let _ = send.try_send(Event::Level(id, level, db));
         }) {
             Ok(capture) => {
@@ -433,6 +484,18 @@ impl Daemon {
                 self.flow.recording = true;
                 self.capture_ready = false;
                 self.recording_started = Instant::now();
+                if streaming
+                    && self
+                        .worker
+                        .try_send(Work::Stream(
+                            config.clone(),
+                            self.flow.generation,
+                            stream_receive,
+                        ))
+                        .is_ok()
+                {
+                    self.live_stream = Some(stream_send);
+                }
             }
             Err(e) => self.error(format!("Recording failed: {e}")),
         }
@@ -448,6 +511,14 @@ impl Daemon {
         if let Some(capture) = self.capture.take() {
             match capture.finish() {
                 Ok(file) => {
+                    if let Some(stream) = self.live_stream.take() {
+                        self.flow.pending += 1;
+                        let _ = stream.send(StreamInput::Finish);
+                        drop(file);
+                        self.flush_output();
+                        self.broadcast_state();
+                        return;
+                    }
                     self.temporary_audio.push(file.path().to_owned());
                     self.temporary_audio.retain(|p| p.exists());
                     self.flow.pending += 1;
@@ -464,13 +535,21 @@ impl Daemon {
                         self.error("Transcription queue is full".into());
                     }
                 }
-                Err(e) => self.error(format!("Recording failed: {e}")),
+                Err(e) => {
+                    if let Some(stream) = self.live_stream.take() {
+                        let _ = stream.send(StreamInput::Cancel);
+                    }
+                    self.error(format!("Recording failed: {e}"));
+                }
             }
         }
         self.flush_output();
         self.broadcast_state();
     }
     fn discard_remote_recording(&mut self) {
+        if let Some(stream) = self.live_stream.take() {
+            let _ = stream.send(StreamInput::Cancel);
+        }
         self.capture.take();
         self.flow.recording = false;
         self.recording_client = None;
@@ -479,6 +558,9 @@ impl Daemon {
         self.broadcast_state();
     }
     fn cancel(&mut self) {
+        if let Some(stream) = self.live_stream.take() {
+            let _ = stream.send(StreamInput::Cancel);
+        }
         self.recording_client = None;
         self.flow.cancel();
         self.generation

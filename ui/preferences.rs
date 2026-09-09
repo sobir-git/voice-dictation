@@ -112,6 +112,7 @@ impl Preferences {
     fn options(index: usize, microphones: &[Value]) -> Vec<(String, Value)> {
         let names: Vec<String> = match index {
             1 => [
+                "parakeet-unified-en-0.6b",
                 "tiny.en",
                 "base.en",
                 "small.en",

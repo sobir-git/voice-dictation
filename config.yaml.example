@@ -8,7 +8,7 @@ audio:
   preprocess: true
 
 transcription:
-  model: base.en
+  model: parakeet-unified-en-0.6b
   compute_type: int8
   language: en
   beam_size: 1

@@ -2,8 +2,9 @@
 
 Local Linux voice dictation with a native [Fire UI](https://github.com/sobir-git/fire-ui)
 desktop and a Rust speech service. Hold your hotkey, speak, and release to type.
-Whisper runs through CTranslate2, with Silero voice activity detection. Python is
-used only for development probes and optional comparison against faster-whisper.
+Parakeet Unified is the default English model and streams through transcribe.cpp
+while the hotkey is held. Whisper remains available through CTranslate2, with
+Silero voice activity detection. Python is used only for development probes.
 
 ```sh
 ./install.sh
@@ -35,8 +36,10 @@ support and `pactl` enable microphone selection. Only the headless service autos
 
 Configuration stays in `~/.config/speech-to-text/config.yaml`; the project example
 is not active. SQLite history stays in `~/.local/share/speech-to-text/history.db`.
-Existing faster-whisper models are reused from the Hugging Face cache. Installation
-preserves configuration, history and models. Uncached models download on first use.
+Existing Parakeet and faster-whisper models are reused from the Hugging Face cache.
+Installation preserves configuration, history and models. Uncached models download
+on first use. Streaming previews stay in the native desktop; only finalized text is
+written to history and the focused application.
 
 ```sh
 ./target/release/speech-service --transcribe recording.wav

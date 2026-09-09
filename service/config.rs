@@ -25,7 +25,7 @@ pub fn expand(path: &str) -> PathBuf {
 pub fn defaults() -> Value {
     json!({
         "audio":{"sample_rate":16000,"format":"S16_LE","channels":1,"temp_file":"/tmp/stt_recording.wav","device":"default","pipewire_node":"","preprocess":true},
-        "transcription":{"model":"base.en","compute_type":"int8","language":"en","beam_size":1,"vad_filter":true},
+        "transcription":{"model":"parakeet-unified-en-0.6b","compute_type":"int8","language":"en","beam_size":1,"vad_filter":true},
         "input":{"trigger_key":"KEY_F16"},"output":{"method":"auto","add_space":true,"type_interval":0.0},
         "notifications":{"enabled":true,"audio_feedback":true},
         "logging":{"level":"INFO","file":"~/.local/share/speech-to-text/app.log","max_size_mb":10},

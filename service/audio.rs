@@ -12,6 +12,25 @@ use std::{
     time::{Duration, Instant},
 };
 use tempfile::NamedTempFile;
+
+fn wav_data_offset(file: &mut File) -> Option<u64> {
+    file.seek(SeekFrom::Start(0)).ok()?;
+    let mut header = vec![0; file.metadata().ok()?.len().min(65_536) as usize];
+    file.read_exact(&mut header).ok()?;
+    if header.get(0..4)? != b"RIFF" || header.get(8..12)? != b"WAVE" {
+        return None;
+    }
+    let mut position = 12_usize;
+    while position.checked_add(8)? <= header.len() {
+        let size = u32::from_le_bytes(header[position + 4..position + 8].try_into().ok()?) as usize;
+        if &header[position..position + 4] == b"data" {
+            return Some((position + 8) as u64);
+        }
+        position = position.checked_add(8 + size + (size & 1))?;
+    }
+    None
+}
+
 pub fn level(bytes: &[u8]) -> (f32, f32) {
     let n = bytes.len() / 2;
     let energy = bytes
@@ -35,12 +54,15 @@ impl Capture {
     pub fn exited(&mut self) -> bool {
         self.child.try_wait().is_ok_and(|status| status.is_some())
     }
-    pub fn start(c: &Config, callback: impl Fn(f32, f32) + Send + 'static) -> Result<Self> {
+    pub fn start(
+        c: &Config,
+        callback: impl Fn(Vec<f32>, f32, f32) + Send + 'static,
+    ) -> Result<Self> {
         Self::start_command(c, callback, Command::new("arecord"))
     }
     fn start_command(
         c: &Config,
-        callback: impl Fn(f32, f32) + Send + 'static,
+        callback: impl Fn(Vec<f32>, f32, f32) + Send + 'static,
         mut command: Command,
     ) -> Result<Self> {
         let template = crate::config::expand(c.string("audio", "temp_file"));
@@ -81,17 +103,26 @@ impl Capture {
         let flag = stop.clone();
         let path = file.path().to_owned();
         let monitor = thread::spawn(move || {
+            let mut offset = None;
             while !flag.load(Ordering::Relaxed) {
                 thread::sleep(Duration::from_millis(100));
                 if let Ok(mut file) = File::open(&path) {
                     if let Ok(meta) = file.metadata() {
-                        if meta.len() > 128 {
-                            let _ = file
-                                .seek(SeekFrom::Start(meta.len().saturating_sub(3200).max(128)));
-                            let mut bytes = Vec::new();
-                            let _ = file.take(3200).read_to_end(&mut bytes);
+                        let Some(start) = offset.or_else(|| wav_data_offset(&mut file)) else {
+                            continue;
+                        };
+                        offset = Some(start);
+                        let end = meta.len() - meta.len() % 2;
+                        if end > start && file.seek(SeekFrom::Start(start)).is_ok() {
+                            let mut bytes = Vec::with_capacity((end - start) as usize);
+                            let _ = file.take(end - start).read_to_end(&mut bytes);
+                            offset = Some(start + bytes.len() as u64);
                             let (level, db) = level(&bytes);
-                            callback(level, db);
+                            let samples = bytes
+                                .chunks_exact(2)
+                                .map(|b| i16::from_le_bytes([b[0], b[1]]) as f32 / 32768.)
+                                .collect();
+                            callback(samples, level, db);
                         }
                     }
                 }
@@ -106,11 +137,11 @@ impl Capture {
         })
     }
     pub fn finish(mut self) -> Result<NamedTempFile> {
-        self.stop.store(true, Ordering::Relaxed);
-        if let Some(thread) = self.monitor.take() {
-            let _ = thread.join();
-        }
         if self.child.try_wait()?.is_some() {
+            self.stop.store(true, Ordering::Relaxed);
+            if let Some(thread) = self.monitor.take() {
+                let _ = thread.join();
+            }
             self.error.rewind()?;
             let mut message = String::new();
             self.error
@@ -129,6 +160,13 @@ impl Capture {
                 bail!("Audio capture did not stop cleanly")
             }
             thread::sleep(Duration::from_millis(10));
+        }
+        // Let the monitor consume the recorder's final buffered samples before
+        // closing the live stream. Its current iteration reads once after this
+        // flag changes, so the finalized WAV tail is forwarded exactly once.
+        self.stop.store(true, Ordering::Relaxed);
+        if let Some(thread) = self.monitor.take() {
+            let _ = thread.join();
         }
         let file = self.file.take().unwrap();
         let mut wav = hound::WavReader::open(file.path())?;
@@ -206,7 +244,7 @@ mod tests {
         let mut command = Command::new("sh");
         command.args(["-c", "trap 'exit 0' INT; for destination do :; done; cp \"$STT_FIXTURE\" \"$destination\"; while :; do sleep 0.05; done", "capture"])
             .env("STT_FIXTURE", fixture);
-        let capture = Capture::start_command(c, |_, _| {}, command).unwrap();
+        let capture = Capture::start_command(c, |_, _, _| {}, command).unwrap();
         for _ in 0..100 {
             if capture
                 .file
@@ -225,12 +263,20 @@ mod tests {
         panic!("Synthetic capture did not write its WAV")
     }
     #[test]
+    fn finds_audio_after_optional_wav_chunks() {
+        let mut file = tempfile::tempfile().unwrap();
+        use std::io::Write;
+        file.write_all(b"RIFF\x1c\0\0\0WAVEJUNK\x03\0\0\0abc\0data\x02\0\0\0\x01\0")
+            .unwrap();
+        assert_eq!(wav_data_offset(&mut file), Some(32));
+    }
+    #[test]
     fn missing_recorder_cleans_up_private_file() {
         let root = tempfile::tempdir().unwrap();
         let c = config(root.path());
         assert!(Capture::start_command(
             &c,
-            |_, _| {},
+            |_, _, _| {},
             Command::new(root.path().join("missing-recorder"))
         )
         .is_err());
