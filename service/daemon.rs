@@ -19,7 +19,6 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use tempfile::NamedTempFile;
 
 pub enum Event {
     Connect(u64, mpsc::SyncSender<Value>),
@@ -28,14 +27,14 @@ pub enum Event {
     Key(KeyEvent),
     Level(u64, f32, f32),
     Model((String, String), Result<()>),
-    Transcribed(u64, Result<String>, f64),
+    Transcribed(u64, Result<String>, f64, Option<i64>),
     Delivered(u64, Result<()>),
     Test(u64, Value),
     Stop,
 }
 enum Work {
     Load(Config),
-    Transcribe(NamedTempFile, Config, u64),
+    Transcribe(std::path::PathBuf, Config, u64, Option<i64>),
 }
 #[derive(Default)]
 struct Flow {
@@ -87,7 +86,6 @@ pub struct Daemon {
     last_error: String,
     resolved: String,
     completed: VecDeque<(u64, String)>,
-    temporary_audio: Vec<std::path::PathBuf>,
     key_capture: Option<KeyCapture>,
     test: Option<MicTest>,
     test_serial: u64,
@@ -111,14 +109,19 @@ impl Daemon {
         thread::spawn(move || {
             let mut engine: Option<Engine> = None;
             while let Ok(work) = receive.recv() {
-                if let Work::Transcribe(_, _, generation) = &work {
+                if let Work::Transcribe(_, _, generation, _) = &work {
                     if *generation != current.load(Ordering::Acquire) {
-                        let _ = events.send(Event::Transcribed(*generation, Ok(String::new()), 0.));
+                        let _ = events.send(Event::Transcribed(
+                            *generation,
+                            Ok(String::new()),
+                            0.,
+                            None,
+                        ));
                         continue;
                     }
                 }
                 let config = match &work {
-                    Work::Load(c) | Work::Transcribe(_, c, _) => c,
+                    Work::Load(c) | Work::Transcribe(_, c, _, _) => c,
                 };
                 let identity = (
                     config.string("transcription", "model").to_owned(),
@@ -140,8 +143,13 @@ impl Daemon {
                                 Work::Load(_) => {
                                     let _ = events.send(Event::Model(identity, Err(e)));
                                 }
-                                Work::Transcribe(_, _, generation) => {
-                                    let _ = events.send(Event::Transcribed(generation, Err(e), 0.));
+                                Work::Transcribe(_, _, generation, history_id) => {
+                                    let _ = events.send(Event::Transcribed(
+                                        generation,
+                                        Err(e),
+                                        0.,
+                                        history_id,
+                                    ));
                                 }
                             }
                             continue;
@@ -149,10 +157,10 @@ impl Daemon {
                     }
                 }
                 let _ = events.send(Event::Model(identity, Ok(())));
-                if let Work::Transcribe(file, config, generation) = work {
+                if let Work::Transcribe(file, config, generation, history_id) = work {
                     let started = Instant::now();
                     let result =
-                        crate::engine::read_audio(file.path(), config.flag("audio", "preprocess"))
+                        crate::engine::read_audio(&file, config.flag("audio", "preprocess"))
                             .and_then(|samples| {
                                 engine.as_ref().unwrap().transcribe(&samples, &config)
                             });
@@ -160,6 +168,7 @@ impl Daemon {
                         generation,
                         result,
                         started.elapsed().as_secs_f64(),
+                        history_id,
                     ));
                 }
             }
@@ -213,7 +222,6 @@ impl Daemon {
             last_error: String::new(),
             resolved,
             completed: VecDeque::new(),
-            temporary_audio: Vec::new(),
             key_capture: None,
             test: None,
             test_serial: 0,
@@ -359,7 +367,7 @@ impl Daemon {
                 if let Err(error) = result { self.error(format!("Model load failed: {error}")); }
                 self.broadcast_state();
             }
-            Event::Transcribed(generation, result, duration) => self.transcribed(generation, result, duration),
+            Event::Transcribed(generation, result, duration, history_id) => self.transcribed_recording(generation, result, duration, history_id),
             Event::Delivered(_, result) => {
                 self.flow.outputting = false;
                 self.flow.pending = self.flow.pending.saturating_sub(1);
@@ -376,7 +384,17 @@ impl Daemon {
             Event::Stop => {}
         }
     }
+    #[cfg(test)]
     fn transcribed(&mut self, generation: u64, result: Result<String>, duration: f64) {
+        self.transcribed_recording(generation, result, duration, None);
+    }
+    fn transcribed_recording(
+        &mut self,
+        generation: u64,
+        result: Result<String>,
+        duration: f64,
+        history_id: Option<i64>,
+    ) {
         if generation != self.flow.generation {
             self.flow.pending = self.flow.pending.saturating_sub(1);
         } else {
@@ -386,7 +404,12 @@ impl Daemon {
                         "Transcription complete: characters={} elapsed={duration:.2}s",
                         text.chars().count()
                     );
-                    if let Err(error) = self.history.add(&text) {
+                    let saved = if let Some(id) = history_id {
+                        self.history.update_transcription(id, &text, false)
+                    } else {
+                        self.history.add(&text).map(|_| ())
+                    };
+                    if let Err(error) = saved {
                         self.error(format!("Could not save transcription history: {error}"));
                     }
                     self.broadcast(json!({"type":"transcription","text":text,"duration":duration}));
@@ -394,14 +417,16 @@ impl Daemon {
                 }
                 result => {
                     self.flow.pending = self.flow.pending.saturating_sub(1);
-                    self.error(
-                        result
-                            .err()
-                            .map(|error| format!("Transcription failed: {error}"))
-                            .unwrap_or_else(|| {
-                                "No speech detected. Check the microphone in Settings.".into()
-                            }),
-                    );
+                    let message = result
+                        .err()
+                        .map(|error| format!("Transcription failed: {error}"))
+                        .unwrap_or_else(|| {
+                            "No speech detected. Check the microphone in Settings.".into()
+                        });
+                    if let Some(id) = history_id {
+                        let _ = self.history.update_transcription(id, "", true);
+                    }
+                    self.error(message);
                 }
             }
         }
@@ -448,15 +473,36 @@ impl Daemon {
         if let Some(capture) = self.capture.take() {
             match capture.finish() {
                 Ok(file) => {
-                    self.temporary_audio.push(file.path().to_owned());
-                    self.temporary_audio.retain(|p| p.exists());
+                    let recordings = self.config.data_dir.join("recordings");
+                    if let Err(error) = std::fs::create_dir_all(&recordings) {
+                        self.error(format!("Could not save recording: {error}"));
+                        return;
+                    }
+                    let destination = recordings.join(format!(
+                        "dictation-{}-{}.wav",
+                        self.capture_id,
+                        std::process::id()
+                    ));
+                    let source = file.path().to_owned();
+                    if let Err(error) = std::fs::copy(&source, &destination) {
+                        self.error(format!("Could not save recording: {error}"));
+                        return;
+                    }
+                    let duration = hound::WavReader::open(&destination)
+                        .map(|reader| reader.duration() as f64 / reader.spec().sample_rate as f64)
+                        .unwrap_or(0.);
+                    let history_id = self
+                        .history
+                        .add_recording("", &destination, duration, true)
+                        .ok();
                     self.flow.pending += 1;
                     if self
                         .worker
                         .try_send(Work::Transcribe(
-                            file,
+                            destination,
                             self.config.clone(),
                             self.flow.generation,
+                            history_id,
                         ))
                         .is_err()
                     {
@@ -567,6 +613,82 @@ impl Daemon {
                     bail!("Search is too long")
                 }
                 self.reply(id,json!({"type":"history","search":query,"items":self.history.recent(100,query)?}));
+            }
+            "favorite_history" => {
+                self.history.set_favorite(
+                    message["id"].as_i64().unwrap_or_default(),
+                    message["favorite"].as_bool().unwrap_or(false),
+                )?;
+                self.reply(id, json!({"type":"history_changed"}));
+            }
+            "delete_history" => {
+                if let Some(path) = self
+                    .history
+                    .remove(message["id"].as_i64().unwrap_or_default())?
+                {
+                    match std::fs::remove_file(path) {
+                        Ok(()) => {}
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                        Err(error) => return Err(error.into()),
+                    }
+                }
+                self.reply(id, json!({"type":"history_changed"}));
+            }
+            "retry_history" => {
+                let history_id = message["id"].as_i64().unwrap_or_default();
+                let item = self
+                    .history
+                    .get(history_id)?
+                    .ok_or_else(|| anyhow::anyhow!("Recording no longer exists"))?;
+                let path = item["audio_path"]
+                    .as_str()
+                    .filter(|path| !path.is_empty())
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("This older history item has no saved recording")
+                    })?;
+                if !std::path::Path::new(path).is_file() {
+                    bail!("The saved recording is missing")
+                }
+                self.flow.pending += 1;
+                if self
+                    .worker
+                    .try_send(Work::Transcribe(
+                        path.into(),
+                        self.config.clone(),
+                        self.flow.generation,
+                        Some(history_id),
+                    ))
+                    .is_err()
+                {
+                    self.flow.pending -= 1;
+                    bail!("Transcription queue is full")
+                }
+                self.broadcast_state();
+            }
+            "play_history" => {
+                if let Some(item) = self
+                    .history
+                    .get(message["id"].as_i64().unwrap_or_default())?
+                {
+                    if let Some(path) = item["audio_path"].as_str() {
+                        std::process::Command::new("xdg-open")
+                            .arg(path)
+                            .stdin(std::process::Stdio::null())
+                            .stdout(std::process::Stdio::null())
+                            .stderr(std::process::Stdio::null())
+                            .spawn()?;
+                    }
+                }
+            }
+            "open_recordings" => {
+                let directory = self.config.data_dir.join("recordings");
+                std::fs::create_dir_all(&directory)?;
+                std::process::Command::new("xdg-open")
+                    .arg(directory)
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn()?;
             }
             "toggle_listening" | "set_listening" => {
                 if self.key_capture.is_some() {
@@ -816,9 +938,6 @@ impl Drop for Daemon {
     fn drop(&mut self) {
         self.capture.take();
         self.stop_test();
-        for path in &self.temporary_audio {
-            let _ = std::fs::remove_file(path);
-        }
     }
 }
 
