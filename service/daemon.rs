@@ -749,12 +749,17 @@ impl Daemon {
                 if !std::path::Path::new(path).is_file() {
                     bail!("The saved recording is missing")
                 }
+                let config = retry_config(&self.config, message)?;
+                log::info!(
+                    "Retrying history {history_id} with model {}",
+                    config.string("transcription", "model")
+                );
                 self.flow.pending += 1;
                 if self
                     .worker
                     .try_send(Work::Transcribe(
                         path.into(),
-                        self.config.clone(),
+                        config,
                         self.flow.generation,
                         Some(history_id),
                     ))
@@ -763,6 +768,7 @@ impl Daemon {
                     self.flow.pending -= 1;
                     bail!("Transcription queue is full")
                 }
+                self.last_error.clear();
                 self.broadcast_state();
             }
             "play_history" => {
@@ -1041,6 +1047,13 @@ impl Drop for Daemon {
     }
 }
 
+fn retry_config(saved: &Config, message: &Value) -> Result<Config> {
+    match message.get("transcription") {
+        Some(settings) => saved.changed(&json!({"transcription": settings})),
+        None => Ok(saved.clone()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1056,6 +1069,53 @@ mod tests {
         let server = Server::bind(root.path().join("run/daemon.sock")).unwrap();
         let daemon = Daemon::with_server(config, true, false, server).unwrap();
         (root, daemon)
+    }
+    #[test]
+    fn history_retry_uses_selected_settings_without_changing_saved_config() {
+        let root = tempfile::tempdir().unwrap();
+        let saved = Config::at(root.path()).unwrap();
+        let selected = retry_config(
+            &saved,
+            &json!({"transcription":{"model":"canary-180m-flash"}}),
+        )
+        .unwrap();
+        assert_eq!(
+            selected.string("transcription", "model"),
+            "canary-180m-flash"
+        );
+        assert_eq!(saved.string("transcription", "model"), PARAKEET_MODEL);
+        assert_eq!(retry_config(&saved, &json!({})).unwrap().data, saved.data);
+        assert!(retry_config(&saved, &json!({"transcription":{"beam_size":0}})).is_err());
+    }
+    #[test]
+    fn history_retry_queues_selected_model_and_clears_previous_failure() {
+        let (root, mut daemon) = isolated();
+        let path = root.path().join("synthetic.wav");
+        std::fs::write(&path, []).unwrap();
+        let id = daemon.history.add_recording("", &path, 160., true).unwrap();
+        let (worker, receive) = mpsc::sync_channel(5);
+        daemon.worker = worker;
+        daemon.last_error = "Old model failed".into();
+        daemon
+            .command(
+                1,
+                &json!({"cmd":"retry_history", "id":id,
+            "transcription":{"model":"canary-180m-flash"}}),
+            )
+            .unwrap();
+        let Work::Transcribe(queued_path, config, _, history_id) = receive.try_recv().unwrap()
+        else {
+            panic!("Expected a history transcription");
+        };
+        assert_eq!(queued_path, path);
+        assert_eq!(history_id, Some(id));
+        assert_eq!(config.string("transcription", "model"), "canary-180m-flash");
+        assert_eq!(
+            daemon.config.string("transcription", "model"),
+            PARAKEET_MODEL
+        );
+        assert!(daemon.last_error.is_empty());
+        assert_eq!(daemon.flow.pending, 1);
     }
     #[test]
     fn canceled_inference_never_reaches_history_or_output() {

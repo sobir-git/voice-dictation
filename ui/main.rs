@@ -754,7 +754,10 @@ impl Widget for Desktop {
                             self.notice = "Copied to clipboard.".into();
                         }
                         1 => self.request(cx, json!({"cmd":"favorite_history","id":id,"favorite":!item["favorite"].as_bool().unwrap_or(false)})),
-                        2 => self.request(cx, json!({"cmd":"retry_history","id":id})),
+                        2 => {
+                            self.request(cx, json!({"cmd":"retry_history","id":id,"transcription":self.config["transcription"]}));
+                            self.notice = format!("Retrying with {}{}.", self.config["transcription"]["model"].as_str().unwrap_or("selected model"), if self.dirty { " using unsaved transcription settings" } else { "" });
+                        },
                         3 => self.request(cx, json!({"cmd":"delete_history","id":id})),
                         4 => self.request(cx, json!({"cmd":"play_history","id":id})),
                         _ => {}
