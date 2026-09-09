@@ -1158,13 +1158,13 @@ checksum = "3e0f1c7c3a72c66fd80abe965175f7523475c0489a87d3ff9d6e8c87d87a9d2d"
 
 [[package]]
 name = "fire-ui"
-version = "0.7.0"
-source = "git+https://github.com/sobir-git/fire-ui?tag=v0.7.0#6c6b43e6d21681477d498893e63d031e8318397f"
+version = "0.8.0"
+source = "git+https://github.com/sobir-git/fire-ui?tag=v0.8.0#3c7ae73cf4e7ce31a1e9f10abeb604422c068dac"
 
 [[package]]
 name = "fire-ui-cairo"
-version = "0.7.0"
-source = "git+https://github.com/sobir-git/fire-ui?tag=v0.7.0#6c6b43e6d21681477d498893e63d031e8318397f"
+version = "0.8.0"
+source = "git+https://github.com/sobir-git/fire-ui?tag=v0.8.0#3c7ae73cf4e7ce31a1e9f10abeb604422c068dac"
 dependencies = [
  "cairo-rs",
  "fire-ui",
@@ -1176,13 +1176,13 @@ dependencies = [
 
 [[package]]
 name = "fire-ui-fonts"
-version = "0.7.0"
-source = "git+https://github.com/sobir-git/fire-ui?tag=v0.7.0#6c6b43e6d21681477d498893e63d031e8318397f"
+version = "0.8.0"
+source = "git+https://github.com/sobir-git/fire-ui?tag=v0.8.0#3c7ae73cf4e7ce31a1e9f10abeb604422c068dac"
 
 [[package]]
 name = "fire-ui-native"
-version = "0.7.0"
-source = "git+https://github.com/sobir-git/fire-ui?tag=v0.7.0#6c6b43e6d21681477d498893e63d031e8318397f"
+version = "0.8.0"
+source = "git+https://github.com/sobir-git/fire-ui?tag=v0.8.0#3c7ae73cf4e7ce31a1e9f10abeb604422c068dac"
 dependencies = [
  "accesskit",
  "accesskit_atspi_common",
@@ -1207,8 +1207,8 @@ dependencies = [
 
 [[package]]
 name = "fire-ui-text"
-version = "0.7.0"
-source = "git+https://github.com/sobir-git/fire-ui?tag=v0.7.0#6c6b43e6d21681477d498893e63d031e8318397f"
+version = "0.8.0"
+source = "git+https://github.com/sobir-git/fire-ui?tag=v0.8.0#3c7ae73cf4e7ce31a1e9f10abeb604422c068dac"
 dependencies = [
  "fire-ui",
  "fire-ui-fonts",
@@ -1220,8 +1220,8 @@ dependencies = [
 
 [[package]]
 name = "fire-ui-widgets"
-version = "0.7.0"
-source = "git+https://github.com/sobir-git/fire-ui?tag=v0.7.0#6c6b43e6d21681477d498893e63d031e8318397f"
+version = "0.8.0"
+source = "git+https://github.com/sobir-git/fire-ui?tag=v0.8.0#3c7ae73cf4e7ce31a1e9f10abeb604422c068dac"
 dependencies = [
  "fire-ui",
  "unicode-segmentation",
@@ -4664,18 +4664,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.56"
+version = "0.8.57"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "556764e583adb45a9f8d413c2a147fa7e8d821e48e12b14fd560b607998b75eb"
+checksum = "d35102a9f36d089ccae9e4c6802bc118be4487b80aaffc0ab4e0cf5ce92d2873"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.56"
+version = "0.8.57"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2ab42fc20575779bd240faa45f94a74256f755c0fa9e89f0ede20d91d0cdfc1"
+checksum = "146c01f5ab44258da43cf276c74a2763db2ff3969c9c652c3f2de07041d0b2bc"
 dependencies = [
  "proc-macro2",
  "quote",

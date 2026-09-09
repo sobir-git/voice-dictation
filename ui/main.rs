@@ -829,7 +829,7 @@ fn main() -> Result<(), String> {
             ..WindowOptions::default()
         },
         fire_ui_text::Text::new(fonts.clone())?,
-        fire_ui_cairo::Cairo { fonts },
+        fire_ui_cairo::Cairo::direct(fonts),
         move |output, wake| {
             if demo {
                 bridge::demo(output, wake, &mut state);

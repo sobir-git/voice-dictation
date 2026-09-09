@@ -98,7 +98,7 @@ pub fn run() -> Result<(), String> {
             ..WindowOptions::default()
         },
         fire_ui_text::Text::new(fonts.clone())?,
-        fire_ui_cairo::Cairo { fonts },
+        fire_ui_cairo::Cairo::direct(fonts),
         |(), wake| {
             let wake = wake.clone();
             std::thread::spawn(move || {
