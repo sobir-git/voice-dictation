@@ -71,6 +71,15 @@ dbus-run-session -- ./venv/bin/python3 tools/tray_probe.py
 python3 tools/service_ui_probe.py
 ```
 
+Install the current working tree and restart the local service with one command:
+
+```sh
+./update_local.sh
+```
+
+The script reopens the desktop only when it was open before the update. It preserves
+the existing configuration, history database and cached models.
+
 The probes use temporary data and synthetic dictations. `tools/migration_probe.py`
 optionally compares Rust against faster-whisper using synthesized speech. The native
 probe requires Xvfb, xdotool, xclip and Pillow. The tray probe requires dbus-next.

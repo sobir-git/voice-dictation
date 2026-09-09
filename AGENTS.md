@@ -1,21 +1,30 @@
 # Voice Dictation
 
-The UI is native Rust on Fire UI. The Rust speech daemon in `service/` owns
-recording, global hotkeys, CTranslate2 inference, history writes and text output.
-Keep those operations off the UI thread. The adapter is headless, not another UI.
+This is a native Rust desktop built on Fire UI. The Rust daemon in `service/`
+owns recording, global hotkeys, speech inference, history and text output. Keep
+that work off the UI thread. The adapter is headless.
 
-Consume [Fire UI](https://github.com/sobir-git/fire-ui) through public APIs, pinned
-to a published Git tag or commit in Cargo.toml. Keep framework code upstream.
-Fire UI is also our project; propose
-reusable framework improvements through GitHub issues or pull requests in that repo.
-The previous GTK UI belongs only in Git history. No compatibility UI or aliases.
+Parakeet Unified streams through transcribe.cpp by default. Whisper through
+CTranslate2 remains the fallback. Preserve user configuration, SQLite history
+and cached models. The active config exists only at
+`~/.config/speech-to-text/config.yaml`; `config.yaml.example` is a template.
 
-Keep the app dark, fast to resize, and quiet when idle. Preserve user configuration,
-SQLite history and cached speech models. Config lives only in
-`~/.config/speech-to-text/config.yaml`; the project config example is not active.
-Use temporary data and synthetic dictations for screenshots and automated checks.
+Use Fire UI through public APIs pinned to a published tag or commit. Keep reusable
+framework changes upstream in `sobir-git/fire-ui`. Do not restore the old GTK UI
+or compatibility aliases.
 
-Run `cargo test --locked`, strict Clippy, Python unittest discovery, and the native
-probe described in README.md. Inspect native screenshots. Keep docs short while
-this design is evolving. The launcher activates the input group and opens the
-native desktop; only the headless daemon autostarts.
+Keep the app dark, responsive when resized and quiet when idle. Use temporary
+data and synthetic dictations in automated checks. Only the daemon autostarts.
+
+Before handoff, run:
+
+```sh
+cargo test --locked
+cargo clippy --locked --all-targets -- -D warnings
+python3 -m unittest discover -s tests -v
+cargo build --release --locked
+python3 tools/native_probe.py
+```
+
+Inspect the native screenshots. Use `./update_local.sh` to install and restart the
+local development build without replacing user data.
