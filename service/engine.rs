@@ -16,6 +16,7 @@ use std::{
 };
 
 pub const PARAKEET_MODEL: &str = "parakeet-unified-en-0.6b";
+pub const CANARY_MODEL: &str = "canary-180m-flash";
 
 fn parakeet_stream_options() -> transcribe_cpp::StreamOptions {
     transcribe_cpp::StreamOptions {
@@ -28,6 +29,16 @@ fn parakeet_stream_options() -> transcribe_cpp::StreamOptions {
         )),
         ..Default::default()
     }
+}
+
+fn load_transcribe_model(path: PathBuf) -> Result<transcribe_cpp::Model> {
+    Ok(transcribe_cpp::Model::load_with(
+        path,
+        &transcribe_cpp::ModelOptions {
+            backend: transcribe_cpp::Backend::Cpu,
+            device: None,
+        },
+    )?)
 }
 
 pub enum StreamInput {
@@ -102,6 +113,10 @@ pub enum Engine {
         session: transcribe_cpp::Session,
         identity: (String, String),
     },
+    Canary {
+        session: transcribe_cpp::Session,
+        identity: (String, String),
+    },
 }
 impl Engine {
     pub fn load(config: &Config) -> Result<Self> {
@@ -119,13 +134,7 @@ impl Engine {
                 }
                 path
             };
-            let model = transcribe_cpp::Model::load_with(
-                path,
-                &transcribe_cpp::ModelOptions {
-                    backend: transcribe_cpp::Backend::Cpu,
-                    device: None,
-                },
-            )?;
+            let model = load_transcribe_model(path)?;
             if !model.capabilities().supports_streaming {
                 bail!("The selected Parakeet model does not support streaming")
             }
@@ -143,6 +152,17 @@ impl Engine {
                 stream.finalize()?;
             }
             return Ok(Self::Parakeet {
+                session,
+                identity: (name.into(), compute.into()),
+            });
+        }
+        if name == CANARY_MODEL {
+            let api = hf_hub::api::sync::Api::new()?
+                .model("handy-computer/canary-180m-flash-gguf".into());
+            let path = api.get("canary-180m-flash-Q8_0.gguf")?;
+            let model = load_transcribe_model(path)?;
+            let session = model.session()?;
+            return Ok(Self::Canary {
                 session,
                 identity: (name.into(), compute.into()),
             });
@@ -178,7 +198,9 @@ impl Engine {
     }
     pub fn matches(&self, c: &Config) -> bool {
         let identity = match self {
-            Self::Whisper { identity, .. } | Self::Parakeet { identity, .. } => identity,
+            Self::Whisper { identity, .. }
+            | Self::Parakeet { identity, .. }
+            | Self::Canary { identity, .. } => identity,
         };
         identity.0 == c.string("transcription", "model")
             && identity.1 == c.string("transcription", "compute_type")
@@ -193,6 +215,24 @@ impl Engine {
                     samples,
                     &transcribe_cpp::RunOptions {
                         language: Some("en".into()),
+                        ..Default::default()
+                    },
+                )?
+                .text);
+        }
+        if let Self::Canary { session, .. } = self {
+            let language = config.string("transcription", "language");
+            return Ok(session
+                .run(
+                    samples,
+                    &transcribe_cpp::RunOptions {
+                        // Canary does not advertise language detection. English
+                        // is the safe fallback for an empty legacy setting.
+                        language: Some(if language.is_empty() {
+                            "en".into()
+                        } else {
+                            language.into()
+                        }),
                         ..Default::default()
                     },
                 )?

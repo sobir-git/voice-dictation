@@ -5,6 +5,8 @@ desktop and a Rust speech service. Hold your hotkey, speak, and release to type.
 Parakeet Unified is the default English model and streams through transcribe.cpp
 while the hotkey is held. Whisper remains available through CTranslate2, with
 Silero voice activity detection. Python is used only for development probes.
+Canary 180M Flash is also available through transcribe.cpp for English, German,
+Spanish and French; it runs offline after downloading its 208 MB Q8 model.
 
 ```sh
 ./install.sh
@@ -36,7 +38,7 @@ support and `pactl` enable microphone selection. Only the headless service autos
 
 Configuration stays in `~/.config/speech-to-text/config.yaml`; the project example
 is not active. SQLite history stays in `~/.local/share/speech-to-text/history.db`.
-Existing Parakeet and faster-whisper models are reused from the Hugging Face cache.
+Existing Parakeet, Canary and faster-whisper models are reused from the Hugging Face cache.
 Installation preserves configuration, history and models. Uncached models download
 on first use. Streaming previews stay in the native desktop; only finalized text is
 written to history and the focused application.

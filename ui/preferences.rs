@@ -110,22 +110,25 @@ impl Preferences {
         })
     }
     fn options(index: usize, microphones: &[Value]) -> Vec<(String, Value)> {
-        let names: Vec<String> = match index {
-            1 => [
-                "parakeet-unified-en-0.6b",
-                "tiny.en",
-                "base.en",
-                "small.en",
-                "medium.en",
-                "large-v3",
-                "tiny",
-                "base",
-                "small",
-                "medium",
+        if index == 1 {
+            return [
+                ("parakeet-unified-en-0.6b", "parakeet-unified-en-0.6b"),
+                ("Canary 180M Flash", "canary-180m-flash"),
+                ("tiny.en", "tiny.en"),
+                ("base.en", "base.en"),
+                ("small.en", "small.en"),
+                ("medium.en", "medium.en"),
+                ("large-v3", "large-v3"),
+                ("tiny", "tiny"),
+                ("base", "base"),
+                ("small", "small"),
+                ("medium", "medium"),
             ]
             .into_iter()
-            .map(str::to_string)
-            .collect(),
+            .map(|(label, value)| (label.into(), json!(value)))
+            .collect();
+        }
+        let names: Vec<String> = match index {
             2 => ["int8", "int8_float16", "float16", "float32"]
                 .into_iter()
                 .map(str::to_string)

@@ -323,7 +323,7 @@ impl Daemon {
         Ok(())
     }
     fn state(&self) -> Value {
-        json!({"type":"state","protocol":2,"engine":"CTranslate2 / Rust","listening":self.flow.listening,"recording":self.flow.recording,"processing":self.flow.pending>0,"pending":self.flow.pending,"capture_ready":self.capture_ready,"model_ready":self.ready,"output_method":self.resolved,"last_error":self.last_error,"log_level":self.config.string("logging","level"),"hotkey":self.config.string("input","trigger_key"),"microphone":if self.config.string("audio","pipewire_node").is_empty(){self.config.string("audio","device")}else{self.config.string("audio","pipewire_node")}})
+        json!({"type":"state","protocol":2,"engine":"Rust speech engines","listening":self.flow.listening,"recording":self.flow.recording,"processing":self.flow.pending>0,"pending":self.flow.pending,"capture_ready":self.capture_ready,"model_ready":self.ready,"output_method":self.resolved,"last_error":self.last_error,"log_level":self.config.string("logging","level"),"hotkey":self.config.string("input","trigger_key"),"microphone":if self.config.string("audio","pipewire_node").is_empty(){self.config.string("audio","device")}else{self.config.string("audio","pipewire_node")}})
     }
     fn reply(&mut self, id: u64, value: Value) {
         if self
@@ -892,7 +892,7 @@ impl Daemon {
             "diagnostics" => {
                 let tools = ["arecord", "ffmpeg", "xdotool", "ydotool", "dotool", "wtype"]
                     .map(|tool| json!({"name":tool,"installed":crate::process::exists(tool)}));
-                let text = json!({"session":std::env::var("XDG_SESSION_TYPE").unwrap_or_default(),"socket":crate::ipc::socket_path(),"daemon":self.state(),"audio":self.config.data["audio"],"transcription":self.config.data["transcription"],"microphones":audio::microphones(),"engine":"CTranslate2 via ct2rs 0.10.1 (Rust)","tools":tools});
+                let text = json!({"session":std::env::var("XDG_SESSION_TYPE").unwrap_or_default(),"socket":crate::ipc::socket_path(),"daemon":self.state(),"audio":self.config.data["audio"],"transcription":self.config.data["transcription"],"microphones":audio::microphones(),"engine":"Rust speech engines (transcribe.cpp / CTranslate2)","tools":tools});
                 self.reply(id,json!({"type":"diagnostics","text":serde_json::to_string_pretty(&text)?,"logs":crate::logging::recent(&self.config)}));
             }
             "quit" => {

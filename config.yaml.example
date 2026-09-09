@@ -9,6 +9,7 @@ audio:
 
 transcription:
   model: parakeet-unified-en-0.6b
+  # Canary 180M Flash is also available for English, German, Spanish and French.
   compute_type: int8
   language: en
   beam_size: 1
