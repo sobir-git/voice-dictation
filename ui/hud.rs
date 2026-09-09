@@ -1,7 +1,8 @@
 use fire_ui::*;
 use fire_ui_native::{run_with, WindowOptions};
+use fire_ui_widgets::*;
 use serde_json::Value;
-use std::{collections::VecDeque, io::BufRead, sync::Arc};
+use std::{io::BufRead, sync::Arc};
 
 #[derive(Clone)]
 enum Command {
@@ -15,8 +16,8 @@ impl Data for Command {
 }
 struct Hud {
     recording: bool,
-    levels: VecDeque<f32>,
-    label: Option<Arc<Paragraph>>,
+    label: Child<Label>,
+    wave: Child<super::Wave>,
 }
 impl Widget for Hud {
     type Command = Command;
@@ -35,62 +36,38 @@ impl Widget for Hud {
                 if let Some(recording) = state["recording"].as_bool() {
                     if self.recording != recording {
                         self.recording = recording;
-                        if !recording {
-                            self.levels.clear();
-                        }
-                        cx.relayout();
+                        let _ = cx.send(
+                            self.label,
+                            if recording {
+                                "Recording"
+                            } else {
+                                "Transcribing"
+                            }
+                            .into(),
+                        );
+                        let _ = cx.send(self.wave, super::Level(0., recording));
                     }
                 }
                 if let Some(level) = state["level"].as_f64() {
-                    self.levels.push_back((level as f32).clamp(0., 1.));
-                    if self.levels.len() > 16 {
-                        self.levels.pop_front();
-                    }
-                    cx.repaint();
+                    let _ = cx.send(self.wave, super::Level(level as f32, self.recording));
                 }
             }
         }
     }
     fn layout(&mut self, cx: &mut Layout<'_>, c: Constraints) -> Metrics {
-        self.label = Some(cx.paragraph(TextRequest {
-            text: Arc::from(if self.recording {
-                "Recording"
-            } else {
-                "Transcribing"
-            }),
-            style: TextStyle { size: 15., font: 0 },
-            width: Some(135.),
-            revision: 0,
-        }));
-        Metrics::new(c.constrain(Size::new(280., 58.)))
+        let inset = gap(cx, 1.5);
+        row_at(
+            cx,
+            Point::new(inset, inset),
+            c.inset(inset),
+            Flow::gap(gap(cx, 2.)).align(Align::Center),
+            &[Entry::natural(self.label), Entry::fill(self.wave)],
+        );
+        Metrics::new(c.max)
     }
     fn paint(&self, cx: &mut Paint<'_>) {
-        let accent = if self.recording {
-            super::GREEN
-        } else {
-            super::BLUE
-        };
-        cx.painter.rect(
-            Rect::new(0., 0., cx.bounds.width, cx.bounds.height),
-            0.,
-            super::PANEL.into(),
-        );
         cx.painter
-            .rect(Rect::new(0., 0., 3., cx.bounds.height), 0., accent.into());
-        cx.painter
-            .rect(Rect::new(18., 25., 8., 8.), 4., accent.into());
-        if let Some(label) = &self.label {
-            cx.painter
-                .paragraph(label, Point::new(38., 18.), super::TEXT.into());
-        }
-        for i in 0..16 {
-            let h = 3. + self.levels.get(i).copied().unwrap_or(0.) * 29.;
-            cx.painter.rect(
-                Rect::new(178. + i as f32 * 5., (58. - h) / 2., 2.5, h),
-                1.25,
-                accent.into(),
-            );
-        }
+            .rect(cx.bounds, 0., super::theme().color.surface.into());
     }
 }
 
@@ -101,25 +78,27 @@ pub fn run() -> Result<(), String> {
             let (x, y) = s.split_once(',')?;
             Some((x.parse().ok()?, y.parse().ok()?))
         });
+    let fonts = super::fonts()?;
     run_with(
-        Element::leaf(Hud {
+        Element::build(|c| Hud {
             recording: true,
-            levels: VecDeque::new(),
-            label: None,
+            label: c.add(Element::leaf(Label::styled("Recording", TextRole::Body))),
+            wave: c.add(Element::leaf(super::Wave {
+                levels: std::collections::VecDeque::new(),
+                active: true,
+            })),
         }),
         WindowOptions {
-            font: Some(
-                fire_ui_native::system_font()
-                    .ok_or("No system font found; set FIRE_UI_FONT to a font file")?,
-            ),
             title: "Voice Dictation Status".into(),
             overlay: true,
             size: Size::new(280., 58.),
             min_size: Size::new(280., 58.),
             position,
-            background: super::PANEL,
+            background: super::theme().color.surface,
             ..WindowOptions::default()
         },
+        fire_ui_text::Text::new(fonts.clone())?,
+        fire_ui_cairo::Cairo { fonts },
         |(), wake| {
             let wake = wake.clone();
             std::thread::spawn(move || {

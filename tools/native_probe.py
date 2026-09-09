@@ -7,7 +7,8 @@ from pathlib import Path
 import subprocess
 import tempfile
 import time
-from PIL import ImageGrab
+from PIL import ImageGrab, Image
+from native_controls import inspect, control, check_button_alignment
 
 
 def main():
@@ -31,10 +32,18 @@ def main():
                     time.sleep(.05)
                 else:
                     raise RuntimeError('Xvfb did not start')
-                env = {**os.environ, 'DISPLAY': ':'+number, 'LIBGL_ALWAYS_SOFTWARE': '1', 'FIRE_UI_PROFILE': '1'}
+                env = {**os.environ, 'DISPLAY': ':'+number, 'LIBGL_ALWAYS_SOFTWARE': '1', 'FIRE_UI_PROFILE': '1', 'FIRE_UI_INSPECT': str(Path(temporary)/'ui.sock')}
                 env.pop('WAYLAND_DISPLAY', None)
                 def x(*args):
                     return subprocess.check_output(['xdotool', *map(str,args)], env=env, stderr=subprocess.DEVNULL, timeout=5).decode().strip()
+                for _ in range(100):
+                    try:
+                        x('getdisplaygeometry')
+                        break
+                    except subprocess.CalledProcessError:
+                        time.sleep(.05)
+                else:
+                    raise RuntimeError('Xvfb did not become ready')
                 with open(output/'native.log','w') as log:
                     app = subprocess.Popen([str(binary), '--demo'], env=env, stdout=log, stderr=log)
                     for _ in range(100):
@@ -53,42 +62,61 @@ def main():
                     def click(px,py):
                         x('mousemove','--window',window,px,py,'click',1)
                         time.sleep(.25)
+                    def click_control(label, action='activate'):
+                        node = control(env['FIRE_UI_INSPECT'], label, action)
+                        b = node['bounds']
+                        assert b['width'] > 0 and b['height'] > 0, (label, b)
+                        click(b['x'] + b['width']/2, b['y'] + b['height']/2)
                     def key(*keys):
                         x('key','--clearmodifiers',*keys)
                         time.sleep(.2)
                     def shot(name):
                         size=dict(line.split('=') for line in x('getwindowgeometry','--shell',window).splitlines() if '=' in line)
                         ImageGrab.grab(bbox=(0,0,int(size['WIDTH']),int(size['HEIGHT'])),xdisplay=env['DISPLAY']).save(output/(name+'.png'))
+                        snapshot = inspect(env['FIRE_UI_INSPECT'])
+                        check_button_alignment(snapshot)
+                        with Image.open(output/(name+'.png')) as screenshot:
+                            for node in snapshot['nodes']:
+                                if node['role'] == 'Heading' and node['label'] in {'Dictation', 'Dictation history', 'Settings', 'Service status'}:
+                                    b = node['bounds']
+                                    region = screenshot.crop((b['x'], b['y'], b['x']+b['width'], b['y']+b['height']))
+                                    assert sum(max(pixel[:3]) > 160 for pixel in region.getdata()) > 20, ('Missing title pixels', name, node)
+
+                        (output/(name+'.json')).write_text(json.dumps(snapshot, indent=2))
                         print('Screenshot:',name,flush=True)
                     shot('01-dictation')
-                    click(297,329)
+                    click_control('Pause dictation')
                     shot('02-paused')
-                    click(84,242)
+                    click_control('History')
                     time.sleep(.4)
-                    click(460,189)
                     shot('03-history')
-                    click(455,135)
+                    click_control('Search dictations', 'focus')
                     x('type','--clearmodifiers','--delay',5,'tomorrow')
                     time.sleep(.5)
-                    click(450,191)
-                    click(898,535)
+                    click_control('Copy text')
                     copied=subprocess.check_output(['xclip','-selection','clipboard','-o'],env=env,timeout=3).decode()
                     assert 'Three ideas for tomorrow' in copied, copied
                     shot('03a-history-search')
-                    click(82,286)
+                    click_control('Settings')
                     shot('04-settings')
-                    click(620,177)
+                    click_control('Model')
                     shot('05-model-menu')
                     key('Escape')
-                    click(620,362)
-                    click(952,794)
+                    # The preferences viewport owns scrolling and clipping.
+                    x('mousemove','--window',window,700,370,'click','--repeat',4,'--delay',40,5)
+                    time.sleep(.3)
+                    click_control('Normalize audio')
+                    click_control('Save changes')
                     time.sleep(.4)
                     assert '"cmd":"save_config"' in (output/'native.log').read_text()
                     shot('05a-settings-applied')
-                    click(82,334)
+                    click_control('Test microphone')
+                    shot('05b-microphone-test')
+                    click_control('Stop test')
+                    click_control('Status')
                     time.sleep(.4)
                     shot('06-diagnostics')
-                    click(82,195)
+                    click_control('Dictate')
                     time.sleep(.3)
                     ticks=lambda:sum(map(int,Path(f'/proc/{app.pid}/stat').read_text().split()[13:15]))
                     before=ticks()
@@ -97,18 +125,21 @@ def main():
                     assert idle<=2, f'Idle CPU did not settle: {idle} ticks'
                     x('windowsize',window,680,760)
                     time.sleep(.4)
-                    click(65,286)
+                    click_control('Settings')
+                    x('mousemove','--window',window,330,280,'click','--repeat',24,'--delay',20,4)
+                    time.sleep(.2)
                     shot('07-narrow-settings')
-                    x('windowsize',window,420,360)
+                    x('windowsize',window,520,600)
                     time.sleep(.4)
                     shot('08-minimum-settings')
-                    x('mousemove','--window',window,330,163,'click','--repeat',8,'--delay',40,5)
+                    x('mousemove','--window',window,330,280,'click','--repeat',24,'--delay',40,5)
                     time.sleep(.3)
                     shot('09-scrolled-settings')
                     # A synthetic passive HUD must preserve the dictation target's focus.
                     x('windowsize', window, 680, 760)
                     x('windowfocus', window)
                     hud_env = {**env, 'VOICE_DICTATION_HUD_POSITION': '260,180'}
+                    hud_env.pop('FIRE_UI_INSPECT', None)
                     hud = subprocess.Popen([str(binary), '--hud'], env=hud_env, stdin=subprocess.PIPE, stdout=log, stderr=log)
                     try:
                         hud.stdin.write(b'{"recording":true,"level":0.7}\n')

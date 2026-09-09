@@ -1,20 +1,16 @@
 mod bridge;
 mod hud;
+mod preferences;
+mod recording;
 mod view;
 use fire_ui::*;
 use fire_ui_native::{run_with, WindowOptions};
 use fire_ui_widgets::*;
+use preferences::{PreferenceCommand, Preferences};
+use recording::{Recording, RecordingCommand};
 use serde_json::{json, Value};
-use std::{collections::VecDeque, rc::Rc, sync::Arc, time::Duration};
+use std::{collections::VecDeque, sync::Arc, time::Duration};
 
-const BACK: Color = Color::hex(0x12161c);
-const PANEL: Color = Color::hex(0x1a2029);
-const TEXT: Color = Color::hex(0xe7edf5);
-const MUTED: Color = Color::hex(0x96a6b9);
-const BLUE: Color = Color::hex(0x9bc2e7);
-const GREEN: Color = Color::hex(0x83c9b0);
-const CORAL: Color = Color::hex(0xefab98);
-const PAGES: [&str; 4] = ["Dictation", "History", "Settings", "Diagnostics"];
 const ACTIONS: [&str; 12] = [
     "Pause dictation",
     "Copy text",
@@ -62,17 +58,17 @@ enum Command {
     Backend(Arc<Value>),
     Page(usize),
     Action(usize),
-    Field(usize),
+    Setting(usize, Value),
     History(usize),
     Search(EditorOutput),
     Transcript(EditorOutput),
     Language(EditorOutput),
-    Choice(MenuOutput<usize>),
 }
 impl Data for Command {
     fn bytes(&self) -> usize {
         match self {
             Self::Backend(v) => v.to_string().len(),
+            Self::Setting(_, v) => v.to_string().len(),
             Self::Search(o) | Self::Transcript(o) | Self::Language(o) => o.bytes(),
             _ => 32,
         }
@@ -105,7 +101,7 @@ impl Widget for Wave {
         cx.repaint();
     }
     fn layout(&mut self, _: &mut Layout<'_>, c: Constraints) -> Metrics {
-        Metrics::new(c.max)
+        Metrics::new(c.constrain(Size::new(c.max.width, theme().scale.space(6.))))
     }
     fn paint(&self, cx: &mut Paint<'_>) {
         let w = cx.bounds.width;
@@ -126,9 +122,9 @@ impl Widget for Wave {
                 ),
                 2.,
                 if self.active {
-                    GREEN
+                    theme().color.success
                 } else {
-                    Color::hex(0x3a4858)
+                    theme().color.faint
                 }
                 .into(),
             );
@@ -136,19 +132,21 @@ impl Widget for Wave {
     }
 }
 struct Desktop {
-    nav: Vec<Child<Control>>,
+    nav: Child<Tabs>,
+    brand: Child<Label>,
+    title: Child<Label>,
+    subtitle: Child<Label>,
+    section: Child<Label>,
+    hotkey: Child<Label>,
+    feedback: Child<Label>,
+    spacer: Child<Spacer>,
+    preferences: Child<Scroll<Preferences>>,
+    recording: Child<Surface<Recording>>,
+    meter: Child<Progress>,
     actions: Vec<Child<Control>>,
-    fields: Vec<Child<Control>>,
     rows: Vec<Child<Control>>,
     search: Child<Editor>,
     transcript: Child<Editor>,
-    language: Child<Editor>,
-    wave: Child<Wave>,
-    menu: Option<Child<Menu<usize>>>,
-    menu_pending: bool,
-    options: Vec<(String, Value)>,
-    choosing: usize,
-    labels: Vec<(Point, Arc<Paragraph>, Color)>,
     page: usize,
     state: Value,
     config: Value,
@@ -169,35 +167,45 @@ struct Desktop {
     hotkey_waiting: bool,
     search_timer: Timer,
     log_timer: Timer,
-    settings_scroll: f32,
     visible_rows: usize,
-    sidebar: f32,
-    content: Rect,
 }
 fn control(label: &str) -> Element<Control> {
     Button::new(Element::leaf(Label::new(label)), label)
 }
-fn place<W: Widget>(cx: &mut Layout<'_>, child: Child<W>, rect: Rect) {
-    cx.measure(child, Constraints::tight(rect.size()));
-    cx.place(child, Point::new(rect.x, rect.y));
-}
 impl Desktop {
     fn new() -> Element<Self> {
         Element::build(|c| Self {
-            nav: PAGES
-                .iter()
-                .enumerate()
-                .map(|(i, l)| c.connect(control(l), move |_| Command::Page(i)))
-                .collect(),
+            nav: c.connect(
+                Tabs::new(["Dictate", "History", "Settings", "Status"]),
+                |i| Command::Page(*i),
+            ),
+            brand: c.add(Element::leaf(Label::toned(
+                "Voice Dictation",
+                TextRole::Small,
+                ColorRole::Muted,
+            ))),
+            title: c.add(Element::leaf(Label::styled("Dictation", TextRole::Title))),
+            subtitle: c.add(Element::leaf(
+                Label::toned("", TextRole::Small, ColorRole::Muted).wrap(),
+            )),
+            section: c.add(Element::leaf(Label::styled(
+                "Latest transcript",
+                TextRole::Heading,
+            ))),
+            hotkey: c.add(Element::leaf(
+                Label::toned("", TextRole::Small, ColorRole::Muted).wrap(),
+            )),
+            feedback: c.add(Element::leaf(
+                Label::toned("", TextRole::Small, ColorRole::Muted).wrap(),
+            )),
+            spacer: c.add(Spacer::flexible()),
+            preferences: c.connect(Scroll::new(Preferences::new()), |command| command.clone()),
+            recording: c.add(Surface::new(Recording::new())),
+            meter: c.discard(Progress::new("Microphone level", 0.)),
             actions: ACTIONS
                 .iter()
                 .enumerate()
                 .map(|(i, l)| c.connect(control(l), move |_| Command::Action(i)))
-                .collect(),
-            fields: FIELDS
-                .iter()
-                .enumerate()
-                .map(|(i, _)| c.connect(control("Loading…"), move |_| Command::Field(i)))
                 .collect(),
             rows: (0..8)
                 .map(|i| c.connect(control(""), move |_| Command::History(i)))
@@ -215,28 +223,10 @@ impl Desktop {
                     Editor::new("")
                         .placeholder("Your words will appear here.")
                         .caret_blink(false)
-                        .chrome(false)
-                        .padding(0., 8.),
+                        .chrome(true),
                 ),
                 |e| Command::Transcript(e.clone()),
             ),
-            language: c.connect(
-                Element::leaf(
-                    Editor::field("")
-                        .placeholder("Auto detect")
-                        .caret_blink(false),
-                ),
-                |e| Command::Language(e.clone()),
-            ),
-            wave: c.add(Element::leaf(Wave {
-                levels: VecDeque::new(),
-                active: false,
-            })),
-            menu: None,
-            menu_pending: false,
-            options: vec![],
-            choosing: 0,
-            labels: vec![],
             page: 0,
             state: json!({}),
             config: json!({}),
@@ -257,10 +247,7 @@ impl Desktop {
             hotkey_waiting: false,
             search_timer: Timer::new(),
             log_timer: Timer::new(),
-            settings_scroll: 0.,
             visible_rows: 8,
-            sidebar: 184.,
-            content: Rect::default(),
         })
     }
     fn request(&mut self, cx: &mut Update<'_, Self>, v: Value) {
@@ -274,7 +261,11 @@ impl Desktop {
         let _ = cx.send(child, ButtonCommand::Label(text));
     }
     fn set_page(&mut self, cx: &mut Update<'_, Self>, page: usize) {
+        if self.page == page {
+            return;
+        }
         self.page = page;
+        let _ = cx.send(self.nav, TabsCommand(page));
         if matches!(
             self.notice.as_str(),
             "Copied to clipboard." | "Report copied." | "Settings applied."
@@ -356,37 +347,36 @@ impl Desktop {
             self.actions[3],
             ButtonCommand::Disabled(!self.dirty || self.saving || !self.connected),
         );
-        for (i, (_, section, key)) in FIELDS.iter().enumerate() {
-            let value = &self.config[*section][*key];
-            let text = if i == 0 {
-                self.microphones
-                    .iter()
-                    .find(|m| m["name"] == *value)
-                    .and_then(|m| m["description"].as_str())
-                    .unwrap_or("System default")
-                    .into()
-            } else {
-                match value {
-                    Value::Bool(b) => if *b { "On" } else { "Off" }.into(),
-                    Value::String(s) => s.clone(),
-                    Value::Null => "Loading…".into(),
-                    other => other.to_string(),
-                }
-            };
-            Self::button_text(cx, self.fields[i], text);
-            let _ = cx.send(
-                self.fields[i],
-                ButtonCommand::Disabled(!self.loaded || self.saving),
-            );
-        }
-        self.visible_rows = (((cx.bounds().height - 360.).max(0.) / 42.) as usize + 1).clamp(1, 8);
+        let _ = cx.send(
+            self.preferences,
+            PreferenceCommand::Sync(
+                Arc::new(self.config.clone()),
+                Arc::new(self.microphones.clone()),
+                !self.loaded || self.saving,
+            ),
+        );
+        self.visible_rows = (((cx.bounds().height - 440.).max(0.) / 64.) as usize + 1).clamp(1, 8);
         self.history_page = self
             .history_page
             .min(self.history.len().saturating_sub(1) / self.visible_rows);
         for (i, row) in self.rows.iter().enumerate() {
             if let Some(item) = self.history.get(self.history_page * self.visible_rows + i) {
                 let text = item["text"].as_str().unwrap_or("").replace('\n', " ");
-                let excerpt: String = text.chars().take(90).collect();
+                let limit = (((cx.bounds().width - 210.).max(90.) / 8.) as usize).min(90);
+                let mut excerpt: String = text.chars().take(limit).collect();
+                if text.chars().count() > limit {
+                    excerpt.push('…');
+                }
+                let _ = cx.send(
+                    *row,
+                    ButtonCommand::Style(
+                        if item["text"].as_str() == Some(self.diagnostics.as_str()) {
+                            ButtonStyle::Primary
+                        } else {
+                            ButtonStyle::Secondary
+                        },
+                    ),
+                );
                 Self::button_text(
                     cx,
                     *row,
@@ -397,18 +387,6 @@ impl Desktop {
                     ),
                 );
             }
-        }
-        for (i, child) in self.nav.iter().enumerate() {
-            let t = Theme {
-                panel: if i == self.page {
-                    Color::hex(0x293b4c)
-                } else {
-                    BACK
-                },
-                foreground: if i == self.page { TEXT } else { MUTED },
-                ..theme()
-            };
-            let _ = cx.set_environment(*child, Rc::new(t), false);
         }
         let _ = cx.send(
             self.actions[9],
@@ -438,16 +416,6 @@ impl Desktop {
             };
             let _ = cx.show(*b, visible);
         }
-        let h = cx.bounds().height;
-        let gap = if h < 800. { 42. } else { 46. };
-        self.visible_rows = (((h - 360.).max(0.) / 42.) as usize + 1).clamp(1, 8);
-        self.history_page = self
-            .history_page
-            .min(self.history.len().saturating_sub(1) / self.visible_rows);
-        for (i, b) in self.fields.iter().enumerate() {
-            let y = 115. + i as f32 * gap - self.settings_scroll;
-            let _ = cx.show(*b, self.page == 2 && y >= 114. && y + 36. <= h - 169.);
-        }
         for (i, b) in self.rows.iter().enumerate() {
             let _ = cx.show(
                 *b,
@@ -460,17 +428,57 @@ impl Desktop {
             );
         }
         let _ = cx.show(self.search, self.page == 1);
-        let language_y = 115. + FIELDS.len() as f32 * gap - self.settings_scroll;
-        let _ = cx.show(
-            self.language,
-            self.page == 2 && language_y >= 114. && language_y + 36. <= h - 169.,
-        );
+        let _ = cx.show(self.preferences, self.page == 2);
         let _ = cx.show(self.transcript, self.page != 2);
-        let _ = cx.show(
-            self.wave,
-            self.page == 0 || (self.page == 2 && self.test_active),
+        let _ = cx.show(self.recording, self.page == 0);
+        let _ = cx.show(self.meter, self.page == 2 && self.test_active);
+        let _ = cx.show(self.section, self.page == 0);
+        let _ = cx.show(self.hotkey, self.page == 2);
+        let key = key_name(
+            self.state["hotkey"]
+                .as_str()
+                .or(self.config["input"]["trigger_key"].as_str())
+                .unwrap_or("your hotkey"),
+        );
+        let _ = cx.send(
+            self.recording,
+            RecordingCommand::Status(self.status.clone(), key.clone()),
+        );
+        let _ = cx.send(self.hotkey, format!("Dictation hotkey: {key}"));
+        let _ = cx.send(
+            self.title,
+            [
+                "Dictation",
+                "Dictation history",
+                "Settings",
+                "Service status",
+            ][self.page]
+                .into(),
+        );
+        let _ = cx.send(
+            self.subtitle,
+            [
+                "Private speech recognition, on your device.",
+                "Find a previous dictation, edit it, and copy it.",
+                "Changes apply when you save.",
+                "Connection details and recent service activity.",
+            ][self.page]
+                .into(),
+        );
+        let _ = cx.send(
+            self.feedback,
+            if self.notice.is_empty() {
+                if self.connected {
+                    "Speech service connected".into()
+                } else {
+                    "Connecting to speech service...".into()
+                }
+            } else {
+                self.notice.clone()
+            },
         );
         cx.relayout();
+        cx.repaint();
     }
     fn backend(&mut self, cx: &mut Update<'_, Self>, v: &Value) {
         match v["type"].as_str().unwrap_or("") {
@@ -515,13 +523,13 @@ impl Desktop {
                     self.notice = e.into();
                 }
                 if v["recording"].as_bool() != Some(true) {
-                    let _ = cx.send(self.wave, Level(0., false));
+                    let _ = cx.send(self.recording, RecordingCommand::Level(Level(0., false)));
                 }
             }
             "audio_level" => {
                 let _ = cx.send(
-                    self.wave,
-                    Level(v["level"].as_f64().unwrap_or(0.) as f32, true),
+                    self.recording,
+                    RecordingCommand::Level(Level(v["level"].as_f64().unwrap_or(0.) as f32, true)),
                 );
                 return;
             }
@@ -542,15 +550,6 @@ impl Desktop {
                 if !self.dirty && !self.saving {
                     self.config = v["config"].clone();
                     self.loaded = true;
-                    let _ = cx.send(
-                        self.language,
-                        Edit::Set(
-                            self.config["transcription"]["language"]
-                                .as_str()
-                                .unwrap_or("")
-                                .into(),
-                        ),
-                    );
                 }
                 self.microphones = v["microphones"].as_array().cloned().unwrap_or_default();
             }
@@ -597,10 +596,14 @@ impl Desktop {
             }
             "microphone_test" => {
                 self.test_active = v["done"].as_bool() != Some(true);
+                let _ = cx.send(self.meter, v["level"].as_f64().unwrap_or(0.) as f32);
                 self.notice = v["message"].as_str().unwrap_or("").into();
                 let _ = cx.send(
-                    self.wave,
-                    Level(v["level"].as_f64().unwrap_or(0.) as f32, self.test_active),
+                    self.recording,
+                    RecordingCommand::Level(Level(
+                        v["level"].as_f64().unwrap_or(0.) as f32,
+                        self.test_active,
+                    )),
                 );
             }
             "hotkey_waiting" => self.hotkey_waiting = true,
@@ -627,103 +630,8 @@ impl Desktop {
         }
         self.refresh(cx);
     }
-    fn choose(&mut self, cx: &mut Update<'_, Self>, index: usize) {
-        if !self.loaded || self.saving {
-            return;
-        }
-        self.choosing = index;
-        let strings: Vec<String> = match index {
-            1 => [
-                "tiny.en",
-                "base.en",
-                "small.en",
-                "medium.en",
-                "large-v3",
-                "tiny",
-                "base",
-                "small",
-                "medium",
-            ]
-            .iter()
-            .map(|s| s.to_string())
-            .collect(),
-            2 => ["int8", "int8_float16", "float16", "float32"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
-            3 => (1..=10).map(|n| n.to_string()).collect(),
-            6 => [
-                "auto", "xdotool", "ydotool", "dotool", "wtype", "xclip", "none",
-            ]
-            .iter()
-            .map(|s| s.to_string())
-            .collect(),
-            _ => vec![],
-        };
-        if index == 0 {
-            self.options = vec![("System default".into(), json!(""))];
-            self.options.extend(self.microphones.iter().map(|m| {
-                (
-                    m["description"].as_str().unwrap_or("Microphone").into(),
-                    m["name"].clone(),
-                )
-            }));
-        } else if [4, 5, 7, 8, 9, 10].contains(&index) {
-            let (_, s, k) = FIELDS[index];
-            let old = self.config[s][k].as_bool().unwrap_or(false);
-            self.config[s][k] = json!(!old);
-            self.dirty = true;
-            self.refresh(cx);
-            return;
-        } else {
-            self.options = strings
-                .into_iter()
-                .map(|s| {
-                    let v = if index == 3 {
-                        json!(s.parse::<u8>().unwrap())
-                    } else {
-                        json!(s)
-                    };
-                    (s, v)
-                })
-                .collect();
-        }
-        let items = self
-            .options
-            .iter()
-            .enumerate()
-            .map(|(i, (label, _))| MenuItem::new(i, label.clone()))
-            .collect();
-        match cx.insert(Menu::new(items, Point::new(self.content.x, 110.)), |o| {
-            Command::Choice(o.clone())
-        }) {
-            Ok(menu) => {
-                self.menu = Some(menu);
-                self.menu_pending = true;
-                cx.request_frame();
-            }
-            Err(_) => self.notice = "Could not open choices.".into(),
-        }
-        cx.relayout();
-    }
-    fn caption(
-        &mut self,
-        cx: &mut Layout<'_>,
-        text: impl Into<String>,
-        at: Point,
-        size: f32,
-        color: Color,
-        width: f32,
-    ) {
-        let p = cx.paragraph(TextRequest {
-            text: Arc::from(text.into()),
-            style: TextStyle { size, font: 0 },
-            width: Some(width.max(1.)),
-            revision: 0,
-        });
-        self.labels.push((at, p, color));
-    }
 }
+
 fn key_name(key: &str) -> String {
     match key {
         "KEY_RIGHTCTRL" => "Right Ctrl".into(),
@@ -736,19 +644,12 @@ fn key_name(key: &str) -> String {
     }
 }
 fn theme() -> Theme {
-    Theme {
-        background: BACK,
-        panel: PANEL,
-        raised: Color::hex(0x283441),
-        border: Color::hex(0x354354),
-        foreground: TEXT,
-        muted: MUTED,
-        accent: BLUE,
-        selection: Color::hex(0x354d65),
-        font_size: 14.,
-        inset: 8.,
-        radius: 6.,
-    }
+    Theme::dark()
+}
+fn fonts() -> Result<fire_ui_fonts::Fonts, String> {
+    let path = fire_ui_text::system_font()
+        .ok_or("No system font found; set FIRE_UI_FONT to a font file")?;
+    fire_ui_fonts::Fonts::load(&[path])
 }
 impl Widget for Desktop {
     type Command = Command;
@@ -758,18 +659,7 @@ impl Widget for Desktop {
             self.refresh(cx);
         }
         if event == Lifecycle::Mount {
-            for child in self
-                .nav
-                .iter()
-                .chain(&self.actions)
-                .chain(&self.fields)
-                .chain(&self.rows)
-            {
-                let _ = cx.set_environment(*child, Rc::new(theme()), true);
-            }
-            for child in [self.search, self.transcript, self.language] {
-                let _ = cx.set_environment(child, Rc::new(theme()), true);
-            }
+            let _ = cx.send(self.actions[3], ButtonCommand::Style(ButtonStyle::Primary));
             let _ = cx.emit(Output::Start);
             self.refresh(cx);
         }
@@ -845,11 +735,26 @@ impl Widget for Desktop {
                 }
                 _ => {}
             },
-            Command::Field(i) => self.choose(cx, i),
+            Command::Setting(i, value) => {
+                if self.loaded && !self.saving {
+                    let (_, section, key) = FIELDS[i];
+                    self.config[section][key] = value.clone();
+                    if i == 0 {
+                        self.config["audio"]["device"] = json!(if value.as_str() == Some("") {
+                            "default"
+                        } else {
+                            "pipewire"
+                        });
+                    }
+                    self.dirty = true;
+                    self.refresh(cx);
+                }
+            }
             Command::History(i) => {
                 if let Some(item) = self.history.get(self.history_page * self.visible_rows + i) {
                     self.diagnostics = item["text"].as_str().unwrap_or("").into();
                     let _ = cx.send(self.transcript, Edit::Set(self.diagnostics.clone()));
+                    self.refresh(cx);
                 }
             }
             Command::Search(EditorOutput::Changed { text, .. }) => {
@@ -875,53 +780,7 @@ impl Widget for Desktop {
                     self.refresh(cx);
                 }
             }
-            Command::Choice(result) => {
-                if let MenuOutput::Selected(i) = result {
-                    if let Some((_, v)) = self.options.get(i) {
-                        let (_, s, k) = FIELDS[self.choosing];
-                        self.config[s][k] = v.clone();
-                        if self.choosing == 0 {
-                            self.config["audio"]["device"] = json!(if v.as_str() == Some("") {
-                                "default"
-                            } else {
-                                "pipewire"
-                            });
-                        }
-                        self.dirty = true;
-                    }
-                }
-                let _ = cx.close_modal();
-                if let Some(m) = self.menu.take() {
-                    let _ = cx.remove(m);
-                }
-                self.refresh(cx);
-            }
             _ => {}
-        }
-    }
-    fn input(&mut self, cx: &mut Update<'_, Self>, phase: Phase, input: &Input) {
-        if phase == Phase::Preview || self.page != 2 {
-            return;
-        }
-        if let Input::Scroll { position, delta } = input {
-            if position.x >= self.sidebar {
-                let h = cx.bounds().height;
-                let gap = if h < 800. { 42. } else { 46. };
-                let max = ((FIELDS.len() + 1) as f32 * gap - (h - 169. - 115.)).max(0.);
-                self.settings_scroll = (self.settings_scroll - delta.y).clamp(0., max);
-                self.refresh(cx);
-                cx.stop();
-            }
-        }
-    }
-    fn frame(&mut self, cx: &mut Update<'_, Self>, _: FrameTime) {
-        if self.menu_pending {
-            self.menu_pending = false;
-            if let Some(m) = self.menu {
-                let _ = cx.set_environment(m, Rc::new(theme()), true);
-                let _ = cx.open_modal(m);
-                let _ = cx.focus_child(m);
-            }
         }
     }
     fn timer(&mut self, cx: &mut Update<'_, Self>, timer: Timer) {
@@ -946,7 +805,8 @@ impl Widget for Desktop {
         self.layout_view(cx, c)
     }
     fn paint(&self, cx: &mut Paint<'_>) {
-        self.paint_view(cx)
+        cx.painter
+            .rect(cx.bounds, 0., theme().color.background.into());
     }
 }
 fn main() -> Result<(), String> {
@@ -956,18 +816,18 @@ fn main() -> Result<(), String> {
     let demo = std::env::args().any(|a| a == "--demo");
     let mut connection: Option<bridge::Bridge> = None;
     let mut state = json!({"type":"state","listening":true,"recording":false,"processing":false,"model_ready":true,"hotkey":"KEY_RIGHTCTRL","output_method":"xdotool","last_error":""});
+    let fonts = fonts()?;
     run_with(
         Desktop::new(),
         WindowOptions {
-            font: Some(
-                fire_ui_native::system_font()
-                    .ok_or("No system font found; set FIRE_UI_FONT to a font file")?,
-            ),
             title: "Voice Dictation".into(),
             size: Size::new(1060., 860.),
-            background: BACK,
+            min_size: Size::new(520., 600.),
+            background: theme().color.background,
             ..WindowOptions::default()
         },
+        fire_ui_text::Text::new(fonts.clone())?,
+        fire_ui_cairo::Cairo { fonts },
         move |output, wake| {
             if demo {
                 bridge::demo(output, wake, &mut state);

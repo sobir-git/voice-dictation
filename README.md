@@ -11,7 +11,9 @@ used only for development probes and optional comparison against faster-whisper.
 ./run.sh
 ```
 
-The desktop includes microphone levels, an editable transcript, searchable history,
+The desktop uses Fire UI’s Ember Dark theme, native tabs, dropdowns and switches.
+Framework layout and scrolling handle resizing; Cairo draws the window.
+It includes microphone levels, an editable transcript, searchable history,
 settings and diagnostics. Closing it leaves dictation running. The tray reopens the
 desktop, pauses dictation and cancels pending work. Quit Voice Dictation closes the
 app and stops the service; opening the app starts it again. Enable Floating indicator in
@@ -21,7 +23,8 @@ uses X11/XWayland and does not take keyboard focus or intercept clicks.
 ## Requirements
 
 Rust, CMake, a C++ compiler, `alsa-utils`, `ffmpeg`, and
-native X11/OpenGL libraries, including `libxkbcommon-x11-0` on Debian/Ubuntu.
+native X11, Cairo and FreeType libraries, including `libxkbcommon-x11-0` on Debian/Ubuntu. Building also needs
+`pkg-config`, `libcairo2-dev` and `libfreetype6-dev`.
 A system font is required; `FIRE_UI_FONT` can select a font file.
 The first build compiles CTranslate2 and oneDNN;
 ONNX Runtime is downloaded for Silero. Inference currently targets the CPU.
@@ -52,7 +55,7 @@ UI thread. Microphone tests keep samples in memory and never transcribe them.
 
 Fire UI is also our project. Consume its public APIs here and propose reusable
 framework improvements through [upstream issues or PRs](https://github.com/sobir-git/fire-ui).
-The app pins the published [Fire UI v0.4.0 release](https://github.com/sobir-git/fire-ui/releases/tag/v0.4.0).
+The app pins the published [Fire UI v0.7.0 release](https://github.com/sobir-git/fire-ui/releases/tag/v0.7.0).
 
 ```sh
 cargo test --locked

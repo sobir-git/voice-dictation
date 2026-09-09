@@ -29,9 +29,12 @@ tokenizers = { version = "0.22", default-features = false, features = ["fancy-re
 voice_activity_detector = "0.2.1"
 hf-hub = { version = "0.4", default-features = false, features = ["ureq"] }
 
-fire-ui = { git = "https://github.com/sobir-git/fire-ui", tag = "v0.4.0" }
-fire-ui-widgets = { git = "https://github.com/sobir-git/fire-ui", tag = "v0.4.0" }
-fire-ui-native = { git = "https://github.com/sobir-git/fire-ui", tag = "v0.4.0", features = ["clipboard", "accessibility"] }
+fire-ui = { git = "https://github.com/sobir-git/fire-ui", tag = "v0.7.0" }
+fire-ui-widgets = { git = "https://github.com/sobir-git/fire-ui", tag = "v0.7.0" }
+fire-ui-native = { git = "https://github.com/sobir-git/fire-ui", tag = "v0.7.0", features = ["clipboard", "accessibility", "inspection"] }
+fire-ui-fonts = { git = "https://github.com/sobir-git/fire-ui", tag = "v0.7.0" }
+fire-ui-text = { git = "https://github.com/sobir-git/fire-ui", tag = "v0.7.0" }
+fire-ui-cairo = { git = "https://github.com/sobir-git/fire-ui", tag = "v0.7.0", features = ["x11"] }
 serde_json = "1"
 [profile.release]
 opt-level = 3

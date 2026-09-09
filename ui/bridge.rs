@@ -97,7 +97,7 @@ pub fn demo(output: Output, wake: &WakeHandle<Desktop>, state: &mut Value) {
             let _ = wake.post(Command::Backend(Arc::new(json!({"type":"config","config":{
                 "audio":{"pipewire_node":"","device":"default","preprocess":true},
                 "transcription":{"model":"base.en","compute_type":"int8","language":"en","beam_size":1,"vad_filter":true},
-                "input":{"trigger_key":"KEY_RIGHTCTRL"},"output":{"method":"auto","add_space":true},
+                "ui":{"cursor_indicator":false},"input":{"trigger_key":"KEY_RIGHTCTRL"},"output":{"method":"auto","add_space":true},
                 "notifications":{"enabled":true,"audio_feedback":true},"logging":{"level":"INFO"}
             },"microphones":[{"name":"desk-mic","description":"Desk microphone"}]}))));
             let _ = wake.post(Command::Backend(Arc::new(json!({"type":"transcription","text":"A thought worth keeping.\n\nLet's make the next version simpler, faster, and a pleasure to use.","duration":3.2}))));
@@ -124,7 +124,9 @@ pub fn demo(output: Output, wake: &WakeHandle<Desktop>, state: &mut Value) {
                 }
                 "capture_hotkey" => json!({"type":"hotkey","key":"KEY_F16"}),
                 "test_microphone" => {
-                    json!({"type":"microphone_test","level":0.65,"message":"Microphone signal detected. Test complete.","done":true})
+                    let active = !state["microphone_testing"].as_bool().unwrap_or(false);
+                    state["microphone_testing"] = json!(active);
+                    json!({"type":"microphone_test","level":if active {0.65} else {0.},"message":if active {"Microphone signal detected."} else {"Microphone test stopped."},"done":!active})
                 }
                 "diagnostics" => {
                     json!({"type":"diagnostics","text":"Voice Dictation\n\nSpeech service connected\nMicrophone: System default\nModel: base.en / int8\nText output: xdotool\n\nAll required tools are available.","logs":"11:42  Dictation completed\n11:42  Audio capture ready"})

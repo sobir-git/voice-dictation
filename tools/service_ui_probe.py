@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 import time
 from PIL import ImageGrab
+from native_controls import control
 
 
 def main():
@@ -42,7 +43,7 @@ def main():
                     time.sleep(.05)
                 else:
                     raise RuntimeError('Xvfb did not start')
-                env = {**os.environ, 'HOME': str(root), 'STT_SOCKET_PATH': str(root/'run/daemon.sock'), 'DISPLAY': ':'+number, 'LIBGL_ALWAYS_SOFTWARE': '1'}
+                env = {**os.environ, 'HOME': str(root), 'STT_SOCKET_PATH': str(root/'run/daemon.sock'), 'DISPLAY': ':'+number, 'LIBGL_ALWAYS_SOFTWARE': '1', 'FIRE_UI_INSPECT': str(root/'ui.sock')}
                 env.pop('WAYLAND_DISPLAY', None)
                 daemon = subprocess.Popen([str(binaries/'speech-service'), '--probe'], env=env, stdout=log, stderr=log)
                 processes.append(daemon)
@@ -66,14 +67,16 @@ def main():
                 x('windowfocus', window)
                 # Copy through the actual UI, after the adapter has loaded temporary history.
                 for _ in range(30):
-                    x('mousemove', '--window', window, 965, 403, 'click', 1)
+                    b = control(env['FIRE_UI_INSPECT'], 'Copy text')['bounds']
+                    x('mousemove', '--window', window, b['x']+b['width']/2, b['y']+b['height']/2, 'click', 1)
                     time.sleep(.1)
                     copied = subprocess.run(['xclip', '-selection', 'clipboard', '-o'], env=env, capture_output=True, timeout=3).stdout.decode()
                     if copied == 'Synthetic Rust service transcript. Салом!':
                         break
                 else:
                     raise AssertionError(f'Rust adapter did not populate the native transcript: {copied!r}')
-                x('mousemove', '--window', window, 297, 329, 'click', 1)
+                b = control(env['FIRE_UI_INSPECT'], 'Pause dictation')['bounds']
+                x('mousemove', '--window', window, b['x']+b['width']/2, b['y']+b['height']/2, 'click', 1)
                 time.sleep(.3)
                 with socket.socket(socket.AF_UNIX) as client:
                     client.settimeout(3)
