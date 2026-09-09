@@ -158,7 +158,7 @@ fn format_timestamp(timestamp: &str) -> String {
     let Some((date, time)) = timestamp.split_once(' ') else {
         return timestamp.to_owned();
     };
-    let mut date = date.split('-').filter_map(|part| part.parse::<u32>().ok());
+    let mut date = date.split('-').filter_map(|part| part.parse::<i32>().ok());
     let (Some(year), Some(month), Some(day)) = (date.next(), date.next(), date.next()) else {
         return timestamp.to_owned();
     };
@@ -167,18 +167,7 @@ fn format_timestamp(timestamp: &str) -> String {
         return timestamp.to_owned();
     };
     let months = [
-        "January",
-        "February",
-        "March",
-        "April",
-        "May",
-        "June",
-        "July",
-        "August",
-        "September",
-        "October",
-        "November",
-        "December",
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     ];
     let Some(month) = months.get(month.saturating_sub(1) as usize) else {
         return timestamp.to_owned();
@@ -188,5 +177,25 @@ fn format_timestamp(timestamp: &str) -> String {
         0 => 12,
         hour => hour,
     };
-    format!("{month} {day}, {year} at {hour}:{minute:02} {suffix}")
+    if year == current_year() {
+        format!("{month} {day}, {hour}:{minute:02} {suffix}")
+    } else {
+        format!("{month} {day}, {year}, {hour}:{minute:02} {suffix}")
+    }
+}
+
+fn current_year() -> i32 {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let z = secs.div_euclid(86_400) + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let month = mp + if mp < 10 { 3 } else { -9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    year as i32
 }

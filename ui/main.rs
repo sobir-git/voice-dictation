@@ -170,6 +170,7 @@ struct Desktop {
     hotkey_waiting: bool,
     search_timer: Timer,
     log_timer: Timer,
+    fit_timer: Timer,
     visible_rows: usize,
 }
 fn control(label: &str) -> Element<Control> {
@@ -254,6 +255,7 @@ impl Desktop {
             hotkey_waiting: false,
             search_timer: Timer::new(),
             log_timer: Timer::new(),
+            fit_timer: Timer::new(),
             visible_rows: 8,
         })
     }
@@ -362,7 +364,6 @@ impl Desktop {
                 !self.loaded || self.saving,
             ),
         );
-        self.visible_rows = (((cx.bounds().height - 520.).max(0.) / 200.) as usize + 1).clamp(1, 8);
         self.history_page = self
             .history_page
             .min(self.history.len().saturating_sub(1) / self.visible_rows);
@@ -384,7 +385,7 @@ impl Desktop {
         for (i, b) in self.actions.iter().enumerate() {
             let visible = match i {
                 0 => self.page == 0,
-                1 => self.page == 0 || self.page == 1,
+                1 => self.page == 0,
                 2 => {
                     self.page == 0
                         && (self.state["recording"].as_bool() == Some(true)
@@ -648,11 +649,13 @@ impl Widget for Desktop {
     fn lifecycle(&mut self, cx: &mut Update<'_, Self>, event: Lifecycle) {
         if event == Lifecycle::Resized {
             self.refresh(cx);
+            let _ = cx.after(self.fit_timer, Duration::ZERO);
         }
         if event == Lifecycle::Mount {
             let _ = cx.send(self.actions[3], ButtonCommand::Style(ButtonStyle::Primary));
             let _ = cx.emit(Output::Start);
             self.refresh(cx);
+            let _ = cx.after(self.fit_timer, Duration::ZERO);
         }
     }
     fn update(&mut self, cx: &mut Update<'_, Self>, cmd: Command) {
@@ -791,6 +794,9 @@ impl Widget for Desktop {
         }
         if timer == self.log_timer && self.page == 3 {
             self.request(cx, json!({"cmd":"diagnostics"}));
+        }
+        if timer == self.fit_timer && self.page == 1 {
+            self.refresh(cx);
         }
     }
     fn close_requested(&mut self, cx: &mut Update<'_, Self>) -> bool {
