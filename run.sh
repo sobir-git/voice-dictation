@@ -2,9 +2,6 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export VOICE_DICTATION_PROJECT="$SCRIPT_DIR"
-# Active OpenMP workers cut inference latency. The engine explicitly pauses
-# them after model loading and each transcription so the daemon stays idle.
-export OMP_WAIT_POLICY="${OMP_WAIT_POLICY:-ACTIVE}"
 if [[ "${1:-}" == '--daemon' ]]; then
   shift
   if [[ ! -x "$SCRIPT_DIR/target/release/speech-service" ]]; then

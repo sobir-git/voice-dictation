@@ -282,9 +282,6 @@ fn measure(executable: &Path, config: &Config, seconds: u64, cancel: &AtomicBool
     )?;
     let mut command = Command::new(executable);
     crate::process::kill_with_parent(&mut command);
-    if profile(config) == "hybrid" {
-        command.env("OMP_WAIT_POLICY", "ACTIVE");
-    }
     let mut child = command
         .arg("--benchmark-case")
         .arg(&request)

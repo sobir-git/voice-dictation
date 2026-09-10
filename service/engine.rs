@@ -111,7 +111,6 @@ fn load_transcribe_model(path: PathBuf, config: &Config) -> Result<transcribe_cp
     if hybrid {
         std::env::set_var("TRANSCRIBE_CANARY_HYBRID", "1");
         std::env::set_var("GGML_VK_DISABLE_F16", "1");
-        std::env::set_var("OMP_WAIT_POLICY", "ACTIVE");
     } else {
         std::env::remove_var("TRANSCRIBE_CANARY_HYBRID");
         std::env::remove_var("GGML_VK_DISABLE_F16");
