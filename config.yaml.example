@@ -15,6 +15,11 @@ transcription:
   beam_size: 1
   vad_filter: true
 
+# CLI benchmarks do not change settings; --apply-optimization applies your choice.
+performance:
+  profile: standard  # standard, vulkan (GGUF), fast (Whisper), adaptive (base.en only)
+  threads: 0         # 0 keeps the engine default; no host-specific core pinning
+
 input:
   trigger_key: KEY_F16
 

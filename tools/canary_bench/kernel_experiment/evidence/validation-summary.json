@@ -1,0 +1,283 @@
+{
+  "variants": {
+    "baseline": {
+      "short": {
+        "seconds": 0.620749867,
+        "samples": [
+          0.5879374,
+          0.606182594,
+          0.63531714,
+          0.637678377
+        ],
+        "all_text_equal_baseline": true,
+        "word_errors": 2,
+        "reference_words": 32,
+        "speedup": 1.0
+      },
+      "medium": {
+        "seconds": 1.743864113,
+        "samples": [
+          1.710756474,
+          1.735331098,
+          1.822285032,
+          1.7523971280000001
+        ],
+        "all_text_equal_baseline": true,
+        "word_errors": 11,
+        "reference_words": 100,
+        "speedup": 1.0
+      },
+      "long": {
+        "seconds": 7.6306978225,
+        "samples": [
+          7.486432322,
+          7.603215835,
+          7.678554014,
+          7.65817981
+        ],
+        "all_text_equal_baseline": true,
+        "word_errors": 23,
+        "reference_words": 411,
+        "speedup": 1.0
+      },
+      "technical": {
+        "seconds": 0.988500067,
+        "samples": [
+          1.002053467,
+          1.002988874,
+          0.974946667,
+          0.95925883
+        ],
+        "all_text_equal_baseline": true,
+        "word_errors": 2,
+        "reference_words": 50,
+        "speedup": 1.0
+      },
+      "silence": {
+        "seconds": 0.1206587095,
+        "samples": [
+          0.122099738,
+          0.113387388,
+          0.119217681,
+          0.122262778
+        ],
+        "all_text_equal_baseline": true,
+        "word_errors": 0,
+        "reference_words": 0,
+        "speedup": 1.0
+      }
+    },
+    "dw": {
+      "short": {
+        "seconds": 0.5523519434999999,
+        "samples": [
+          0.532685769,
+          0.554425205,
+          0.550278682,
+          0.566582393
+        ],
+        "all_text_equal_baseline": true,
+        "word_errors": 2,
+        "reference_words": 32,
+        "speedup": 1.1238303301090857
+      },
+      "medium": {
+        "seconds": 1.634366491,
+        "samples": [
+          1.629830189,
+          1.599140808,
+          1.638902793,
+          1.646986068
+        ],
+        "all_text_equal_baseline": true,
+        "word_errors": 11,
+        "reference_words": 100,
+        "speedup": 1.0669969817681486
+      },
+      "long": {
+        "seconds": 6.9843127645,
+        "samples": [
+          6.910852437,
+          6.932859404,
+          7.035766125,
+          7.05769265
+        ],
+        "all_text_equal_baseline": true,
+        "word_errors": 23,
+        "reference_words": 411,
+        "speedup": 1.0925481260354575
+      },
+      "technical": {
+        "seconds": 0.8837779914999999,
+        "samples": [
+          0.878236507,
+          0.88238827,
+          0.885167713,
+          0.885491995
+        ],
+        "all_text_equal_baseline": true,
+        "word_errors": 2,
+        "reference_words": 50,
+        "speedup": 1.1184936449053904
+      },
+      "silence": {
+        "seconds": 0.0999559605,
+        "samples": [
+          0.097979355,
+          0.097112362,
+          0.101932566,
+          0.103794315
+        ],
+        "all_text_equal_baseline": true,
+        "word_errors": 0,
+        "reference_words": 0,
+        "speedup": 1.2071187040416664
+      }
+    },
+    "combined": {
+      "short": {
+        "seconds": 0.543879265,
+        "samples": [
+          0.519947514,
+          0.548465316,
+          0.539293214,
+          0.596638537
+        ],
+        "all_text_equal_baseline": true,
+        "word_errors": 2,
+        "reference_words": 32,
+        "speedup": 1.1413376220547773
+      },
+      "medium": {
+        "seconds": 1.589014364,
+        "samples": [
+          1.56159195,
+          1.594400005,
+          1.583628723,
+          1.597499933
+        ],
+        "all_text_equal_baseline": true,
+        "word_errors": 11,
+        "reference_words": 100,
+        "speedup": 1.0974501883105696
+      },
+      "long": {
+        "seconds": 6.831393523999999,
+        "samples": [
+          6.8601969,
+          6.774037455,
+          6.830391366,
+          6.832395682
+        ],
+        "all_text_equal_baseline": true,
+        "word_errors": 23,
+        "reference_words": 411,
+        "speedup": 1.117004575375711
+      },
+      "technical": {
+        "seconds": 0.9520966769999999,
+        "samples": [
+          1.042091421,
+          0.885549756,
+          1.018643598,
+          0.883032741
+        ],
+        "all_text_equal_baseline": true,
+        "word_errors": 2,
+        "reference_words": 50,
+        "speedup": 1.0382349722243598
+      },
+      "silence": {
+        "seconds": 0.0901688135,
+        "samples": [
+          0.095295445,
+          0.083117514,
+          0.092278828,
+          0.088058799
+        ],
+        "all_text_equal_baseline": true,
+        "word_errors": 0,
+        "reference_words": 0,
+        "speedup": 1.3381423667064223
+      }
+    }
+  },
+  "process": {
+    "baseline": {
+      "max_rss_mib": 698.2265625,
+      "other_events": [
+        {
+          "backend": "gguf",
+          "event": "loaded",
+          "peak_rss_kib": 297164,
+          "seconds": 0.119342947
+        },
+        {
+          "cpu_seconds_over_2s": 1.8000000011397788e-05,
+          "event": "idle"
+        },
+        {
+          "backend": "gguf",
+          "event": "loaded",
+          "peak_rss_kib": 297332,
+          "seconds": 0.122459039
+        },
+        {
+          "cpu_seconds_over_2s": 0.00011100000000396903,
+          "event": "idle"
+        }
+      ]
+    },
+    "dw": {
+      "max_rss_mib": 519.40234375,
+      "other_events": [
+        {
+          "backend": "gguf",
+          "event": "loaded",
+          "peak_rss_kib": 297544,
+          "seconds": 0.1224092
+        },
+        {
+          "cpu_seconds_over_2s": 2.1000000003823516e-05,
+          "event": "idle"
+        },
+        {
+          "backend": "gguf",
+          "event": "loaded",
+          "peak_rss_kib": 297472,
+          "seconds": 0.120244417
+        },
+        {
+          "cpu_seconds_over_2s": 1.900000000887303e-05,
+          "event": "idle"
+        }
+      ]
+    },
+    "combined": {
+      "max_rss_mib": 519.5546875,
+      "other_events": [
+        {
+          "backend": "gguf",
+          "event": "loaded",
+          "peak_rss_kib": 297844,
+          "seconds": 0.119086418
+        },
+        {
+          "cpu_seconds_over_2s": 9.900000000584441e-05,
+          "event": "idle"
+        },
+        {
+          "backend": "gguf",
+          "event": "loaded",
+          "peak_rss_kib": 297376,
+          "seconds": 0.121937813
+        },
+        {
+          "cpu_seconds_over_2s": 2.600000001962144e-05,
+          "event": "idle"
+        }
+      ]
+    }
+  },
+  "method": "median of four warm samples; two process orders, one cold and two warm rounds per process"
+}

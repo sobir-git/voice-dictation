@@ -1,0 +1,434 @@
+{
+  "cpu": "Intel Core i5-12500H",
+  "date": "2026-09-09",
+  "decision": "Keep transcribe.cpp; Handy ONNX did not win.",
+  "cases": {
+    "short": {
+      "audio_seconds": 10.315,
+      "gguf": {
+        "median_warm_seconds": 0.7444214825,
+        "warm_seconds": [
+          0.782045744,
+          0.765033633,
+          0.723809332,
+          0.692018871
+        ]
+      },
+      "onnx": {
+        "median_warm_seconds": 1.1550492955,
+        "warm_seconds": [
+          1.5487848629999998,
+          1.091770578,
+          1.218328013,
+          1.034152724
+        ]
+      }
+    },
+    "medium": {
+      "audio_seconds": 31.0453125,
+      "gguf": {
+        "median_warm_seconds": 2.1841613635,
+        "warm_seconds": [
+          2.243974443,
+          2.267622768,
+          2.124348284,
+          2.083399546
+        ]
+      },
+      "onnx": {
+        "median_warm_seconds": 4.273019431,
+        "warm_seconds": [
+          4.398230141,
+          4.147808721,
+          4.449265453,
+          4.030297783
+        ]
+      }
+    },
+    "long": {
+      "audio_seconds": 134.57975,
+      "gguf": {
+        "median_warm_seconds": 9.9625096725,
+        "warm_seconds": [
+          10.677048304,
+          14.979989029,
+          9.247971041,
+          9.022145696
+        ]
+      },
+      "onnx": {
+        "median_warm_seconds": 19.888482863,
+        "warm_seconds": [
+          21.970605926,
+          19.305292471,
+          20.471673255,
+          18.514072265
+        ]
+      }
+    },
+    "technical": {
+      "audio_seconds": 17.1990625,
+      "gguf": {
+        "median_warm_seconds": 1.168410497,
+        "warm_seconds": [
+          1.220120775,
+          2.184357301,
+          1.102043155,
+          1.116700219
+        ]
+      },
+      "onnx": {
+        "median_warm_seconds": 2.026803484,
+        "warm_seconds": [
+          2.099990927,
+          2.082258741,
+          1.943384378,
+          1.971348227
+        ]
+      }
+    },
+    "silence": {
+      "audio_seconds": 3.0,
+      "gguf": {
+        "median_warm_seconds": 0.15331459149999999,
+        "warm_seconds": [
+          0.159324667,
+          0.162013622,
+          0.147304516,
+          0.139290025
+        ]
+      },
+      "onnx": {
+        "median_warm_seconds": 0.079038954,
+        "warm_seconds": [
+          0.084368046,
+          0.075676434,
+          0.077067603,
+          0.081010305
+        ]
+      }
+    }
+  },
+  "backends": {
+    "gguf": {
+      "load_seconds": [
+        0.13652579,
+        0.303782291
+      ],
+      "peak_rss_mib": [
+        698.61328125,
+        698.515625
+      ],
+      "word_errors": 38,
+      "reference_words": 593,
+      "weighted_word_error_rate": 0.06408094435075885
+    },
+    "onnx": {
+      "load_seconds": [
+        0.510696759,
+        0.483588812
+      ],
+      "peak_rss_mib": [
+        1429.0390625,
+        1428.59375
+      ],
+      "word_errors": 45,
+      "reference_words": 593,
+      "weighted_word_error_rate": 0.07588532883642496
+    }
+  },
+  "runs": {
+    "forward": {
+      "gguf": {
+        "load_seconds": 0.13652579,
+        "peak_rss_mib": 698.61328125,
+        "idle_cpu_seconds_over_2s": 5.699999999819738e-05,
+        "cases": {
+          "short": {
+            "audio_seconds": 10.315,
+            "first_seconds": 0.583998077,
+            "median_warm_seconds": 0.7735396885000001,
+            "word_error_rate": 0.0625,
+            "output_words": 33,
+            "errors": [
+              null,
+              null,
+              null
+            ],
+            "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in the quiet room at Fern. Please return everything before the end of the month and keep your receipt."
+          },
+          "medium": {
+            "audio_seconds": 31.0453125,
+            "first_seconds": 1.9903188649999999,
+            "median_warm_seconds": 2.2557986055,
+            "word_error_rate": 0.11,
+            "output_words": 99,
+            "errors": [
+              null,
+              null,
+              null
+            ],
+            "text": "Our garden needs more water during the summer. The tomatoes are growing well beside the wooden fence. We should plant carrots next spring and ask the neighbors to help us remove the weeds. The airport was busy when we arrived yesterday. A friendly person showed us where to leave our bag. After a short wait, we found our seats and washed the plane through the large window. The kitchen renovation should finish next Friday. We ordered a new table and several. Comfortable chairman for the family. The worker will paint the wall after installing the lights among the thing."
+          },
+          "long": {
+            "audio_seconds": 134.57975,
+            "first_seconds": 9.532503928,
+            "median_warm_seconds": 12.828518666499999,
+            "word_error_rate": 0.05596107055961071,
+            "output_words": 411,
+            "errors": [
+              null,
+              null,
+              null
+            ],
+            "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in the quiet room at Fern. Please return everything before the end of the month and keep your receipt. Our garden needs more water during the summer. The tomatoes are growing well beside the wooden tents. We should plant carrots next spring and ask the neighbors to help us remove the weeds. The airport was busy when we arrived yesterday. A friendly person showed us where it is. After a short wait we found our seats and washed the plane through the large window. The kitchen renovation should finish next Friday. We ordered a new table and several comfortable chairs for the family. The workers will paint the wall after they install the lights among the sink. A telescope helps us see distant stars and planets. Tonight the sky should be clear enough for an excellent new. Bring a warm coat because the Temperature usually fall after the sun goes down. The mountain trail begins near a small wooden bridge. Walk carefully across the stream and follow the signs toward the campsite. We should carry enough food and drinking water for everyone in our group. My keyboard stopped working during an important meeting. I borrowed another one from the office next floor and finished writing the report. Tomorrow I will check the cable before buying a replacement from the shop. The museum and a wonderful collection of ancient pottery. Visitors can learn how people cooked their meal hundreds of a year ago. A guide will explain the history of each room during the afternoon tour. The ocean looked calm when our boat left the harbor. We watched several birds flying above the water while the captain described our route. Everyone was excited to visit the island and explore its beaches. The dentist suggested making another appointment. Next month, I wrote the date in my calendar so I would remember it. The receptionist gave me a small card with the address and the office phone number. The orchestra reversed all afternoon before the concert. Several musicians stayed late to practice a difficult section together. When the door finally opened, the audience quickly filled the seats and waited for the conductor to arrive. The bakery sell fresh ram every morning. We bought a large loaf. And some sweet rolls for breakfast. This is the final reminder for tomorrow. Please bring yellow umbrellas because the weather forecast predicts heavy rain."
+          },
+          "technical": {
+            "audio_seconds": 17.1990625,
+            "first_seconds": 1.256644874,
+            "median_warm_seconds": 1.702239038,
+            "word_error_rate": 0.04,
+            "output_words": 50,
+            "errors": [
+              null,
+              null,
+              null
+            ],
+            "text": "Clean open the settings panel and select a different speech recognition model. Then retry the failed recording from history. The application should preserve the original audio. Keep the microphone off during playmack and show a clear error if the model cannot finish. Save the final report in the project folder."
+          },
+          "silence": {
+            "audio_seconds": 3.0,
+            "first_seconds": 0.13234193,
+            "median_warm_seconds": 0.1606691445,
+            "word_error_rate": null,
+            "output_words": 0,
+            "errors": [
+              null,
+              null,
+              null
+            ],
+            "text": ""
+          }
+        }
+      },
+      "onnx": {
+        "load_seconds": 0.510696759,
+        "peak_rss_mib": 1429.0390625,
+        "idle_cpu_seconds_over_2s": 4.100000001017179e-05,
+        "cases": {
+          "short": {
+            "audio_seconds": 10.315,
+            "first_seconds": 0.849474196,
+            "median_warm_seconds": 1.3202777205,
+            "word_error_rate": 0.09375,
+            "output_words": 34,
+            "errors": [
+              null,
+              null,
+              null
+            ],
+            "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in the quiet room at the farm. Please return everything before the end of the month and keep your receipt."
+          },
+          "medium": {
+            "audio_seconds": 31.0453125,
+            "first_seconds": 4.166106446,
+            "median_warm_seconds": 4.273019431,
+            "word_error_rate": 0.11,
+            "output_words": 99,
+            "errors": [
+              null,
+              null,
+              null
+            ],
+            "text": "Our garden needs more water during the summer. The tomatoes are growing well beside the wooden fence. We should plant carrots next spring and ask the neighbors to help us remove the weeds. The airport was busy when we arrived yesterday. A friendly person showed us where to leave our bag. After a short wait we found our seats and washed the plane through the large window. The kitchen renovation should finish next Friday. We ordered a new table and several. Comfortable chairman for the family. The worker will paint the wall after installing the lights among the thing."
+          },
+          "long": {
+            "audio_seconds": 134.57975,
+            "first_seconds": 20.650843046,
+            "median_warm_seconds": 20.637949198500003,
+            "word_error_rate": 0.0681265206812652,
+            "output_words": 410,
+            "errors": [
+              null,
+              null,
+              null
+            ],
+            "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in the quiet room at the farm. Please return everything before the end of the month and keep your receipt. Our garden needs more water during the summer. The tomatoes are growing well besides the wooden tents. We should plant carrots next spring and ask the neighbors to help us remove the weeds. The airport was busy when we arrived yesterday. A friendly person showed us where. After a short wait we found our seats and washed the plane through the large window. The kitchen renovation should finish next Friday. We ordered a new table and several comfortable chairs for the family. The workers will paint the wall after they install the lights among the sink. A telescope helps us see distant stars and planets. Tonight the sky should be clear enough for an excellent new bring a warm coat because the Temperature usually fall after the sun goes down. The mountain trail begins near a small wooden bridge. Walk carefully across the stream and follow the signs toward the campsite. We should carry enough food and drinking water for everyone in our group. My keyboard stopped working during an important meeting. I borrowed another one from the office next floor and finished writing the report. Tomorrow I will check the cable before buying a replacement from the shop. The museum and a wonderful collection of ancient pottery. Visitors can learn how people cooked their meal hundreds of a year ago. A guide will explain the history of each room during the afternoon tour. The ocean looked calm when our boat left the harbor. We watched several birds flying among the water while the captain described our route. Everyone was excited to visit the island and explore its beaches. The dentist suggested making another appointment. Next month, I wrote the mate in my calendar so I would remember it. The receptionist gave me a small card with the address and the office phone number. The orchestra reversed all afternoon before the concert. Several municians stayed late to practice a difficult section together. When the norm finally opened, the audience quickly filled the seats and waited for the conductor to arrive. The bakery sell fresh ram every morning. We bought a large loaf. And some sweet rolls for breakfast. This is the final reminder for tomorrow. Please bring yellow umbrellas because the weather forecast predicts heavy rain."
+          },
+          "technical": {
+            "audio_seconds": 17.1990625,
+            "first_seconds": 3.227180431,
+            "median_warm_seconds": 2.091124834,
+            "word_error_rate": 0.06,
+            "output_words": 50,
+            "errors": [
+              null,
+              null,
+              null
+            ],
+            "text": "Clean open the settings panel and select a different speech recognition model. Then retry the fail recording from history. The application should preserve the original audio. Keep the microphone off during playmac and show a clear error if the model cannot finish. Save the final report in the project folder."
+          },
+          "silence": {
+            "audio_seconds": 3.0,
+            "first_seconds": 0.085761238,
+            "median_warm_seconds": 0.08002224,
+            "word_error_rate": null,
+            "output_words": 0,
+            "errors": [
+              null,
+              null,
+              null
+            ],
+            "text": ""
+          }
+        }
+      }
+    },
+    "reverse": {
+      "onnx": {
+        "load_seconds": 0.483588812,
+        "peak_rss_mib": 1428.59375,
+        "idle_cpu_seconds_over_2s": 4.0000000012696546e-05,
+        "cases": {
+          "short": {
+            "audio_seconds": 10.315,
+            "first_seconds": 0.962319459,
+            "median_warm_seconds": 1.1262403685,
+            "word_error_rate": 0.09375,
+            "output_words": 34,
+            "errors": [
+              null,
+              null,
+              null
+            ],
+            "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in the quiet room at the farm. Please return everything before the end of the month and keep your receipt."
+          },
+          "medium": {
+            "audio_seconds": 31.0453125,
+            "first_seconds": 3.407681888,
+            "median_warm_seconds": 4.239781618,
+            "word_error_rate": 0.11,
+            "output_words": 99,
+            "errors": [
+              null,
+              null,
+              null
+            ],
+            "text": "Our garden needs more water during the summer. The tomatoes are growing well beside the wooden fence. We should plant carrots next spring and ask the neighbors to help us remove the weeds. The airport was busy when we arrived yesterday. A friendly person showed us where to leave our bag. After a short wait we found our seats and washed the plane through the large window. The kitchen renovation should finish next Friday. We ordered a new table and several. Comfortable chairman for the family. The worker will paint the wall after installing the lights among the thing."
+          },
+          "long": {
+            "audio_seconds": 134.57975,
+            "first_seconds": 20.763676997,
+            "median_warm_seconds": 19.492872759999997,
+            "word_error_rate": 0.0681265206812652,
+            "output_words": 410,
+            "errors": [
+              null,
+              null,
+              null
+            ],
+            "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in the quiet room at the farm. Please return everything before the end of the month and keep your receipt. Our garden needs more water during the summer. The tomatoes are growing well besides the wooden tents. We should plant carrots next spring and ask the neighbors to help us remove the weeds. The airport was busy when we arrived yesterday. A friendly person showed us where. After a short wait we found our seats and washed the plane through the large window. The kitchen renovation should finish next Friday. We ordered a new table and several comfortable chairs for the family. The workers will paint the wall after they install the lights among the sink. A telescope helps us see distant stars and planets. Tonight the sky should be clear enough for an excellent new bring a warm coat because the Temperature usually fall after the sun goes down. The mountain trail begins near a small wooden bridge. Walk carefully across the stream and follow the signs toward the campsite. We should carry enough food and drinking water for everyone in our group. My keyboard stopped working during an important meeting. I borrowed another one from the office next floor and finished writing the report. Tomorrow I will check the cable before buying a replacement from the shop. The museum and a wonderful collection of ancient pottery. Visitors can learn how people cooked their meal hundreds of a year ago. A guide will explain the history of each room during the afternoon tour. The ocean looked calm when our boat left the harbor. We watched several birds flying among the water while the captain described our route. Everyone was excited to visit the island and explore its beaches. The dentist suggested making another appointment. Next month, I wrote the mate in my calendar so I would remember it. The receptionist gave me a small card with the address and the office phone number. The orchestra reversed all afternoon before the concert. Several municians stayed late to practice a difficult section together. When the norm finally opened, the audience quickly filled the seats and waited for the conductor to arrive. The bakery sell fresh ram every morning. We bought a large loaf. And some sweet rolls for breakfast. This is the final reminder for tomorrow. Please bring yellow umbrellas because the weather forecast predicts heavy rain."
+          },
+          "technical": {
+            "audio_seconds": 17.1990625,
+            "first_seconds": 2.211380109,
+            "median_warm_seconds": 1.9573663025,
+            "word_error_rate": 0.06,
+            "output_words": 50,
+            "errors": [
+              null,
+              null,
+              null
+            ],
+            "text": "Clean open the settings panel and select a different speech recognition model. Then retry the fail recording from history. The application should preserve the original audio. Keep the microphone off during playmac and show a clear error if the model cannot finish. Save the final report in the project folder."
+          },
+          "silence": {
+            "audio_seconds": 3.0,
+            "first_seconds": 0.082198733,
+            "median_warm_seconds": 0.079038954,
+            "word_error_rate": null,
+            "output_words": 0,
+            "errors": [
+              null,
+              null,
+              null
+            ],
+            "text": ""
+          }
+        }
+      },
+      "gguf": {
+        "load_seconds": 0.303782291,
+        "peak_rss_mib": 698.515625,
+        "idle_cpu_seconds_over_2s": 8.900000000267028e-05,
+        "cases": {
+          "short": {
+            "audio_seconds": 10.315,
+            "first_seconds": 0.580096362,
+            "median_warm_seconds": 0.7079141015,
+            "word_error_rate": 0.0625,
+            "output_words": 33,
+            "errors": [
+              null,
+              null,
+              null
+            ],
+            "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in the quiet room at Fern. Please return everything before the end of the month and keep your receipt."
+          },
+          "medium": {
+            "audio_seconds": 31.0453125,
+            "first_seconds": 1.855131379,
+            "median_warm_seconds": 2.103873915,
+            "word_error_rate": 0.11,
+            "output_words": 99,
+            "errors": [
+              null,
+              null,
+              null
+            ],
+            "text": "Our garden needs more water during the summer. The tomatoes are growing well beside the wooden fence. We should plant carrots next spring and ask the neighbors to help us remove the weeds. The airport was busy when we arrived yesterday. A friendly person showed us where to leave our bag. After a short wait, we found our seats and washed the plane through the large window. The kitchen renovation should finish next Friday. We ordered a new table and several. Comfortable chairman for the family. The worker will paint the wall after installing the lights among the thing."
+          },
+          "long": {
+            "audio_seconds": 134.57975,
+            "first_seconds": 8.960691526,
+            "median_warm_seconds": 9.135058368500001,
+            "word_error_rate": 0.05596107055961071,
+            "output_words": 411,
+            "errors": [
+              null,
+              null,
+              null
+            ],
+            "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in the quiet room at Fern. Please return everything before the end of the month and keep your receipt. Our garden needs more water during the summer. The tomatoes are growing well beside the wooden tents. We should plant carrots next spring and ask the neighbors to help us remove the weeds. The airport was busy when we arrived yesterday. A friendly person showed us where it is. After a short wait we found our seats and washed the plane through the large window. The kitchen renovation should finish next Friday. We ordered a new table and several comfortable chairs for the family. The workers will paint the wall after they install the lights among the sink. A telescope helps us see distant stars and planets. Tonight the sky should be clear enough for an excellent new. Bring a warm coat because the Temperature usually fall after the sun goes down. The mountain trail begins near a small wooden bridge. Walk carefully across the stream and follow the signs toward the campsite. We should carry enough food and drinking water for everyone in our group. My keyboard stopped working during an important meeting. I borrowed another one from the office next floor and finished writing the report. Tomorrow I will check the cable before buying a replacement from the shop. The museum and a wonderful collection of ancient pottery. Visitors can learn how people cooked their meal hundreds of a year ago. A guide will explain the history of each room during the afternoon tour. The ocean looked calm when our boat left the harbor. We watched several birds flying above the water while the captain described our route. Everyone was excited to visit the island and explore its beaches. The dentist suggested making another appointment. Next month, I wrote the date in my calendar so I would remember it. The receptionist gave me a small card with the address and the office phone number. The orchestra reversed all afternoon before the concert. Several musicians stayed late to practice a difficult section together. When the door finally opened, the audience quickly filled the seats and waited for the conductor to arrive. The bakery sell fresh ram every morning. We bought a large loaf. And some sweet rolls for breakfast. This is the final reminder for tomorrow. Please bring yellow umbrellas because the weather forecast predicts heavy rain."
+          },
+          "technical": {
+            "audio_seconds": 17.1990625,
+            "first_seconds": 1.167164559,
+            "median_warm_seconds": 1.1093716869999999,
+            "word_error_rate": 0.04,
+            "output_words": 50,
+            "errors": [
+              null,
+              null,
+              null
+            ],
+            "text": "Clean open the settings panel and select a different speech recognition model. Then retry the failed recording from history. The application should preserve the original audio. Keep the microphone off during playmack and show a clear error if the model cannot finish. Save the final report in the project folder."
+          },
+          "silence": {
+            "audio_seconds": 3.0,
+            "first_seconds": 0.132976023,
+            "median_warm_seconds": 0.14329727050000002,
+            "word_error_rate": null,
+            "output_words": 0,
+            "errors": [
+              null,
+              null,
+              null
+            ],
+            "text": ""
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,464 @@
+{
+  "short_totals": {
+    "baseline": 11.700268894,
+    "candidate": 2.88014881
+  },
+  "short_speedup": 4.062383462054518,
+  "all_words_match": false,
+  "cases": [
+    {
+      "audio": "/tmp/whisper-research/public-extra/6930-75918-0000.f32",
+      "medians": {
+        "baseline": 0.519426209,
+        "candidate": 0.1087401395
+      },
+      "texts": {
+        "baseline": [
+          "Concorde returned to its place amidst the tents."
+        ],
+        "candidate": [
+          "Concorde returned to its place amidst the tents."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/whisper-research/public-extra/6930-75918-0007.f32",
+      "medians": {
+        "baseline": 0.46525482500000004,
+        "candidate": 0.1143426125
+      },
+      "texts": {
+        "baseline": [
+          "You will be frank with me. I always am."
+        ],
+        "candidate": [
+          "You will be frank with me. I always am."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/whisper-research/public-extra/260-123286-0001.f32",
+      "medians": {
+        "baseline": 0.40993881050000003,
+        "candidate": 0.090225104
+      },
+      "texts": {
+        "baseline": [
+          "The horizon seems extremely distant."
+        ],
+        "candidate": [
+          "The horizon seems extremely distant."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/whisper-research/public-extra/260-123286-0004.f32",
+      "medians": {
+        "baseline": 0.530155094,
+        "candidate": 0.111466574
+      },
+      "texts": {
+        "baseline": [
+          "One might be, with less reason than now."
+        ],
+        "candidate": [
+          "One might be with less reason than now."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/whisper-research/public-extra/3575-170457-0031.f32",
+      "medians": {
+        "baseline": 0.5335746324999999,
+        "candidate": 0.113619632
+      },
+      "texts": {
+        "baseline": [
+          "On August 27, 1837, she writes."
+        ],
+        "candidate": [
+          "On August 27, 1837, she writes."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/whisper-research/public-extra/3575-170457-0032.f32",
+      "medians": {
+        "baseline": 0.4386919255,
+        "candidate": 0.140918669
+      },
+      "texts": {
+        "baseline": [
+          "Come, come, I'm getting really tired of your absence."
+        ],
+        "candidate": [
+          "Come, come, I'm getting really tired of your absence."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/whisper-research/public-extra/8463-294828-0022.f32",
+      "medians": {
+        "baseline": 0.440378252,
+        "candidate": 0.12410033100000001
+      },
+      "texts": {
+        "baseline": [
+          "We're leaving on the Abraham Lincoln."
+        ],
+        "candidate": [
+          "We're leaving on the Abraham Lincoln."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/whisper-research/public-extra/8463-294828-0023.f32",
+      "medians": {
+        "baseline": 0.5579367605000001,
+        "candidate": 0.1713261085
+      },
+      "texts": {
+        "baseline": [
+          "You see my friend, it's an issue of the monster, the notorious narwhal."
+        ],
+        "candidate": [
+          "You see my friend, it's an issue of the monster, the notorious narwhal."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/whisper-research/public-extra/1995-1837-0028.f32",
+      "medians": {
+        "baseline": 0.5169799995000001,
+        "candidate": 0.1062203715
+      },
+      "texts": {
+        "baseline": [
+          "The chair was empty, but he knew."
+        ],
+        "candidate": [
+          "The chair was empty, but he knew."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/whisper-research/public-extra/1284-1181-0000.f32",
+      "medians": {
+        "baseline": 0.4622033375,
+        "candidate": 0.1223034715
+      },
+      "texts": {
+        "baseline": [
+          "Ojo examined this curious contrivance with wonder."
+        ],
+        "candidate": [
+          "Ojo examined this curious contrivance with wonder."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/whisper-research/public-extra/8455-210777-0029.f32",
+      "medians": {
+        "baseline": 0.444194125,
+        "candidate": 0.110410289
+      },
+      "texts": {
+        "baseline": [
+          "Thinking of all this, I went to sleep."
+        ],
+        "candidate": [
+          "Thinking of all this, I went to sleep."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/whisper-research/public-extra/8455-210777-0032.f32",
+      "medians": {
+        "baseline": 0.4810403635,
+        "candidate": 0.102162816
+      },
+      "texts": {
+        "baseline": [
+          "It is a duty, said I."
+        ],
+        "candidate": [
+          "It is a duty, said I."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/whisper-research/public-extra/4446-2275-0006.f32",
+      "medians": {
+        "baseline": 0.5513064495,
+        "candidate": 0.1407558585
+      },
+      "texts": {
+        "baseline": [
+          "I thought it might be Sister Kate or cousin Mike would be happening along."
+        ],
+        "candidate": [
+          "I thought it might be Sister Kate or cousin Mike would be happening along."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/whisper-research/public-extra/4446-2275-0009.f32",
+      "medians": {
+        "baseline": 0.4424790835,
+        "candidate": 0.096690987
+      },
+      "texts": {
+        "baseline": [
+          "I got in about 10 minutes ago."
+        ],
+        "candidate": [
+          "I got in about 10 minutes ago."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/whisper-research/public-extra/7021-85628-0000.f32",
+      "medians": {
+        "baseline": 0.4507429285,
+        "candidate": 0.09464560799999999
+      },
+      "texts": {
+        "baseline": [
+          "But Anders cared nothing about that."
+        ],
+        "candidate": [
+          "But Anders cared nothing about that."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/whisper-research/public-extra/7021-85628-0004.f32",
+      "medians": {
+        "baseline": 0.48143645749999997,
+        "candidate": 0.1038847665
+      },
+      "texts": {
+        "baseline": [
+          "Yes, why not thought Anders?"
+        ],
+        "candidate": [
+          "Yes, why not thought Anders?"
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/whisper-research/public-extra/5105-28241-0003.f32",
+      "medians": {
+        "baseline": 0.569367485,
+        "candidate": 0.14354676100000002
+      },
+      "texts": {
+        "baseline": [
+          "Steam up and canvas spread, the schooner started eastwards."
+        ],
+        "candidate": [
+          "Steam up and canvas spread, the schooner started eastwards."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/whisper-research/public-extra/5105-28241-0007.f32",
+      "medians": {
+        "baseline": 0.4705834855,
+        "candidate": 0.10406056899999999
+      },
+      "texts": {
+        "baseline": [
+          "There's no fear of that sir."
+        ],
+        "candidate": [
+          "There's no fear of that, sir."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/whisper-research/public-extra/1188-133604-0029.f32",
+      "medians": {
+        "baseline": 0.4413688735,
+        "candidate": 0.117194063
+      },
+      "texts": {
+        "baseline": [
+          "Only there are two sorts of cloud and fire."
+        ],
+        "candidate": [
+          "Only, there are two sorts of cloud and fire."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/whisper-research/public-extra/1188-133604-0031.f32",
+      "medians": {
+        "baseline": 0.514033925,
+        "candidate": 0.136278961
+      },
+      "texts": {
+        "baseline": [
+          "There's one and there's another, the Dudley and the Flint."
+        ],
+        "candidate": [
+          "There's one and there's another, the Dudley and the Flint."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/whisper-research/public-extra/1580-141083-0051.f32",
+      "medians": {
+        "baseline": 0.4833478155,
+        "candidate": 0.0934487065
+      },
+      "texts": {
+        "baseline": [
+          "only for a minute or so."
+        ],
+        "candidate": [
+          "only for a minute or so."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/whisper-research/public-extra/1580-141083-0052.f32",
+      "medians": {
+        "baseline": 0.48049046650000005,
+        "candidate": 0.11612388400000001
+      },
+      "texts": {
+        "baseline": [
+          "Oh, I would not venture to say, sir."
+        ],
+        "candidate": [
+          "Oh, I would not venture to say sir."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/whisper-research/public-extra/61-70968-0021.f32",
+      "medians": {
+        "baseline": 0.463726307,
+        "candidate": 0.1186976545
+      },
+      "texts": {
+        "baseline": [
+          "surely we can submit with good grace."
+        ],
+        "candidate": [
+          "Surely we can submit with good grace."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/whisper-research/public-extra/61-70968-0022.f32",
+      "medians": {
+        "baseline": 0.5516112825,
+        "candidate": 0.1989848725
+      },
+      "texts": {
+        "baseline": [
+          "\"'Tis fine for you to talk, old man,' answered the lien solen apprentice."
+        ],
+        "candidate": [
+          "\"'Tis fine for you to talk, old man,' answered the lien solen apprentice."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/canary-vulkan-research/human/1272-128104-0002.f32",
+      "medians": {
+        "baseline": 0.6959245475,
+        "candidate": 0.3475090395
+      },
+      "texts": {
+        "baseline": [
+          "He tells us that at this festive season of the year, with Christmas and roast beef looming before us, similes drawn from eating and its results occur most readily to the mind."
+        ],
+        "candidate": [
+          "He tells us that at this festive season of the year, with Christmas and roast beef looming before us, similes drawn from eating and its results occur most readily to the mind."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/canary-vulkan-research/human/1272-135031-0000.f32",
+      "medians": {
+        "baseline": 0.6549583210000001,
+        "candidate": 0.304947855
+      },
+      "texts": {
+        "baseline": [
+          "Because you were sleeping instead of conquering, the lovely rose princess has become a fiddle without a bow, while poor Shaggy sits there, a cooing dove."
+        ],
+        "candidate": [
+          "Because you were sleeping instead of conquering, the lovely rose princess has become a fiddle without a bow, while poor Shaggy sits there, accuing dove."
+        ]
+      },
+      "words_match": false
+    },
+    {
+      "audio": "/tmp/voice-canary-benchmark/run2/silence.f32",
+      "medians": {
+        "baseline": 0.0078175525,
+        "candidate": 0.00853083
+      },
+      "texts": {
+        "baseline": [
+          ""
+        ],
+        "candidate": [
+          ""
+        ]
+      },
+      "words_match": true
+    }
+  ],
+  "idle": {
+    "baseline": [
+      {
+        "cpu_seconds_over_half_second": 5.899999999314787e-05,
+        "event": "idle"
+      },
+      {
+        "cpu_seconds_over_half_second": 2.500000000793534e-05,
+        "event": "idle"
+      }
+    ],
+    "candidate": [
+      {
+        "cpu_seconds_over_half_second": 9.999999999621423e-05,
+        "event": "idle"
+      },
+      {
+        "cpu_seconds_over_half_second": 0.00010500000000490672,
+        "event": "idle"
+      }
+    ]
+  }
+}

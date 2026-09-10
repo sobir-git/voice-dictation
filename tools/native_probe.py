@@ -90,6 +90,7 @@ def main():
                     click_control('History')
                     time.sleep(.4)
                     shot('03-history')
+                    assert any(n.get('label') == 'Model: base.en · Transcription: 1.37 s' and n['bounds']['height'] > 0 for n in inspect(env['FIRE_UI_INSPECT'])['nodes']), 'History model/timing missing'
                     click_control('Search dictations', 'focus')
                     x('type','--clearmodifiers','--delay',5,'tomorrow')
                     time.sleep(.5)
@@ -131,6 +132,9 @@ def main():
                     x('mousemove','--window',window,330,280,'click','--repeat',24,'--delay',20,4)
                     time.sleep(.2)
                     shot('07-narrow-settings')
+                    backend = [n for n in inspect(env['FIRE_UI_INSPECT'])['nodes']
+                               if n['label'] == 'Backend: CTranslate2 · CPU']
+                    assert len(backend) == 1 and backend[0]['bounds']['height'] > 0
                     x('windowsize',window,520,600)
                     time.sleep(.4)
                     shot('08-minimum-settings')

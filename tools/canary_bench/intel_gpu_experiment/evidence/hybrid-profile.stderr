@@ -1,0 +1,110 @@
+ggml_vulkan: Found 1 Vulkan devices:
+ggml_vulkan: 0 = Intel(R) Iris(R) Xe Graphics (ADL GT2) (Intel open-source Mesa driver) | uma: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 65536 | int dot: 1 | matrix cores: none
+canary: using vulkan backend: Vulkan0
+----------------
+Vulkan Timings:
+ADD: 343 x 22.382 us = 7677.09 us
+CONCAT: 15 x 20.391 us = 305.877 us
+CONT: 109 x 27.94 us = 3045.52 us
+CONV_2D_DW: 17 x 119.42 us = 2030.15 us
+CPY: 45 x 9.462 us = 425.814 us
+FILL: 15 x 2.912 us = 43.692 us
+FLASH_ATTN_EXT dst(64,8,63,1),  q(64,63,8,1),  k(64,63,8,1),  v(64,63,8,1),  m(63,63,8,1): 15 x 340.569 us = 5108.53 us (23.8674 GFLOPS/s)
+IM2COL: 32 x 43.979 us = 1407.33 us
+MUL: 102 x 14.115 us = 1439.74 us
+MUL_MAT f16 m=1008 n=256 k=256: 1 x 720.156 us = 720.156 us (183.103 GFLOPS/s)
+MUL_MAT f16 m=16064 n=256 k=9: 1 x 3587.24 us = 3587.24 us (19.4887 GFLOPS/s)
+MUL_MAT f16 m=4032 n=256 k=256: 1 x 2338.7 us = 2338.7 us (225.532 GFLOPS/s)
+MUL_MAT f16 m=63 n=1024 k=512: 15 x 211.107 us = 3166.61 us (312.618 GFLOPS/s)
+MUL_MAT f16 m=63 n=512 k=512: 14 x 190.799 us = 2671.19 us (172.945 GFLOPS/s)
+MUL_MAT f32 m=125 n=63 k=64 batch=8: 15 x 74.714 us = 1120.72 us (107.087 GFLOPS/s)
+MUL_MAT q8_0 m=2048 n=63 k=512: 29 x 193.322 us = 5606.34 us (682.755 GFLOPS/s)
+MUL_MAT q8_0 m=512 n=125 k=512: 15 x 104.704 us = 1570.57 us (625.302 GFLOPS/s)
+MUL_MAT q8_0 m=512 n=63 k=2048: 29 x 302.214 us = 8764.21 us (437.069 GFLOPS/s)
+MUL_MAT q8_0 m=512 n=63 k=4096: 1 x 3810.99 us = 3810.99 us (69.3282 GFLOPS/s)
+MUL_MAT q8_0 m=512 n=63 k=512: 60 x 92.439 us = 5546.38 us (356.967 GFLOPS/s)
+NORM: 73 x 25.104 us = 1832.62 us
+RELU: 3 x 490.694 us = 1472.08 us
+SCALE: 44 x 5.409 us = 237.997 us
+SIGMOID: 15 x 11.27 us = 169.055 us
+SILU: 43 x 24.104 us = 1036.49 us
+Total time: 65135.1 us.
+----------------
+Vulkan Timings:
+ADD: 55 x 12.643 us = 695.393 us
+CONCAT: 2 x 16.119 us = 32.239 us
+CONT: 15 x 9.614 us = 144.211 us
+CONV_2D_DW: 2 x 22.421 us = 44.842 us
+CPY: 6 x 7.786 us = 46.716 us
+FILL: 2 x 2.343 us = 4.686 us
+FLASH_ATTN_EXT dst(64,8,63,1),  q(64,63,8,1),  k(64,63,8,1),  v(64,63,8,1),  m(63,63,8,1): 2 x 269.088 us = 538.176 us (30.2076 GFLOPS/s)
+IM2COL: 5 x 22.77 us = 113.852 us
+MUL: 17 x 11.442 us = 194.526 us
+MUL_MAT f16 m=63 n=1024 k=512: 2 x 171.744 us = 343.489 us (384.267 GFLOPS/s)
+MUL_MAT f16 m=63 n=512 k=512: 3 x 160.173 us = 480.519 us (206.014 GFLOPS/s)
+MUL_MAT f32 m=125 n=63 k=64 batch=8: 2 x 60.807 us = 121.614 us (131.58 GFLOPS/s)
+MUL_MAT q8_0 m=1024 n=63 k=512: 1 x 81.562 us = 81.562 us (809.149 GFLOPS/s)
+MUL_MAT q8_0 m=2048 n=63 k=512: 5 x 179.749 us = 898.748 us (734.308 GFLOPS/s)
+MUL_MAT q8_0 m=512 n=125 k=512: 2 x 83.879 us = 167.759 us (780.548 GFLOPS/s)
+MUL_MAT q8_0 m=512 n=63 k=2048: 5 x 246.353 us = 1231.77 us (536.174 GFLOPS/s)
+MUL_MAT q8_0 m=512 n=63 k=512: 8 x 74.244 us = 593.955 us (444.45 GFLOPS/s)
+NORM: 12 x 20.555 us = 246.662 us
+SCALE: 7 x 4.114 us = 28.798 us
+SIGMOID: 2 x 9.218 us = 18.437 us
+SILU: 8 x 18.476 us = 147.81 us
+Total time: 6175.76 us.
+canary kv_cache: allocated 17.0 MB (f16) (self: 1024 session x 4 layers, cross: 63 T_enc x 4 layers)
+STAGE {"decode_ms":99.21199798583984,"encode_ms":78.91400146484375,"mel_ms":7.86899995803833}
+----------------
+Vulkan Timings:
+ADD: 343 x 16.751 us = 5745.74 us
+CONCAT: 15 x 16.218 us = 243.273 us
+CONT: 109 x 25.482 us = 2777.55 us
+CONV_2D_DW: 17 x 79.527 us = 1351.97 us
+CPY: 45 x 7.313 us = 329.092 us
+FILL: 15 x 2.378 us = 35.67 us
+FLASH_ATTN_EXT dst(64,8,63,1),  q(64,63,8,1),  k(64,63,8,1),  v(64,63,8,1),  m(63,63,8,1): 15 x 274.364 us = 4115.46 us (29.6267 GFLOPS/s)
+IM2COL: 32 x 30.6 us = 979.207 us
+MUL: 102 x 11.764 us = 1200.01 us
+MUL_MAT f16 m=1008 n=256 k=256: 1 x 406.145 us = 406.145 us (324.669 GFLOPS/s)
+MUL_MAT f16 m=16064 n=256 k=9: 1 x 2419.11 us = 2419.11 us (28.8992 GFLOPS/s)
+MUL_MAT f16 m=4032 n=256 k=256: 1 x 1507.66 us = 1507.66 us (349.848 GFLOPS/s)
+MUL_MAT f16 m=63 n=1024 k=512: 15 x 183.201 us = 2748.01 us (360.237 GFLOPS/s)
+MUL_MAT f16 m=63 n=512 k=512: 14 x 155.944 us = 2183.22 us (211.6 GFLOPS/s)
+MUL_MAT f32 m=125 n=63 k=64 batch=8: 15 x 61.364 us = 920.462 us (130.386 GFLOPS/s)
+MUL_MAT q8_0 m=2048 n=63 k=512: 29 x 173.709 us = 5037.59 us (759.839 GFLOPS/s)
+MUL_MAT q8_0 m=512 n=125 k=512: 15 x 95.721 us = 1435.83 us (683.982 GFLOPS/s)
+MUL_MAT q8_0 m=512 n=63 k=2048: 29 x 261.605 us = 7586.55 us (504.915 GFLOPS/s)
+MUL_MAT q8_0 m=512 n=63 k=4096: 1 x 556.25 us = 556.25 us (474.982 GFLOPS/s)
+MUL_MAT q8_0 m=512 n=63 k=512: 60 x 79.594 us = 4775.65 us (414.577 GFLOPS/s)
+NORM: 73 x 20.371 us = 1487.1 us
+RELU: 3 x 325.989 us = 977.967 us
+SCALE: 44 x 4.257 us = 187.322 us
+SIGMOID: 15 x 9.461 us = 141.921 us
+SILU: 43 x 19.421 us = 835.14 us
+Total time: 49983.9 us.
+----------------
+Vulkan Timings:
+ADD: 55 x 12.731 us = 700.237 us
+CONCAT: 2 x 16.093 us = 32.186 us
+CONT: 15 x 9.805 us = 147.075 us
+CONV_2D_DW: 2 x 21.64 us = 43.28 us
+CPY: 6 x 7.655 us = 45.935 us
+FILL: 2 x 2.473 us = 4.947 us
+FLASH_ATTN_EXT dst(64,8,63,1),  q(64,63,8,1),  k(64,63,8,1),  v(64,63,8,1),  m(63,63,8,1): 2 x 272.03 us = 544.061 us (29.8809 GFLOPS/s)
+IM2COL: 5 x 23.02 us = 115.101 us
+MUL: 17 x 11.209 us = 190.564 us
+MUL_MAT f16 m=63 n=1024 k=512: 2 x 177.499 us = 354.999 us (371.808 GFLOPS/s)
+MUL_MAT f16 m=63 n=512 k=512: 3 x 151.649 us = 454.947 us (217.594 GFLOPS/s)
+MUL_MAT f32 m=125 n=63 k=64 batch=8: 2 x 61.64 us = 123.28 us (129.802 GFLOPS/s)
+MUL_MAT q8_0 m=1024 n=63 k=512: 1 x 81.77 us = 81.77 us (807.09 GFLOPS/s)
+MUL_MAT q8_0 m=2048 n=63 k=512: 5 x 182.353 us = 911.768 us (723.822 GFLOPS/s)
+MUL_MAT q8_0 m=512 n=125 k=512: 2 x 84.531 us = 169.062 us (774.532 GFLOPS/s)
+MUL_MAT q8_0 m=512 n=63 k=2048: 5 x 243.718 us = 1218.59 us (541.971 GFLOPS/s)
+MUL_MAT q8_0 m=512 n=63 k=512: 8 x 75.461 us = 603.694 us (437.28 GFLOPS/s)
+NORM: 12 x 20.39 us = 244.681 us
+SCALE: 7 x 4.27 us = 29.891 us
+SIGMOID: 2 x 8.984 us = 17.968 us
+SILU: 8 x 18.867 us = 150.936 us
+Total time: 6184.97 us.
+STAGE {"decode_ms":107.71700286865234,"encode_ms":62.165000915527344,"mel_ms":7.580999851226807}

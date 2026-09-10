@@ -1,0 +1,9 @@
+{
+  "seconds": 5,
+  "sample_rate": 16000,
+  "format": "mono little-endian float32",
+  "bytes": 320000,
+  "source": "First five seconds of the existing synthetic short fixture",
+  "sha256": "c958127ccb46cbffef5aedf40bdc3279f9f2a1a2de44b366ebbe61123d16e486",
+  "use": "Routine latency screening. Cut point may split a word; not an accuracy reference."
+}

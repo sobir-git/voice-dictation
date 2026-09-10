@@ -1,0 +1,17 @@
+{
+  "sha256": {
+    "native.patch": "e4daa4acb3cf21da604c2d16fad717f7394078eeec7067b3c36a85157b1d3d64",
+    "driver.rs": "fb240f0dccb017929a894e242a31248969a13a2a2a6b4cece4e53e82268d784c",
+    "experiment.Cargo.toml": "94d94bf404c6639937d762dda5e360b72eafb1df5d89ba0f464635b986f3673c",
+    "experiment.Cargo.lock": "3c2c9c44104657fe3490d8f4e65c7c02e2f86571bb9d5f7b88949e4dabed50d1",
+    "experiment.build.rs": "60b32c5059feb06433a2df3e99ace29a36601819ce8cf09ba81464f99bbcdbc7",
+    "build_isolated.sh": "6066513ca0d2c750d406151274a9162df716253df7d2835ee510b9d23fa89b2d",
+    "validate_candidate.py": "e0732fb2ec1abef64a0d184ee24d77c67c347f1f43f26848aa2ba47c0bdb1eb9",
+    "prepare_fixtures.py": "a1512e36ed3491985ec69ad7661fdd5f721b0bd1fa17a7e15a0e32e7959a91c9"
+  },
+  "build_reproduction": "passed",
+  "fixture_reproduction": "82 files byte-identical",
+  "python_syntax": "passed",
+  "shell_syntax": "passed",
+  "application_code_changed_in_final_experiments": false
+}

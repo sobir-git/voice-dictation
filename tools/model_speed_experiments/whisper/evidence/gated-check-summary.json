@@ -1,0 +1,152 @@
+{
+  "short_totals": {
+    "baseline": 2.9180137250000002,
+    "candidate": 0.710454707
+  },
+  "short_speedup": 4.107248071198999,
+  "all_words_match": true,
+  "cases": [
+    {
+      "audio": "/tmp/whisper-research/public-extra/6930-75918-0000.f32",
+      "medians": {
+        "baseline": 0.508273135,
+        "candidate": 0.168224171
+      },
+      "texts": {
+        "baseline": [
+          "Concorde returned to its place amidst the tents."
+        ],
+        "candidate": [
+          "Concorde returned to its place amidst the tents."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/whisper-research/public-extra/6930-75918-0007.f32",
+      "medians": {
+        "baseline": 0.610287329,
+        "candidate": 0.143345725
+      },
+      "texts": {
+        "baseline": [
+          "You will be frank with me. I always am."
+        ],
+        "candidate": [
+          "You will be frank with me. I always am."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/whisper-research/public-extra/260-123286-0001.f32",
+      "medians": {
+        "baseline": 0.676316346,
+        "candidate": 0.102859424
+      },
+      "texts": {
+        "baseline": [
+          "The horizon seems extremely distant."
+        ],
+        "candidate": [
+          "The horizon seems extremely distant."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/whisper-research/public-extra/260-123286-0004.f32",
+      "medians": {
+        "baseline": 0.575182084,
+        "candidate": 0.141579929
+      },
+      "texts": {
+        "baseline": [
+          "One might be, with less reason than now."
+        ],
+        "candidate": [
+          "One might be with less reason than now."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/whisper-research/public-extra/3575-170457-0031.f32",
+      "medians": {
+        "baseline": 0.547954831,
+        "candidate": 0.154445458
+      },
+      "texts": {
+        "baseline": [
+          "On August 27, 1837, she writes."
+        ],
+        "candidate": [
+          "On August 27, 1837, she writes."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/canary-vulkan-research/human/1272-128104-0002.f32",
+      "medians": {
+        "baseline": 0.923388293,
+        "candidate": 0.70470881
+      },
+      "texts": {
+        "baseline": [
+          "He tells us that at this festive season of the year, with Christmas and roast beef looming before us, similes drawn from eating and its results occur most readily to the mind."
+        ],
+        "candidate": [
+          "He tells us that at this festive season of the year, with Christmas and roast beef looming before us, similes drawn from eating and its results occur most readily to the mind."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/canary-vulkan-research/human/1272-135031-0000.f32",
+      "medians": {
+        "baseline": 0.744702151,
+        "candidate": 0.819768954
+      },
+      "texts": {
+        "baseline": [
+          "Because you were sleeping instead of conquering, the lovely rose princess has become a fiddle without a bow, while poor Shaggy sits there, a cooing dove."
+        ],
+        "candidate": [
+          "Because you were sleeping instead of conquering, the lovely rose princess has become a fiddle without a bow, while poor Shaggy sits there, a cooing dove."
+        ]
+      },
+      "words_match": true
+    },
+    {
+      "audio": "/tmp/voice-canary-benchmark/run2/silence.f32",
+      "medians": {
+        "baseline": 0.01015758,
+        "candidate": 0.011486973
+      },
+      "texts": {
+        "baseline": [
+          ""
+        ],
+        "candidate": [
+          ""
+        ]
+      },
+      "words_match": true
+    }
+  ],
+  "idle": {
+    "baseline": [
+      {
+        "cpu_seconds_over_half_second": 9.800000000126374e-05,
+        "event": "idle"
+      }
+    ],
+    "candidate": [
+      {
+        "cpu_seconds_over_half_second": 7.400000000146179e-05,
+        "event": "idle"
+      }
+    ]
+  }
+}

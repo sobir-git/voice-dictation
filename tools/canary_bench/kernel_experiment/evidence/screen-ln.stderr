@@ -1,0 +1,14 @@
+canary: using cpu backend (strict)
+canary: promoted 34 conv pointwise weights from F16 → F32 for CPU backend
+canary kv_cache: allocated 21.0 MB (f16) (self: 1024 session x 4 layers, cross: 318 T_enc x 4 layers)
+STAGE {"decode_ms":607.8629760742188,"encode_ms":658.7310180664062,"mel_ms":36.49399948120117}
+canary kv_cache: allocated 17.1 MB (f16) (self: 1024 session x 4 layers, cross: 71 T_enc x 4 layers)
+STAGE {"decode_ms":132.25900268554688,"encode_ms":150.2310028076172,"mel_ms":8.369000434875488}
+canary kv_cache: allocated 21.0 MB (f16) (self: 1024 session x 4 layers, cross: 318 T_enc x 4 layers)
+STAGE {"decode_ms":566.4110107421875,"encode_ms":673.4619750976562,"mel_ms":39.29899978637695}
+canary kv_cache: allocated 17.1 MB (f16) (self: 1024 session x 4 layers, cross: 71 T_enc x 4 layers)
+STAGE {"decode_ms":145.11099243164062,"encode_ms":164.1840057373047,"mel_ms":8.052000045776367}
+canary kv_cache: allocated 21.0 MB (f16) (self: 1024 session x 4 layers, cross: 318 T_enc x 4 layers)
+STAGE {"decode_ms":606.0360107421875,"encode_ms":675.22900390625,"mel_ms":48.486000061035156}
+canary kv_cache: allocated 17.1 MB (f16) (self: 1024 session x 4 layers, cross: 71 T_enc x 4 layers)
+STAGE {"decode_ms":128.4499969482422,"encode_ms":159.11500549316406,"mel_ms":8.135000228881836}

@@ -16,6 +16,7 @@ impl Data for HistoryCommand {
 
 pub(super) struct HistoryRow {
     timestamp: Child<Label>,
+    metadata: Child<Label>,
     text: Child<Label>,
     play: Child<Control>,
     progress: Child<Progress>,
@@ -29,6 +30,9 @@ impl HistoryRow {
     pub(super) fn new() -> Element<Self> {
         Element::build(|c| Self {
             timestamp: c.add(Element::leaf(Label::styled("", TextRole::Heading))),
+            metadata: c.add(Element::leaf(
+                Label::toned("", TextRole::Small, ColorRole::Muted).wrap(),
+            )),
             text: c.add(Element::leaf(
                 Label::toned("", TextRole::Body, ColorRole::Muted).wrap(),
             )),
@@ -78,6 +82,7 @@ impl Widget for HistoryRow {
                     format_timestamp(item["timestamp"].as_str().unwrap_or("")),
                 );
                 let _ = cx.send(self.text, text.to_owned());
+                let _ = cx.send(self.metadata, format_metadata(&item));
                 let duration = format_duration(item["duration"].as_f64().unwrap_or(0.));
                 let _ = cx.send(self.duration, duration);
                 let has_audio = item["audio_path"]
@@ -129,8 +134,8 @@ impl Widget for HistoryRow {
             cx,
             Point::new(0., text_y),
             natural,
-            Flow::default(),
-            &[Entry::natural(self.text)],
+            Flow::gap(unit),
+            &[Entry::natural(self.metadata), Entry::natural(self.text)],
         );
         let audio_y = text_y + body.size.height + unit * 1.5;
         let audio = row_at(
@@ -198,4 +203,18 @@ fn current_year() -> i32 {
     let month = mp + if mp < 10 { 3 } else { -9 };
     let year = yoe + era * 400 + i64::from(month <= 2);
     year as i32
+}
+
+/// Older records deliberately stay unknown rather than borrowing current settings.
+pub(super) fn format_metadata(item: &Value) -> String {
+    let model = item["model"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .unwrap_or("unknown");
+    let timing = item["transcription_seconds"]
+        .as_f64()
+        .filter(|v| v.is_finite() && *v >= 0.)
+        .map(|v| format!("{v:.2} s"))
+        .unwrap_or_else(|| "unavailable".into());
+    format!("Model: {model} · Transcription: {timing}")
 }

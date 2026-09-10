@@ -1,0 +1,9 @@
+{
+  "dataset": "openslr/librispeech_asr",
+  "config": "clean",
+  "split": "test",
+  "retrieval": "Hugging Face datasets-server rows/cached-assets",
+  "selection": "Up to two complete 1\u20135 second clips with 5\u201314 reference words from each 35-row window at offsets 0,200,...,2200; selected before inference",
+  "clips": 24,
+  "speakers": 13
+}

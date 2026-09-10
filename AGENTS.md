@@ -28,3 +28,12 @@ python3 tools/native_probe.py
 
 Inspect the native screenshots. Use `./update_local.sh` to install and restart the
 local development build without replacing user data.
+
+For terminal-only optimization discovery, benchmark/apply commands, JSON contracts,
+and host-specific build composition, see [docs/agent-performance.md](docs/agent-performance.md).
+Do not add a benchmark or installer UI; keep optional acceleration dependencies out
+of the default CPU installation.
+
+For continuing optimization work, start with
+[docs/optimization-development.md](docs/optimization-development.md). It maps code
+extension points, the measurement routine, existing evidence and the research backlog.

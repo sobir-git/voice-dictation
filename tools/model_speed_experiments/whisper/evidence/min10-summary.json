@@ -1,0 +1,250 @@
+{
+  "min10": {
+    "seconds": 2.831293124,
+    "word_errors": 14,
+    "reference_words": 197,
+    "wer": 0.07106598984771574,
+    "cases": [
+      {
+        "case": "6930-75918-0000",
+        "speaker_id": 6930,
+        "reference": "CONCORD RETURNED TO ITS PLACE AMIDST THE TENTS",
+        "text": "Concorde returned to its place amidst the tents.",
+        "seconds": 0.110182814,
+        "word_errors": 1,
+        "reference_words": 8,
+        "peak_rss_kib": 288240
+      },
+      {
+        "case": "6930-75918-0007",
+        "speaker_id": 6930,
+        "reference": "YOU WILL BE FRANK WITH ME I ALWAYS AM",
+        "text": "You will be frank with me. I always am.",
+        "seconds": 0.110649409,
+        "word_errors": 0,
+        "reference_words": 9,
+        "peak_rss_kib": 288240
+      },
+      {
+        "case": "260-123286-0001",
+        "speaker_id": 260,
+        "reference": "THE HORIZON SEEMS EXTREMELY DISTANT",
+        "text": "The horizon seems extremely distant.",
+        "seconds": 0.091401505,
+        "word_errors": 0,
+        "reference_words": 5,
+        "peak_rss_kib": 288240
+      },
+      {
+        "case": "260-123286-0004",
+        "speaker_id": 260,
+        "reference": "ONE MIGHT BE WITH LESS REASON THAN NOW",
+        "text": "One might be with less reason than now.",
+        "seconds": 0.10886903,
+        "word_errors": 0,
+        "reference_words": 8,
+        "peak_rss_kib": 288240
+      },
+      {
+        "case": "3575-170457-0031",
+        "speaker_id": 3575,
+        "reference": "ON AUGUST TWENTY SEVENTH EIGHTEEN THIRTY SEVEN SHE WRITES",
+        "text": "On August 27, 1837, she writes.",
+        "seconds": 0.107850479,
+        "word_errors": 5,
+        "reference_words": 9,
+        "peak_rss_kib": 288240
+      },
+      {
+        "case": "3575-170457-0032",
+        "speaker_id": 3575,
+        "reference": "COME COME I AM GETTING REALLY TIRED OF YOUR ABSENCE",
+        "text": "Come, come, I'm getting really tired of your absence.",
+        "seconds": 0.120910644,
+        "word_errors": 2,
+        "reference_words": 10,
+        "peak_rss_kib": 288240
+      },
+      {
+        "case": "8463-294828-0022",
+        "speaker_id": 8463,
+        "reference": "WE'RE LEAVING ON THE ABRAHAM LINCOLN",
+        "text": "We're leaving on the Abraham Lincoln.",
+        "seconds": 0.100493323,
+        "word_errors": 0,
+        "reference_words": 6,
+        "peak_rss_kib": 288240
+      },
+      {
+        "case": "8463-294828-0023",
+        "speaker_id": 8463,
+        "reference": "YOU SEE MY FRIEND IT'S AN ISSUE OF THE MONSTER THE NOTORIOUS NARWHALE",
+        "text": "You see my friend, it's an issue of the monster, the notorious narwhal.",
+        "seconds": 0.154376528,
+        "word_errors": 1,
+        "reference_words": 13,
+        "peak_rss_kib": 288240
+      },
+      {
+        "case": "1995-1837-0028",
+        "speaker_id": 1995,
+        "reference": "THE CHAIR WAS EMPTY BUT HE KNEW",
+        "text": "The chair was empty, but he knew.",
+        "seconds": 0.106781341,
+        "word_errors": 0,
+        "reference_words": 7,
+        "peak_rss_kib": 288240
+      },
+      {
+        "case": "1284-1181-0000",
+        "speaker_id": 1284,
+        "reference": "OJO EXAMINED THIS CURIOUS CONTRIVANCE WITH WONDER",
+        "text": "Ojo examined this curious contrivance with wonder.",
+        "seconds": 0.128993298,
+        "word_errors": 0,
+        "reference_words": 7,
+        "peak_rss_kib": 288240
+      },
+      {
+        "case": "8455-210777-0029",
+        "speaker_id": 8455,
+        "reference": "THINKING OF ALL THIS I WENT TO SLEEP",
+        "text": "Thinking of all this, I went to sleep.",
+        "seconds": 0.106461821,
+        "word_errors": 0,
+        "reference_words": 8,
+        "peak_rss_kib": 288240
+      },
+      {
+        "case": "8455-210777-0032",
+        "speaker_id": 8455,
+        "reference": "IT IS A DUTY SAID I",
+        "text": "It is a duty, said I.",
+        "seconds": 0.106076753,
+        "word_errors": 0,
+        "reference_words": 6,
+        "peak_rss_kib": 288240
+      },
+      {
+        "case": "4446-2275-0006",
+        "speaker_id": 4446,
+        "reference": "I THOUGHT IT MIGHT BE SISTER KATE OR COUSIN MIKE WOULD BE HAPPENING ALONG",
+        "text": "I thought it might be Sister Kate or cousin Mike would be happening along.",
+        "seconds": 0.150484435,
+        "word_errors": 0,
+        "reference_words": 14,
+        "peak_rss_kib": 288240
+      },
+      {
+        "case": "4446-2275-0009",
+        "speaker_id": 4446,
+        "reference": "I GOT IN ABOUT TEN MINUTES AGO",
+        "text": "I got in about 10 minutes ago.",
+        "seconds": 0.094029482,
+        "word_errors": 1,
+        "reference_words": 7,
+        "peak_rss_kib": 288240
+      },
+      {
+        "case": "7021-85628-0000",
+        "speaker_id": 7021,
+        "reference": "BUT ANDERS CARED NOTHING ABOUT THAT",
+        "text": "But Anders cared nothing about that.",
+        "seconds": 0.105626885,
+        "word_errors": 0,
+        "reference_words": 6,
+        "peak_rss_kib": 288240
+      },
+      {
+        "case": "7021-85628-0004",
+        "speaker_id": 7021,
+        "reference": "YES WHY NOT THOUGHT ANDERS",
+        "text": "Yes, why not thought Anders?",
+        "seconds": 0.122744573,
+        "word_errors": 0,
+        "reference_words": 5,
+        "peak_rss_kib": 288240
+      },
+      {
+        "case": "5105-28241-0003",
+        "speaker_id": 5105,
+        "reference": "STEAM UP AND CANVAS SPREAD THE SCHOONER STARTED EASTWARDS",
+        "text": "Steam up and canvas spread, the schooner started eastwards.",
+        "seconds": 0.146174341,
+        "word_errors": 0,
+        "reference_words": 9,
+        "peak_rss_kib": 288240
+      },
+      {
+        "case": "5105-28241-0007",
+        "speaker_id": 5105,
+        "reference": "THERE IS NO FEAR OF THAT SIR",
+        "text": "There's no fear of that, sir.",
+        "seconds": 0.112696586,
+        "word_errors": 2,
+        "reference_words": 7,
+        "peak_rss_kib": 288240
+      },
+      {
+        "case": "1188-133604-0029",
+        "speaker_id": 1188,
+        "reference": "ONLY THERE ARE TWO SORTS OF CLOUD AND FIRE",
+        "text": "Only, there are two sorts of cloud and fire.",
+        "seconds": 0.130614398,
+        "word_errors": 0,
+        "reference_words": 9,
+        "peak_rss_kib": 288240
+      },
+      {
+        "case": "1188-133604-0031",
+        "speaker_id": 1188,
+        "reference": "THERE'S ONE AND THERE'S ANOTHER THE DUDLEY AND THE FLINT",
+        "text": "There's one and there's another, the Dudley and the Flint.",
+        "seconds": 0.139698257,
+        "word_errors": 0,
+        "reference_words": 10,
+        "peak_rss_kib": 288240
+      },
+      {
+        "case": "1580-141083-0051",
+        "speaker_id": 1580,
+        "reference": "ONLY FOR A MINUTE OR SO",
+        "text": "only for a minute or so.",
+        "seconds": 0.091801982,
+        "word_errors": 0,
+        "reference_words": 6,
+        "peak_rss_kib": 288240
+      },
+      {
+        "case": "1580-141083-0052",
+        "speaker_id": 1580,
+        "reference": "OH I WOULD NOT VENTURE TO SAY SIR",
+        "text": "Oh, I would not venture to say sir.",
+        "seconds": 0.112662217,
+        "word_errors": 0,
+        "reference_words": 8,
+        "peak_rss_kib": 288240
+      },
+      {
+        "case": "61-70968-0021",
+        "speaker_id": 61,
+        "reference": "SURELY WE CAN SUBMIT WITH GOOD GRACE",
+        "text": "Surely we can submit with good grace.",
+        "seconds": 0.106094756,
+        "word_errors": 0,
+        "reference_words": 7,
+        "peak_rss_kib": 288240
+      },
+      {
+        "case": "61-70968-0022",
+        "speaker_id": 61,
+        "reference": "TIS FINE FOR YOU TO TALK OLD MAN ANSWERED THE LEAN SULLEN APPRENTICE",
+        "text": "\"'Tis fine for you to talk, old man,' answered the lien solen apprentice.",
+        "seconds": 0.165618267,
+        "word_errors": 2,
+        "reference_words": 13,
+        "peak_rss_kib": 288240
+      }
+    ]
+  }
+}

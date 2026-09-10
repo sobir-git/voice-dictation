@@ -20,7 +20,11 @@ else
   echo "  Config already exists at $CONFIG_FILE — skipping."
 fi
 
-cargo build --manifest-path "$SCRIPT_DIR/Cargo.toml" --locked --release
+BUILD_ARGS=(--manifest-path "$SCRIPT_DIR/Cargo.toml" --locked --release)
+if [[ -n "${VOICE_DICTATION_FEATURES:-}" ]]; then
+  BUILD_ARGS+=(--features "$VOICE_DICTATION_FEATURES")
+fi
+cargo build "${BUILD_ARGS[@]}"
 
 echo "Installing desktop entry..."
 DESKTOP_DIR="$HOME/.local/share/applications"

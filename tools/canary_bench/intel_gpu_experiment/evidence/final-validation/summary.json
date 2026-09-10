@@ -1,0 +1,256 @@
+{
+  "finished_epoch": 1788989514.932466,
+  "sum_of_clip_medians_seconds": {
+    "baseline": 2.3240822160000003,
+    "cpu-tuned": 1.609274804,
+    "hybrid8": 1.221981995,
+    "hybrid8-f32": 1.179160532
+  },
+  "speedup_vs_baseline": {
+    "baseline": 1.0,
+    "cpu-tuned": 1.444179831948702,
+    "hybrid8": 1.901895629812451,
+    "hybrid8-f32": 1.9709633700663924
+  },
+  "all_texts_match": true,
+  "idle_cpu_seconds_over_2s": {
+    "baseline": [
+      1.9000000001767603e-05,
+      8.100000000155205e-05,
+      2.7000000002885827e-05
+    ],
+    "cpu-tuned": [
+      9.499999999995623e-05,
+      1.1999999999900979e-05,
+      6.899999999987472e-05
+    ],
+    "hybrid8": [
+      1.2999999999152578e-05,
+      2.2999999998774e-05,
+      1.1999999999900979e-05
+    ],
+    "hybrid8-f32": [
+      9.700000000023579e-05,
+      4.400000000082116e-05,
+      1.2999999999152578e-05
+    ]
+  },
+  "clips": [
+    {
+      "audio": "five-second-screen.f32",
+      "medians": {
+        "baseline": 0.27268593,
+        "cpu-tuned": 0.19696853,
+        "hybrid8": 0.149278001,
+        "hybrid8-f32": 0.147874922
+      },
+      "texts": {
+        "baseline": [
+          "The library opens early on Monday morning. Students scan marble books and read newspapers in"
+        ],
+        "cpu-tuned": [
+          "The library opens early on Monday morning. Students scan marble books and read newspapers in"
+        ],
+        "hybrid8": [
+          "The library opens early on Monday morning. Students scan marble books and read newspapers in"
+        ],
+        "hybrid8-f32": [
+          "The library opens early on Monday morning. Students scan marble books and read newspapers in"
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-128104-0000.f32",
+      "medians": {
+        "baseline": 0.258126781,
+        "cpu-tuned": 0.182564902,
+        "hybrid8": 0.140113562,
+        "hybrid8-f32": 0.133949725
+      },
+      "texts": {
+        "baseline": [
+          "mister Quilter is the apostle of the middle classes, and we are glad to welcome his"
+        ],
+        "cpu-tuned": [
+          "mister Quilter is the apostle of the middle classes, and we are glad to welcome his"
+        ],
+        "hybrid8": [
+          "mister Quilter is the apostle of the middle classes, and we are glad to welcome his"
+        ],
+        "hybrid8-f32": [
+          "mister Quilter is the apostle of the middle classes, and we are glad to welcome his"
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-128104-0001.f32",
+      "medians": {
+        "baseline": 0.244060987,
+        "cpu-tuned": 0.162142883,
+        "hybrid8": 0.125941912,
+        "hybrid8-f32": 0.12136712
+      },
+      "texts": {
+        "baseline": [
+          "Nor is mister Quilter's manner less interesting than his matter."
+        ],
+        "cpu-tuned": [
+          "Nor is mister Quilter's manner less interesting than his matter."
+        ],
+        "hybrid8": [
+          "Nor is mister Quilter's manner less interesting than his matter."
+        ],
+        "hybrid8-f32": [
+          "Nor is mister Quilter's manner less interesting than his matter."
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-128104-0002.f32",
+      "medians": {
+        "baseline": 0.255514951,
+        "cpu-tuned": 0.17179489,
+        "hybrid8": 0.136233046,
+        "hybrid8-f32": 0.127094429
+      },
+      "texts": {
+        "baseline": [
+          "He tells us that at this festive season of the year, with Christmas"
+        ],
+        "cpu-tuned": [
+          "He tells us that at this festive season of the year, with Christmas"
+        ],
+        "hybrid8": [
+          "He tells us that at this festive season of the year, with Christmas"
+        ],
+        "hybrid8-f32": [
+          "He tells us that at this festive season of the year, with Christmas"
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-128104-0003.f32",
+      "medians": {
+        "baseline": 0.271644559,
+        "cpu-tuned": 0.179059442,
+        "hybrid8": 0.144304125,
+        "hybrid8-f32": 0.132898074
+      },
+      "texts": {
+        "baseline": [
+          "He has grave doubts whether Sir Frederick Leighton's work is really Greek after"
+        ],
+        "cpu-tuned": [
+          "He has grave doubts whether Sir Frederick Leighton's work is really Greek after"
+        ],
+        "hybrid8": [
+          "He has grave doubts whether Sir Frederick Leighton's work is really Greek after"
+        ],
+        "hybrid8-f32": [
+          "He has grave doubts whether Sir Frederick Leighton's work is really Greek after"
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-128104-0004.f32",
+      "medians": {
+        "baseline": 0.259747769,
+        "cpu-tuned": 0.179218463,
+        "hybrid8": 0.131191656,
+        "hybrid8-f32": 0.126880349
+      },
+      "texts": {
+        "baseline": [
+          "Linnell's pictures are a sort of Upgard's and Adam paintings,"
+        ],
+        "cpu-tuned": [
+          "Linnell's pictures are a sort of Upgard's and Adam paintings,"
+        ],
+        "hybrid8": [
+          "Linnell's pictures are a sort of Upgard's and Adam paintings,"
+        ],
+        "hybrid8-f32": [
+          "Linnell's pictures are a sort of Upgard's and Adam paintings,"
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-128104-0005.f32",
+      "medians": {
+        "baseline": 0.246995489,
+        "cpu-tuned": 0.177956627,
+        "hybrid8": 0.126614226,
+        "hybrid8-f32": 0.123589275
+      },
+      "texts": {
+        "baseline": [
+          "It is obviously unnecessary for us to point out how luminous these"
+        ],
+        "cpu-tuned": [
+          "It is obviously unnecessary for us to point out how luminous these"
+        ],
+        "hybrid8": [
+          "It is obviously unnecessary for us to point out how luminous these"
+        ],
+        "hybrid8-f32": [
+          "It is obviously unnecessary for us to point out how luminous these"
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-128104-0006.f32",
+      "medians": {
+        "baseline": 0.266863824,
+        "cpu-tuned": 0.18153637,
+        "hybrid8": 0.136785931,
+        "hybrid8-f32": 0.131469327
+      },
+      "texts": {
+        "baseline": [
+          "On the general principles of art mister Quilter writes with equal lucidity"
+        ],
+        "cpu-tuned": [
+          "On the general principles of art mister Quilter writes with equal lucidity"
+        ],
+        "hybrid8": [
+          "On the general principles of art mister Quilter writes with equal lucidity"
+        ],
+        "hybrid8-f32": [
+          "On the general principles of art mister Quilter writes with equal lucidity"
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-128104-0007.f32",
+      "medians": {
+        "baseline": 0.248441926,
+        "cpu-tuned": 0.178032697,
+        "hybrid8": 0.131519536,
+        "hybrid8-f32": 0.134037311
+      },
+      "texts": {
+        "baseline": [
+          "Painting, he tells us, is of a different quality to mathematics."
+        ],
+        "cpu-tuned": [
+          "Painting, he tells us, is of a different quality to mathematics."
+        ],
+        "hybrid8": [
+          "Painting, he tells us, is of a different quality to mathematics."
+        ],
+        "hybrid8-f32": [
+          "Painting, he tells us, is of a different quality to mathematics."
+        ]
+      },
+      "texts_match": true
+    }
+  ]
+}

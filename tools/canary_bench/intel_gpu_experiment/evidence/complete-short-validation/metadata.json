@@ -1,0 +1,80 @@
+{
+  "started_epoch": 1788989574.889801,
+  "model": "/home/fire/.cache/huggingface/hub/models--handy-computer--canary-180m-flash-gguf/snapshots/b147f9dc52b59f0998e410540a84727bd86457fd/canary-180m-flash-Q8_0.gguf",
+  "model_sha256": "e13c7f5d0952b056a027cfffec13e3a3a134d1608babed24f983568f141e297c",
+  "variants": {
+    "baseline": [
+      {
+        "BENCH_BACKEND": "cpu",
+        "BENCH_THREADS": "8"
+      },
+      null
+    ],
+    "hybrid8-f32": [
+      {
+        "OMP_WAIT_POLICY": "ACTIVE",
+        "BENCH_PAUSE_OMP": "1",
+        "CANARY_DIRECT_PRE_DW": "1",
+        "BENCH_BACKEND": "vulkan",
+        "BENCH_THREADS": "8",
+        "CANARY_HYBRID": "1",
+        "GGML_VK_DISABLE_F16": "1"
+      },
+      "0-7"
+    ]
+  },
+  "cycles": 3,
+  "rounds": 2,
+  "idle": false,
+  "parent_cpu_affinity": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+  ],
+  "clips": {
+    "/tmp/canary-vulkan-research/human/1272-128104-0001.f32": "82fa5b3de8c517a1a7605f5a648bf22ffd91fa4d181567f1404724a50d0bfbe2",
+    "/tmp/canary-vulkan-research/human/1272-128104-0014.f32": "b3fcb02451c71e858c8afb80fb41bceb2705d5f0df5ca2019065e6a9ff56b1dd",
+    "/tmp/canary-vulkan-research/human/1272-135031-0003.f32": "518ba8171c4a0fcff7fad5b0fbc2de1c3e20aa3503cafcb7fc963482fc0c979e",
+    "/tmp/canary-vulkan-research/human/1272-135031-0004.f32": "02ce53b6a970c68e266b22002b54e70ce452748ac500dfd7b541116d34eeea98",
+    "/tmp/canary-vulkan-research/human/1272-135031-0005.f32": "e77159c4f4663e24df9ae4b02235fbc198b3c1d911fa9aa0eb9d7d595d938389",
+    "/tmp/canary-vulkan-research/human/1272-135031-0006.f32": "c3efc40f43f49369970a59c02d168cf458db911e18519e921276562dbd1cd60e",
+    "/tmp/canary-vulkan-research/human/1272-135031-0007.f32": "8276315186cd24da13302db4bdfdac46e78ea8672acbc6a3a00bfb1a67da7564",
+    "/tmp/canary-vulkan-research/human/1272-135031-0008.f32": "cb137a6649b5e224949b639bfa8b5644f518c678ad11b97da95a92fe4d879b3e",
+    "/tmp/canary-vulkan-research/human/1272-135031-0009.f32": "f5dd71a3cf4e8397fe9cf4c6561f9d5850e569ab530ec4589bb29acd9c5ce9cc",
+    "/tmp/canary-vulkan-research/human/1272-135031-0011.f32": "46509b2aec0820d7b63ebb3194c1cb0f3e4812d1232585596adea278597ef3ce",
+    "/tmp/canary-vulkan-research/human/1272-135031-0012.f32": "e88f2b399b375cfbd1f5dd93a0431ce359912d74b8b92bef8046c6a44e4efaa8",
+    "/tmp/canary-vulkan-research/human/1272-135031-0013.f32": "3667bac439c380aacba0f4453aac2a39b0734002077e7705d824a603fc4262f4",
+    "/tmp/canary-vulkan-research/human/1272-135031-0014.f32": "42fa8eefc248586cad6d65694404cc2d5e46a800a002bd10b679396b2b638f8e",
+    "/tmp/canary-vulkan-research/human/1272-135031-0016.f32": "88edba217bebe46bcbcf89fffe1691cbd571695300b1678259a0e375263d3f13",
+    "/tmp/canary-vulkan-research/human/1272-135031-0018.f32": "e4c5085675c3e7b90450338b58838128ad43ed1c91175bb5739411a6724b3eac",
+    "/tmp/canary-vulkan-research/human/1272-135031-0019.f32": "351c8bf5c8ac57e786c968c97492adbef924fae26841c41a7e88e42262af5eaf",
+    "/tmp/canary-vulkan-research/human/1272-135031-0020.f32": "ae3847d489edfec2854906aa3317ebf44308b93ba1b51c3ac366df13d1b81b09",
+    "/tmp/canary-vulkan-research/human/1272-135031-0021.f32": "2f55a75856f74abb2173f7758a1d142c8a58e7998d07ad6055826362c9040f64",
+    "/tmp/canary-vulkan-research/human/1272-135031-0022.f32": "762017d027aab4e13b392ef84f23a3f2f4cceab943df461aaf5ebeb998313af7",
+    "/tmp/canary-vulkan-research/human/1272-141231-0000.f32": "fa26ece47664eaa40c57b027512de0e3670aa353b8e42c044346b084cb9831fd",
+    "/tmp/canary-vulkan-research/human/1272-141231-0006.f32": "e6a3fc832bff134ab71f69f56e53c6bebe2d16b73a4385dcb7e611ca2d6106e3",
+    "/tmp/canary-vulkan-research/human/1272-141231-0007.f32": "027b9836234634db0b477d49a610c47fe0ce3f51d1a3d2cf20f5f84bc0907b16",
+    "/tmp/canary-vulkan-research/human/1272-141231-0008.f32": "af407bf0e9e43e1d1365dff895e9342062b04e468deb04061af5c9b791755038",
+    "/tmp/canary-vulkan-research/human/1272-141231-0013.f32": "a0a3ae1ea5878c213df639296e9f4c3fb8a4d6525fdd50a013cb87f515bb6a46",
+    "/tmp/canary-vulkan-research/human/1272-141231-0016.f32": "72185205d25a7c0856d65b50bc8c38d7b66bff6586eab9a3e08ae17e5e4c42db",
+    "/tmp/canary-vulkan-research/human/1272-141231-0017.f32": "30eb9c2f5740932c24d84676c265fcab9d031e04c960f1da83d2698195c205a5",
+    "/tmp/canary-vulkan-research/human/1272-141231-0019.f32": "eb4bd6e31118d4503be80f139becb1b9acbaef2d84dbf0f1efa1bd6c32f5ffa9",
+    "/tmp/canary-vulkan-research/human/1272-141231-0020.f32": "0b367ef2a2adb5e9420f1f266d59c15ecde659c6b6f5c34d271edc3e34d78289",
+    "/tmp/canary-vulkan-research/human/1272-141231-0021.f32": "255eb857bf97d5b9ff927e384ad0e8809b0ac86a30c8aee9df358945001edc85",
+    "/tmp/canary-vulkan-research/human/1272-141231-0024.f32": "c75b84935de77421fd3a342d9602f8d9a9a1dab4cb1a5f6ea2a94724400a0f54",
+    "/tmp/canary-vulkan-research/human/1272-141231-0032.f32": "51a0684effb649472706aa913b45ab046047d69623a22b1875a4f075386836de"
+  }
+}

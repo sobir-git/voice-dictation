@@ -1,0 +1,7 @@
+[
+  {"fold":0,"train_cases":56,"eval_cases":17,"context":1,"k":1,"coverage":0.513553,"accepted_per_round":0.062702,"effective_tokens_per_round":1.062702},
+  {"fold":1,"train_cases":61,"eval_cases":12,"context":1,"k":1,"coverage":0.493676,"accepted_per_round":0.028658,"effective_tokens_per_round":1.028658},
+  {"fold":2,"train_cases":58,"eval_cases":15,"context":1,"k":1,"coverage":0.537724,"accepted_per_round":0.028214,"effective_tokens_per_round":1.028214},
+  {"fold":3,"train_cases":62,"eval_cases":11,"context":1,"k":1,"coverage":0.462318,"accepted_per_round":0.068615,"effective_tokens_per_round":1.068615},
+  {"fold":4,"train_cases":55,"eval_cases":18,"context":1,"k":1,"coverage":0.550960,"accepted_per_round":0.055320,"effective_tokens_per_round":1.055320}
+]

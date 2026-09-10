@@ -1,0 +1,200 @@
+[
+  {
+    "audio": "five-second-screen.f32",
+    "medians": {
+      "cpu": 0.281899514,
+      "hybrid": 0.150541615
+    },
+    "speedup": 1.872568684745411,
+    "all_texts_match": true,
+    "texts": {
+      "cpu": [
+        "The library opens early on Monday morning. Students scan marble books and read newspapers in",
+        "The library opens early on Monday morning. Students scan marble books and read newspapers in",
+        "The library opens early on Monday morning. Students scan marble books and read newspapers in"
+      ],
+      "hybrid": [
+        "The library opens early on Monday morning. Students scan marble books and read newspapers in",
+        "The library opens early on Monday morning. Students scan marble books and read newspapers in",
+        "The library opens early on Monday morning. Students scan marble books and read newspapers in"
+      ]
+    },
+    "errors": []
+  },
+  {
+    "audio": "1272-128104-0000.f32",
+    "medians": {
+      "cpu": 0.263671632,
+      "hybrid": 0.139104151
+    },
+    "speedup": 1.8954979424014455,
+    "all_texts_match": true,
+    "texts": {
+      "cpu": [
+        "mister Quilter is the apostle of the middle classes, and we are glad to welcome his",
+        "mister Quilter is the apostle of the middle classes, and we are glad to welcome his",
+        "mister Quilter is the apostle of the middle classes, and we are glad to welcome his"
+      ],
+      "hybrid": [
+        "mister Quilter is the apostle of the middle classes, and we are glad to welcome his",
+        "mister Quilter is the apostle of the middle classes, and we are glad to welcome his",
+        "mister Quilter is the apostle of the middle classes, and we are glad to welcome his"
+      ]
+    },
+    "errors": []
+  },
+  {
+    "audio": "1272-128104-0001.f32",
+    "medians": {
+      "cpu": 0.237226845,
+      "hybrid": 0.126063124
+    },
+    "speedup": 1.8818099811646742,
+    "all_texts_match": true,
+    "texts": {
+      "cpu": [
+        "Nor is mister Quilter's manner less interesting than his matter.",
+        "Nor is mister Quilter's manner less interesting than his matter.",
+        "Nor is mister Quilter's manner less interesting than his matter."
+      ],
+      "hybrid": [
+        "Nor is mister Quilter's manner less interesting than his matter.",
+        "Nor is mister Quilter's manner less interesting than his matter.",
+        "Nor is mister Quilter's manner less interesting than his matter."
+      ]
+    },
+    "errors": []
+  },
+  {
+    "audio": "1272-128104-0002.f32",
+    "medians": {
+      "cpu": 0.258848819,
+      "hybrid": 0.131737594
+    },
+    "speedup": 1.96488193795311,
+    "all_texts_match": true,
+    "texts": {
+      "cpu": [
+        "He tells us that at this festive season of the year, with Christmas",
+        "He tells us that at this festive season of the year, with Christmas",
+        "He tells us that at this festive season of the year, with Christmas"
+      ],
+      "hybrid": [
+        "He tells us that at this festive season of the year, with Christmas",
+        "He tells us that at this festive season of the year, with Christmas",
+        "He tells us that at this festive season of the year, with Christmas"
+      ]
+    },
+    "errors": []
+  },
+  {
+    "audio": "1272-128104-0003.f32",
+    "medians": {
+      "cpu": 0.270702747,
+      "hybrid": 0.138424001
+    },
+    "speedup": 1.955605567274421,
+    "all_texts_match": true,
+    "texts": {
+      "cpu": [
+        "He has grave doubts whether Sir Frederick Leighton's work is really Greek after",
+        "He has grave doubts whether Sir Frederick Leighton's work is really Greek after",
+        "He has grave doubts whether Sir Frederick Leighton's work is really Greek after"
+      ],
+      "hybrid": [
+        "He has grave doubts whether Sir Frederick Leighton's work is really Greek after",
+        "He has grave doubts whether Sir Frederick Leighton's work is really Greek after",
+        "He has grave doubts whether Sir Frederick Leighton's work is really Greek after"
+      ]
+    },
+    "errors": []
+  },
+  {
+    "audio": "1272-128104-0004.f32",
+    "medians": {
+      "cpu": 0.25421545,
+      "hybrid": 0.134113535
+    },
+    "speedup": 1.895524191499389,
+    "all_texts_match": true,
+    "texts": {
+      "cpu": [
+        "Linnell's pictures are a sort of Upgard's and Adam paintings,",
+        "Linnell's pictures are a sort of Upgard's and Adam paintings,",
+        "Linnell's pictures are a sort of Upgard's and Adam paintings,"
+      ],
+      "hybrid": [
+        "Linnell's pictures are a sort of Upgard's and Adam paintings,",
+        "Linnell's pictures are a sort of Upgard's and Adam paintings,",
+        "Linnell's pictures are a sort of Upgard's and Adam paintings,"
+      ]
+    },
+    "errors": []
+  },
+  {
+    "audio": "1272-128104-0005.f32",
+    "medians": {
+      "cpu": 0.25586355,
+      "hybrid": 0.125226761
+    },
+    "speedup": 2.043201852038639,
+    "all_texts_match": true,
+    "texts": {
+      "cpu": [
+        "It is obviously unnecessary for us to point out how luminous these",
+        "It is obviously unnecessary for us to point out how luminous these",
+        "It is obviously unnecessary for us to point out how luminous these"
+      ],
+      "hybrid": [
+        "It is obviously unnecessary for us to point out how luminous these",
+        "It is obviously unnecessary for us to point out how luminous these",
+        "It is obviously unnecessary for us to point out how luminous these"
+      ]
+    },
+    "errors": []
+  },
+  {
+    "audio": "1272-128104-0006.f32",
+    "medians": {
+      "cpu": 0.269815418,
+      "hybrid": 0.135092125
+    },
+    "speedup": 1.997269774237395,
+    "all_texts_match": true,
+    "texts": {
+      "cpu": [
+        "On the general principles of art mister Quilter writes with equal lucidity",
+        "On the general principles of art mister Quilter writes with equal lucidity",
+        "On the general principles of art mister Quilter writes with equal lucidity"
+      ],
+      "hybrid": [
+        "On the general principles of art mister Quilter writes with equal lucidity",
+        "On the general principles of art mister Quilter writes with equal lucidity",
+        "On the general principles of art mister Quilter writes with equal lucidity"
+      ]
+    },
+    "errors": []
+  },
+  {
+    "audio": "1272-128104-0007.f32",
+    "medians": {
+      "cpu": 0.247833722,
+      "hybrid": 0.135497144
+    },
+    "speedup": 1.8290697108715441,
+    "all_texts_match": true,
+    "texts": {
+      "cpu": [
+        "Painting, he tells us, is of a different quality to mathematics.",
+        "Painting, he tells us, is of a different quality to mathematics.",
+        "Painting, he tells us, is of a different quality to mathematics."
+      ],
+      "hybrid": [
+        "Painting, he tells us, is of a different quality to mathematics.",
+        "Painting, he tells us, is of a different quality to mathematics.",
+        "Painting, he tells us, is of a different quality to mathematics."
+      ]
+    },
+    "errors": []
+  }
+]

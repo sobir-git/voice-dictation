@@ -1,0 +1,62 @@
+{
+  "ADD": {
+    "count": 44736,
+    "microseconds": 373299
+  },
+  "MUL": {
+    "count": 10584,
+    "microseconds": 76039
+  },
+  "CONCAT": {
+    "count": 102,
+    "microseconds": 21017
+  },
+  "NORM": {
+    "count": 10380,
+    "microseconds": 70088
+  },
+  "MUL_MAT": {
+    "count": 24579,
+    "microseconds": 3031445
+  },
+  "SCALE": {
+    "count": 306,
+    "microseconds": 13662
+  },
+  "CPY": {
+    "count": 6000,
+    "microseconds": 64888
+  },
+  "CONT": {
+    "count": 648,
+    "microseconds": 89792
+  },
+  "IM2COL": {
+    "count": 30,
+    "microseconds": 417533
+  },
+  "CONV_2D_DW": {
+    "count": 102,
+    "microseconds": 17744
+  },
+  "FILL": {
+    "count": 102,
+    "microseconds": 4256
+  },
+  "FLASH_ATTN_EXT": {
+    "count": 5742,
+    "microseconds": 322127
+  },
+  "UNARY": {
+    "count": 3246,
+    "microseconds": 68368
+  },
+  "ARGMAX": {
+    "count": 705,
+    "microseconds": 2550
+  },
+  "GET_ROWS": {
+    "count": 1410,
+    "microseconds": 9331
+  }
+}

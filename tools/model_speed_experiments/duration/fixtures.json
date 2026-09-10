@@ -1,0 +1,31 @@
+{
+  "source": "Synthetic speech, prefixes of the same 134.58-second recording; no user audio",
+  "format": "16000 Hz mono little-endian float32",
+  "files": [
+    {
+      "name": "15s.f32",
+      "seconds": 15.0,
+      "sha256": "f695d2cd2025630726b6a79e851d68f7437f600f07262d2fca1a55b046b53817"
+    },
+    {
+      "name": "2s.f32",
+      "seconds": 2.0,
+      "sha256": "0cef0117f3bf024b94d7a9d0be0ce8371680c4921e5c4af3f5400f8051a11107"
+    },
+    {
+      "name": "30s.f32",
+      "seconds": 30.0,
+      "sha256": "63728f0d395f78136e78c4c1f96d20545a3cfc652eee266e4d4098a440feb3c1"
+    },
+    {
+      "name": "5s.f32",
+      "seconds": 5.0,
+      "sha256": "c958127ccb46cbffef5aedf40bdc3279f9f2a1a2de44b366ebbe61123d16e486"
+    },
+    {
+      "name": "60s.f32",
+      "seconds": 60.0,
+      "sha256": "9655b5d224e10cb7e13cbd5ef4498150a02c551470451ed4f39b3fc4f6b45b8f"
+    }
+  ]
+}

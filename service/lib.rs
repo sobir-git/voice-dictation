@@ -3,6 +3,7 @@ pub mod history;
 pub mod process;
 
 pub mod engine;
+pub mod optimization;
 
 pub mod audio;
 pub mod hotkey;

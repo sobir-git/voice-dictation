@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 *.log
 *.wav
+*.f32
 /tmp/
 config.yaml
 

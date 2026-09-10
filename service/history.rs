@@ -19,6 +19,8 @@ impl History {
             ("duration", "REAL NOT NULL DEFAULT 0"),
             ("favorite", "INTEGER NOT NULL DEFAULT 0"),
             ("failed", "INTEGER NOT NULL DEFAULT 0"),
+            ("model", "TEXT"),
+            ("transcription_seconds", "REAL"),
         ] {
             if !columns.iter().any(|column| column == name) {
                 db.execute(
@@ -34,8 +36,8 @@ impl History {
         Ok(self.0.last_insert_rowid())
     }
     pub fn recent(&self, limit: usize, search: &str) -> Result<Vec<Value>> {
-        let mut query=self.0.prepare("SELECT id,timestamp,text,audio_path,duration,favorite,failed FROM history WHERE instr(lower(text),lower(?)) > 0 ORDER BY favorite DESC,id DESC LIMIT ?")?;
-        let rows=query.query_map(params![search,limit.min(1000) as i64],|r| Ok(json!({"id":r.get::<_,i64>(0)?,"timestamp":r.get::<_,String>(1)?,"text":r.get::<_,String>(2)?,"audio_path":r.get::<_,Option<String>>(3)?,"duration":r.get::<_,f64>(4)?,"favorite":r.get::<_,bool>(5)?,"failed":r.get::<_,bool>(6)?})))?;
+        let mut query=self.0.prepare("SELECT id,timestamp,text,audio_path,duration,favorite,failed,model,transcription_seconds FROM history WHERE instr(lower(text),lower(?)) > 0 ORDER BY favorite DESC,id DESC LIMIT ?")?;
+        let rows=query.query_map(params![search,limit.min(1000) as i64],|r| Ok(json!({"id":r.get::<_,i64>(0)?,"timestamp":r.get::<_,String>(1)?,"text":r.get::<_,String>(2)?,"audio_path":r.get::<_,Option<String>>(3)?,"duration":r.get::<_,f64>(4)?,"favorite":r.get::<_,bool>(5)?,"failed":r.get::<_,bool>(6)?,"model":r.get::<_,Option<String>>(7)?,"transcription_seconds":r.get::<_,Option<f64>>(8)?})))?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
@@ -69,6 +71,34 @@ impl History {
         Ok(())
     }
 
+    pub fn add_transcription(&self, text: &str, model: &str, seconds: f64) -> Result<i64> {
+        anyhow::ensure!(
+            seconds.is_finite() && seconds >= 0.,
+            "Invalid transcription duration"
+        );
+        self.0.execute("INSERT INTO history(timestamp,text,model,transcription_seconds) VALUES (strftime('%Y-%m-%d %H:%M:%S','now','localtime'),?,?,?)", params![text,model,seconds])?;
+        Ok(self.0.last_insert_rowid())
+    }
+
+    pub fn finish_transcription(
+        &self,
+        id: i64,
+        text: &str,
+        failed: bool,
+        model: &str,
+        seconds: f64,
+    ) -> Result<()> {
+        anyhow::ensure!(
+            seconds.is_finite() && seconds >= 0.,
+            "Invalid transcription duration"
+        );
+        self.0.execute(
+            "UPDATE history SET text=?,failed=?,model=?,transcription_seconds=? WHERE id=?",
+            params![text, failed, model, seconds, id],
+        )?;
+        Ok(())
+    }
+
     pub fn remove(&self, id: i64) -> Result<Option<String>> {
         let path = self
             .0
@@ -83,10 +113,10 @@ impl History {
 
     pub fn get(&self, id: i64) -> Result<Option<Value>> {
         let mut query = self.0.prepare(
-            "SELECT id,timestamp,text,audio_path,duration,favorite,failed FROM history WHERE id=?",
+            "SELECT id,timestamp,text,audio_path,duration,favorite,failed,model,transcription_seconds FROM history WHERE id=?",
         )?;
         let mut rows = query.query([id])?;
-        Ok(rows.next()?.map(|r| json!({"id":r.get::<_,i64>(0).unwrap(),"timestamp":r.get::<_,String>(1).unwrap(),"text":r.get::<_,String>(2).unwrap(),"audio_path":r.get::<_,Option<String>>(3).unwrap(),"duration":r.get::<_,f64>(4).unwrap(),"favorite":r.get::<_,bool>(5).unwrap(),"failed":r.get::<_,bool>(6).unwrap()})))
+        Ok(rows.next()?.map(|r| json!({"id":r.get::<_,i64>(0).unwrap(),"timestamp":r.get::<_,String>(1).unwrap(),"text":r.get::<_,String>(2).unwrap(),"audio_path":r.get::<_,Option<String>>(3).unwrap(),"duration":r.get::<_,f64>(4).unwrap(),"favorite":r.get::<_,bool>(5).unwrap(),"failed":r.get::<_,bool>(6).unwrap(),"model":r.get::<_,Option<String>>(7).unwrap(),"transcription_seconds":r.get::<_,Option<f64>>(8).unwrap()})))
     }
 }
 #[cfg(test)]
@@ -102,6 +132,35 @@ mod tests {
         assert_eq!(h.add("Салом Rust").unwrap(), 8);
         assert_eq!(h.recent(100, "OLD").unwrap()[0]["id"], 7);
         assert_eq!(h.recent(100, "Rust").unwrap()[0]["text"], "Салом Rust");
+    }
+
+    #[test]
+    fn attempt_metadata_survives_reopen_and_retry_without_changing_audio() {
+        let dir = tempfile::tempdir().unwrap();
+        let history = History::open(dir.path()).unwrap();
+        let id = history
+            .add_recording("", Path::new("synthetic.wav"), 60., true)
+            .unwrap();
+        assert!(history.get(id).unwrap().unwrap()["model"].is_null());
+        history
+            .finish_transcription(id, "first words", false, "canary-180m-flash", 2.5)
+            .unwrap();
+        history.set_favorite(id, true).unwrap();
+        drop(history);
+        let history = History::open(dir.path()).unwrap();
+        assert_eq!(
+            history.get(id).unwrap().unwrap()["transcription_seconds"],
+            2.5
+        );
+        history
+            .finish_transcription(id, "retry words", false, "base.en", 0.75)
+            .unwrap();
+        let row = &history.recent(10, "retry").unwrap()[0];
+        assert_eq!(row["model"], "base.en");
+        assert_eq!(row["transcription_seconds"], 0.75);
+        assert_eq!(row["duration"], 60.);
+        assert_eq!(row["audio_path"], "synthetic.wav");
+        assert_eq!(row["favorite"], true);
     }
 
     #[test]

@@ -1,0 +1,832 @@
+[
+  {
+    "model": "canary",
+    "duration_s": 2,
+    "variant": "baseline",
+    "warm_seconds": 0.1372010945,
+    "warm_samples_s": [
+      0.138134203,
+      0.136267986
+    ],
+    "peak_process_mib": 403.53515625,
+    "sampled_peak_gpu_resident_mib": 0,
+    "text": "The library opens early on Monday morning.",
+    "command": [
+      "/tmp/canary-vulkan-research/target/release/canary-backend-bench",
+      "gguf",
+      "/home/fire/.cache/huggingface/hub/models--handy-computer--canary-180m-flash-gguf/snapshots/b147f9dc52b59f0998e410540a84727bd86457fd/canary-180m-flash-Q8_0.gguf",
+      "3",
+      "/tmp/model-duration-bench/2s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "8",
+      "BENCH_BACKEND": "cpu"
+    }
+  },
+  {
+    "model": "canary",
+    "duration_s": 2,
+    "variant": "candidate",
+    "warm_seconds": 0.193802002,
+    "warm_samples_s": [
+      0.268414529,
+      0.119189475
+    ],
+    "peak_process_mib": 237.38671875,
+    "sampled_peak_gpu_resident_mib": 248.0234375,
+    "text": "The library opens early on Monday morning.",
+    "command": [
+      "taskset",
+      "-c",
+      "0-7",
+      "/tmp/canary-vulkan-research/target/release/canary-backend-bench",
+      "gguf",
+      "/home/fire/.cache/huggingface/hub/models--handy-computer--canary-180m-flash-gguf/snapshots/b147f9dc52b59f0998e410540a84727bd86457fd/canary-180m-flash-Q8_0.gguf",
+      "3",
+      "/tmp/model-duration-bench/2s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "8",
+      "BENCH_BACKEND": "vulkan",
+      "CANARY_HYBRID": "1",
+      "CANARY_DIRECT_PRE_DW": "1",
+      "GGML_VK_DISABLE_F16": "1",
+      "OMP_WAIT_POLICY": "ACTIVE",
+      "BENCH_PAUSE_OMP": "1"
+    }
+  },
+  {
+    "model": "canary",
+    "duration_s": 5,
+    "variant": "baseline",
+    "warm_seconds": 0.29312156749999996,
+    "warm_samples_s": [
+      0.310397755,
+      0.27584538
+    ],
+    "peak_process_mib": 445.23828125,
+    "sampled_peak_gpu_resident_mib": 0,
+    "text": "The library opens early on Monday morning. Students scan marble books and read newspapers in",
+    "command": [
+      "/tmp/canary-vulkan-research/target/release/canary-backend-bench",
+      "gguf",
+      "/home/fire/.cache/huggingface/hub/models--handy-computer--canary-180m-flash-gguf/snapshots/b147f9dc52b59f0998e410540a84727bd86457fd/canary-180m-flash-Q8_0.gguf",
+      "3",
+      "/tmp/model-duration-bench/5s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "8",
+      "BENCH_BACKEND": "cpu"
+    }
+  },
+  {
+    "model": "canary",
+    "duration_s": 5,
+    "variant": "candidate",
+    "warm_seconds": 0.239417176,
+    "warm_samples_s": [
+      0.287738339,
+      0.191096013
+    ],
+    "peak_process_mib": 238.11328125,
+    "sampled_peak_gpu_resident_mib": 267.59375,
+    "text": "The library opens early on Monday morning. Students scan marble books and read newspapers in",
+    "command": [
+      "taskset",
+      "-c",
+      "0-7",
+      "/tmp/canary-vulkan-research/target/release/canary-backend-bench",
+      "gguf",
+      "/home/fire/.cache/huggingface/hub/models--handy-computer--canary-180m-flash-gguf/snapshots/b147f9dc52b59f0998e410540a84727bd86457fd/canary-180m-flash-Q8_0.gguf",
+      "3",
+      "/tmp/model-duration-bench/5s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "8",
+      "BENCH_BACKEND": "vulkan",
+      "CANARY_HYBRID": "1",
+      "CANARY_DIRECT_PRE_DW": "1",
+      "GGML_VK_DISABLE_F16": "1",
+      "OMP_WAIT_POLICY": "ACTIVE",
+      "BENCH_PAUSE_OMP": "1"
+    }
+  },
+  {
+    "model": "canary",
+    "duration_s": 15,
+    "variant": "baseline",
+    "warm_seconds": 0.9421322175,
+    "warm_samples_s": [
+      0.997142431,
+      0.887122004
+    ],
+    "peak_process_mib": 586.6796875,
+    "sampled_peak_gpu_resident_mib": 0,
+    "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in the quiet room at Fern. Please return everything before the end of the month and keep your receipt. Our garden needs more water during the summer. The tomatoes are growing well beside them.",
+    "command": [
+      "/tmp/canary-vulkan-research/target/release/canary-backend-bench",
+      "gguf",
+      "/home/fire/.cache/huggingface/hub/models--handy-computer--canary-180m-flash-gguf/snapshots/b147f9dc52b59f0998e410540a84727bd86457fd/canary-180m-flash-Q8_0.gguf",
+      "3",
+      "/tmp/model-duration-bench/15s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "8",
+      "BENCH_BACKEND": "cpu"
+    }
+  },
+  {
+    "model": "canary",
+    "duration_s": 15,
+    "variant": "candidate",
+    "warm_seconds": 0.46851558800000004,
+    "warm_samples_s": [
+      0.468306539,
+      0.468724637
+    ],
+    "peak_process_mib": 243.30078125,
+    "sampled_peak_gpu_resident_mib": 332.84765625,
+    "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in the quiet room at Fern. Please return everything before the end of the month and keep your receipt. Our garden needs more water during the summer. The tomatoes are growing well beside them.",
+    "command": [
+      "taskset",
+      "-c",
+      "0-7",
+      "/tmp/canary-vulkan-research/target/release/canary-backend-bench",
+      "gguf",
+      "/home/fire/.cache/huggingface/hub/models--handy-computer--canary-180m-flash-gguf/snapshots/b147f9dc52b59f0998e410540a84727bd86457fd/canary-180m-flash-Q8_0.gguf",
+      "3",
+      "/tmp/model-duration-bench/15s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "8",
+      "BENCH_BACKEND": "vulkan",
+      "CANARY_HYBRID": "1",
+      "CANARY_DIRECT_PRE_DW": "1",
+      "GGML_VK_DISABLE_F16": "1",
+      "OMP_WAIT_POLICY": "ACTIVE",
+      "BENCH_PAUSE_OMP": "1"
+    }
+  },
+  {
+    "model": "canary",
+    "duration_s": 30,
+    "variant": "baseline",
+    "warm_seconds": 2.383510524,
+    "warm_samples_s": [
+      2.300116827,
+      2.466904221
+    ],
+    "peak_process_mib": 799.328125,
+    "sampled_peak_gpu_resident_mib": 0,
+    "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in the quiet room at Fern. Please return everything before the end of the month and keep your receipt. Our garden needs more water during the summer. The tomatoes are growing well beside the wooden tents. We should plant carrots next spring and ask the neighbors to help us remove the weeds. The airport was busy when we arrived yesterday. A friendly person showed us where to leave our bag. After a short wait, we found our seats and washed the plane through.",
+    "command": [
+      "/tmp/canary-vulkan-research/target/release/canary-backend-bench",
+      "gguf",
+      "/home/fire/.cache/huggingface/hub/models--handy-computer--canary-180m-flash-gguf/snapshots/b147f9dc52b59f0998e410540a84727bd86457fd/canary-180m-flash-Q8_0.gguf",
+      "3",
+      "/tmp/model-duration-bench/30s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "8",
+      "BENCH_BACKEND": "cpu"
+    }
+  },
+  {
+    "model": "canary",
+    "duration_s": 30,
+    "variant": "candidate",
+    "warm_seconds": 1.2798102395000002,
+    "warm_samples_s": [
+      1.29743475,
+      1.262185729
+    ],
+    "peak_process_mib": 253.41796875,
+    "sampled_peak_gpu_resident_mib": 430.734375,
+    "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in the quiet room at Fern. Please return everything before the end of the month and keep your receipt. Our garden needs more water during the summer. The tomatoes are growing well beside the wooden tents. We should plant carrots next spring and ask the neighbors to help us remove the weeds. The airport was busy when we arrived yesterday. A friendly person showed us where to leave our bag. After a short wait, we found our seats and washed the plane through.",
+    "command": [
+      "taskset",
+      "-c",
+      "0-7",
+      "/tmp/canary-vulkan-research/target/release/canary-backend-bench",
+      "gguf",
+      "/home/fire/.cache/huggingface/hub/models--handy-computer--canary-180m-flash-gguf/snapshots/b147f9dc52b59f0998e410540a84727bd86457fd/canary-180m-flash-Q8_0.gguf",
+      "3",
+      "/tmp/model-duration-bench/30s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "8",
+      "BENCH_BACKEND": "vulkan",
+      "CANARY_HYBRID": "1",
+      "CANARY_DIRECT_PRE_DW": "1",
+      "GGML_VK_DISABLE_F16": "1",
+      "OMP_WAIT_POLICY": "ACTIVE",
+      "BENCH_PAUSE_OMP": "1"
+    }
+  },
+  {
+    "model": "canary",
+    "duration_s": 60,
+    "variant": "baseline",
+    "warm_seconds": 4.776424583,
+    "warm_samples_s": [
+      4.831983326,
+      4.72086584
+    ],
+    "peak_process_mib": 755.6328125,
+    "sampled_peak_gpu_resident_mib": 0,
+    "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in the quiet room at Fern. Please return everything before the end of the month and keep your receipt. Our garden needs more water during the summer. The tomatoes are growing well beside the wooden tents. We should plant carrots next spring and ask the neighbors to help us remove the weeds. The airport was busy when we arrived yesterday. A friendly person showed us where it is. After a short wait we found our seats and washed the plane through the large window. The kitchen renovation should finish next Friday. We ordered a new table and several comfortable chairs for the family. The workers will paint the wall after they install the lights among the sink. A telescope helps us see distant stars and planets. Tonight the sky should be clear enough for an excellent new. Bring a warm coat because the Temperature usually falling after the sun goes down. The mountain trail begins near a small wooden bridge. Walk carefully across the stream and follow the signs toward the camp.",
+    "command": [
+      "/tmp/canary-vulkan-research/target/release/canary-backend-bench",
+      "gguf",
+      "/home/fire/.cache/huggingface/hub/models--handy-computer--canary-180m-flash-gguf/snapshots/b147f9dc52b59f0998e410540a84727bd86457fd/canary-180m-flash-Q8_0.gguf",
+      "3",
+      "/tmp/model-duration-bench/60s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "8",
+      "BENCH_BACKEND": "cpu"
+    }
+  },
+  {
+    "model": "canary",
+    "duration_s": 60,
+    "variant": "candidate",
+    "warm_seconds": 2.409966184,
+    "warm_samples_s": [
+      2.462444932,
+      2.357487436
+    ],
+    "peak_process_mib": 257.58203125,
+    "sampled_peak_gpu_resident_mib": 405.29296875,
+    "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in the quiet room at Fern. Please return everything before the end of the month and keep your receipt. Our garden needs more water during the summer. The tomatoes are growing well beside the wooden tents. We should plant carrots next spring and ask the neighbors to help us remove the weeds. The airport was busy when we arrived yesterday. A friendly person showed us where it is. After a short wait we found our seats and washed the plane through the large window. The kitchen renovation should finish next Friday. We ordered a new table and several comfortable chairs for the family. The workers will paint the wall after they install the lights among the sink. A telescope helps us see distant stars and planets. Tonight the sky should be clear enough for an excellent new. Bring a warm coat because the Temperature usually falling after the sun goes down. The mountain trail begins near a small wooden bridge. Walk carefully across the stream and follow the signs toward the camp.",
+    "command": [
+      "taskset",
+      "-c",
+      "0-7",
+      "/tmp/canary-vulkan-research/target/release/canary-backend-bench",
+      "gguf",
+      "/home/fire/.cache/huggingface/hub/models--handy-computer--canary-180m-flash-gguf/snapshots/b147f9dc52b59f0998e410540a84727bd86457fd/canary-180m-flash-Q8_0.gguf",
+      "3",
+      "/tmp/model-duration-bench/60s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "8",
+      "BENCH_BACKEND": "vulkan",
+      "CANARY_HYBRID": "1",
+      "CANARY_DIRECT_PRE_DW": "1",
+      "GGML_VK_DISABLE_F16": "1",
+      "OMP_WAIT_POLICY": "ACTIVE",
+      "BENCH_PAUSE_OMP": "1"
+    }
+  },
+  {
+    "model": "parakeet",
+    "duration_s": 2,
+    "variant": "baseline",
+    "warm_seconds": 0.41831056850000004,
+    "warm_samples_s": [
+      0.42939485,
+      0.407226287
+    ],
+    "peak_process_mib": 1128.63671875,
+    "sampled_peak_gpu_resident_mib": 0,
+    "text": "The library opens early on Monday morning",
+    "command": [
+      "/tmp/canary-vulkan-research/target/release/canary-backend-bench",
+      "gguf",
+      "/home/fire/.cache/huggingface/hub/models--handy-computer--parakeet-unified-en-0.6b-gguf/snapshots/7e948f21b7bdbac698d3318db9d350f1096f3b6c/parakeet-unified-en-0.6b-Q8_0.gguf",
+      "3",
+      "/tmp/model-duration-bench/2s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "8",
+      "BENCH_BACKEND": "cpu",
+      "BENCH_STREAM": "1"
+    }
+  },
+  {
+    "model": "parakeet",
+    "duration_s": 2,
+    "variant": "candidate",
+    "warm_seconds": 0.2080830325,
+    "warm_samples_s": [
+      0.198970651,
+      0.217195414
+    ],
+    "peak_process_mib": 162.52734375,
+    "sampled_peak_gpu_resident_mib": 745.07421875,
+    "text": "The library opens early on Monday morning",
+    "command": [
+      "/tmp/canary-vulkan-research/target/release/canary-backend-bench",
+      "gguf",
+      "/home/fire/.cache/huggingface/hub/models--handy-computer--parakeet-unified-en-0.6b-gguf/snapshots/7e948f21b7bdbac698d3318db9d350f1096f3b6c/parakeet-unified-en-0.6b-Q8_0.gguf",
+      "3",
+      "/tmp/model-duration-bench/2s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "8",
+      "BENCH_BACKEND": "vulkan",
+      "BENCH_STREAM": "1"
+    }
+  },
+  {
+    "model": "parakeet",
+    "duration_s": 5,
+    "variant": "baseline",
+    "warm_seconds": 2.0175639495,
+    "warm_samples_s": [
+      2.039601196,
+      1.995526703
+    ],
+    "peak_process_mib": 1150.49609375,
+    "sampled_peak_gpu_resident_mib": 0,
+    "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in",
+    "command": [
+      "/tmp/canary-vulkan-research/target/release/canary-backend-bench",
+      "gguf",
+      "/home/fire/.cache/huggingface/hub/models--handy-computer--parakeet-unified-en-0.6b-gguf/snapshots/7e948f21b7bdbac698d3318db9d350f1096f3b6c/parakeet-unified-en-0.6b-Q8_0.gguf",
+      "3",
+      "/tmp/model-duration-bench/5s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "8",
+      "BENCH_BACKEND": "cpu",
+      "BENCH_STREAM": "1"
+    }
+  },
+  {
+    "model": "parakeet",
+    "duration_s": 5,
+    "variant": "candidate",
+    "warm_seconds": 0.784346245,
+    "warm_samples_s": [
+      0.779164618,
+      0.789527872
+    ],
+    "peak_process_mib": 162.7890625,
+    "sampled_peak_gpu_resident_mib": 764.8125,
+    "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in",
+    "command": [
+      "/tmp/canary-vulkan-research/target/release/canary-backend-bench",
+      "gguf",
+      "/home/fire/.cache/huggingface/hub/models--handy-computer--parakeet-unified-en-0.6b-gguf/snapshots/7e948f21b7bdbac698d3318db9d350f1096f3b6c/parakeet-unified-en-0.6b-Q8_0.gguf",
+      "3",
+      "/tmp/model-duration-bench/5s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "8",
+      "BENCH_BACKEND": "vulkan",
+      "BENCH_STREAM": "1"
+    }
+  },
+  {
+    "model": "parakeet",
+    "duration_s": 15,
+    "variant": "baseline",
+    "warm_seconds": 11.1383637295,
+    "warm_samples_s": [
+      11.291867224,
+      10.984860235
+    ],
+    "peak_process_mib": 1174.8125,
+    "sampled_peak_gpu_resident_mib": 0,
+    "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in the quiet room upstairs. Please return everything before the end of the month and keep your receipt. Our garden needs more water during the summer. The tomatoes are growing well beside them",
+    "command": [
+      "/tmp/canary-vulkan-research/target/release/canary-backend-bench",
+      "gguf",
+      "/home/fire/.cache/huggingface/hub/models--handy-computer--parakeet-unified-en-0.6b-gguf/snapshots/7e948f21b7bdbac698d3318db9d350f1096f3b6c/parakeet-unified-en-0.6b-Q8_0.gguf",
+      "3",
+      "/tmp/model-duration-bench/15s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "8",
+      "BENCH_BACKEND": "cpu",
+      "BENCH_STREAM": "1"
+    }
+  },
+  {
+    "model": "parakeet",
+    "duration_s": 15,
+    "variant": "candidate",
+    "warm_seconds": 4.0603446665,
+    "warm_samples_s": [
+      3.926150879,
+      4.194538454
+    ],
+    "peak_process_mib": 169.3203125,
+    "sampled_peak_gpu_resident_mib": 782.46875,
+    "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in the quiet room upstairs. Please return everything before the end of the month and keep your receipt. Our garden needs more water during the summer. The tomatoes are growing well beside them",
+    "command": [
+      "/tmp/canary-vulkan-research/target/release/canary-backend-bench",
+      "gguf",
+      "/home/fire/.cache/huggingface/hub/models--handy-computer--parakeet-unified-en-0.6b-gguf/snapshots/7e948f21b7bdbac698d3318db9d350f1096f3b6c/parakeet-unified-en-0.6b-Q8_0.gguf",
+      "3",
+      "/tmp/model-duration-bench/15s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "8",
+      "BENCH_BACKEND": "vulkan",
+      "BENCH_STREAM": "1"
+    }
+  },
+  {
+    "model": "parakeet",
+    "duration_s": 30,
+    "variant": "baseline",
+    "warm_seconds": 23.586930780499998,
+    "warm_samples_s": [
+      23.417230845,
+      23.756630716
+    ],
+    "peak_process_mib": 1177.0625,
+    "sampled_peak_gpu_resident_mib": 0,
+    "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in the quiet room upstairs. Please return everything before the end of the month and keep your receipt. Our garden needs more water during the summer. The tomatoes are growing well beside the wooden fence. We should plant carrots next spring and ask the neighbors to help us remove the weeds. The airport was busy when we arrived yesterday. A friendly person showed us where to leave our bags. After a short wait, we found our seats and watched the planes through",
+    "command": [
+      "/tmp/canary-vulkan-research/target/release/canary-backend-bench",
+      "gguf",
+      "/home/fire/.cache/huggingface/hub/models--handy-computer--parakeet-unified-en-0.6b-gguf/snapshots/7e948f21b7bdbac698d3318db9d350f1096f3b6c/parakeet-unified-en-0.6b-Q8_0.gguf",
+      "3",
+      "/tmp/model-duration-bench/30s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "8",
+      "BENCH_BACKEND": "cpu",
+      "BENCH_STREAM": "1"
+    }
+  },
+  {
+    "model": "parakeet",
+    "duration_s": 30,
+    "variant": "candidate",
+    "warm_seconds": 8.50924003,
+    "warm_samples_s": [
+      8.430974873,
+      8.587505187
+    ],
+    "peak_process_mib": 171.12109375,
+    "sampled_peak_gpu_resident_mib": 782.46875,
+    "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in the quiet room upstairs. Please return everything before the end of the month and keep your receipt. Our garden needs more water during the summer. The tomatoes are growing well beside the wooden fence. We should plant carrots next spring and ask the neighbors to help us remove the weeds. The airport was busy when we arrived yesterday. A friendly person showed us where to leave our bags. After a short wait, we found our seats and watched the planes through",
+    "command": [
+      "/tmp/canary-vulkan-research/target/release/canary-backend-bench",
+      "gguf",
+      "/home/fire/.cache/huggingface/hub/models--handy-computer--parakeet-unified-en-0.6b-gguf/snapshots/7e948f21b7bdbac698d3318db9d350f1096f3b6c/parakeet-unified-en-0.6b-Q8_0.gguf",
+      "3",
+      "/tmp/model-duration-bench/30s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "8",
+      "BENCH_BACKEND": "vulkan",
+      "BENCH_STREAM": "1"
+    }
+  },
+  {
+    "model": "parakeet",
+    "duration_s": 60,
+    "variant": "baseline",
+    "warm_seconds": 49.2288193225,
+    "warm_samples_s": [
+      49.944829597,
+      48.512809048
+    ],
+    "peak_process_mib": 1183.140625,
+    "sampled_peak_gpu_resident_mib": 0,
+    "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in the quiet room upstairs. Please return everything before the end of the month and keep your receipt. Our garden needs more water during the summer. The tomatoes are growing well beside the wooden fence. We should plant carrots next spring and ask the neighbors to help us remove the weeds. The airport was busy when we arrived yesterday. A friendly person showed us where to leave our bags. After a short wait, we found our seats and watched the planes through the large windows. The kitchen renovation should finish next Friday. We ordered a new table and several comfortable chairs for the family. The workers will paint the walls after they install the lights above the sink. A telescope helps us see distant stars and planets. Tonight the sky should be clear enough for an excellent view. Bring a warm coat because the temperature usually falls after the sun goes down. The mountain trail begins near a small wooden bridge. Walk carefully across the stream and follow the signs towards the camp",
+    "command": [
+      "/tmp/canary-vulkan-research/target/release/canary-backend-bench",
+      "gguf",
+      "/home/fire/.cache/huggingface/hub/models--handy-computer--parakeet-unified-en-0.6b-gguf/snapshots/7e948f21b7bdbac698d3318db9d350f1096f3b6c/parakeet-unified-en-0.6b-Q8_0.gguf",
+      "3",
+      "/tmp/model-duration-bench/60s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "8",
+      "BENCH_BACKEND": "cpu",
+      "BENCH_STREAM": "1"
+    }
+  },
+  {
+    "model": "parakeet",
+    "duration_s": 60,
+    "variant": "candidate",
+    "warm_seconds": 15.770527721,
+    "warm_samples_s": [
+      14.942412676,
+      16.598642766
+    ],
+    "peak_process_mib": 176.25,
+    "sampled_peak_gpu_resident_mib": 782.46875,
+    "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in the quiet room upstairs. Please return everything before the end of the month and keep your receipt. Our garden needs more water during the summer. The tomatoes are growing well beside the wooden fence. We should plant carrots next spring and ask the neighbors to help us remove the weeds. The airport was busy when we arrived yesterday. A friendly person showed us where to leave our bags. After a short wait, we found our seats and watched the planes through the large windows. The kitchen renovation should finish next Friday. We ordered a new table and several comfortable chairs for the family. The workers will paint the walls after they install the lights above the sink. A telescope helps us see distant stars and planets. Tonight the sky should be clear enough for an excellent view. Bring a warm coat because the temperature usually falls after the sun goes down. The mountain trail begins near a small wooden bridge. Walk carefully across the stream and follow the signs towards the camp",
+    "command": [
+      "/tmp/canary-vulkan-research/target/release/canary-backend-bench",
+      "gguf",
+      "/home/fire/.cache/huggingface/hub/models--handy-computer--parakeet-unified-en-0.6b-gguf/snapshots/7e948f21b7bdbac698d3318db9d350f1096f3b6c/parakeet-unified-en-0.6b-Q8_0.gguf",
+      "3",
+      "/tmp/model-duration-bench/60s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "8",
+      "BENCH_BACKEND": "vulkan",
+      "BENCH_STREAM": "1"
+    }
+  },
+  {
+    "model": "whisper",
+    "duration_s": 2,
+    "variant": "baseline",
+    "warm_seconds": 0.5536033025,
+    "warm_samples_s": [
+      0.556281385,
+      0.55092522
+    ],
+    "peak_process_mib": 281.203125,
+    "sampled_peak_gpu_resident_mib": 0,
+    "text": "The library opens early on Monday morning.",
+    "command": [
+      "/home/fire/projects/voice-dictation/target/release/whisper-speed-bench",
+      "/home/fire/.cache/huggingface/hub/models--Systran--faster-whisper-base.en/snapshots/3d3d5dee26484f91867d81cb899cfcf72b96be6c",
+      "3",
+      "/tmp/model-duration-bench/2s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "4",
+      "BENCH_BACKEND": "cpu"
+    }
+  },
+  {
+    "model": "whisper",
+    "duration_s": 2,
+    "variant": "candidate",
+    "warm_seconds": 0.1314696255,
+    "warm_samples_s": [
+      0.14457615,
+      0.118363101
+    ],
+    "peak_process_mib": 281.8203125,
+    "sampled_peak_gpu_resident_mib": 0,
+    "text": "The library opens early on Monday morning.",
+    "command": [
+      "taskset",
+      "-c",
+      "0-7",
+      "/home/fire/projects/voice-dictation/target/release/whisper-speed-bench",
+      "/home/fire/.cache/huggingface/hub/models--Systran--faster-whisper-base.en/snapshots/3d3d5dee26484f91867d81cb899cfcf72b96be6c",
+      "3",
+      "/tmp/model-duration-bench/2s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "8",
+      "BENCH_BACKEND": "cpu",
+      "BENCH_CUSTOM": "1",
+      "BENCH_FAST_MEL": "1",
+      "BENCH_PAD_SECONDS": "5",
+      "BENCH_MIN_SECONDS": "10",
+      "BENCH_SHORT_ONLY": "1"
+    }
+  },
+  {
+    "model": "whisper",
+    "duration_s": 5,
+    "variant": "baseline",
+    "warm_seconds": 0.762598303,
+    "warm_samples_s": [
+      0.62513409,
+      0.900062516
+    ],
+    "peak_process_mib": 281.00390625,
+    "sampled_peak_gpu_resident_mib": 0,
+    "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in",
+    "command": [
+      "/home/fire/projects/voice-dictation/target/release/whisper-speed-bench",
+      "/home/fire/.cache/huggingface/hub/models--Systran--faster-whisper-base.en/snapshots/3d3d5dee26484f91867d81cb899cfcf72b96be6c",
+      "3",
+      "/tmp/model-duration-bench/5s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "4",
+      "BENCH_BACKEND": "cpu"
+    }
+  },
+  {
+    "model": "whisper",
+    "duration_s": 5,
+    "variant": "candidate",
+    "warm_seconds": 0.2247479565,
+    "warm_samples_s": [
+      0.209678359,
+      0.239817554
+    ],
+    "peak_process_mib": 281.6953125,
+    "sampled_peak_gpu_resident_mib": 0,
+    "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in",
+    "command": [
+      "taskset",
+      "-c",
+      "0-7",
+      "/home/fire/projects/voice-dictation/target/release/whisper-speed-bench",
+      "/home/fire/.cache/huggingface/hub/models--Systran--faster-whisper-base.en/snapshots/3d3d5dee26484f91867d81cb899cfcf72b96be6c",
+      "3",
+      "/tmp/model-duration-bench/5s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "8",
+      "BENCH_BACKEND": "cpu",
+      "BENCH_CUSTOM": "1",
+      "BENCH_FAST_MEL": "1",
+      "BENCH_PAD_SECONDS": "5",
+      "BENCH_MIN_SECONDS": "10",
+      "BENCH_SHORT_ONLY": "1"
+    }
+  },
+  {
+    "model": "whisper",
+    "duration_s": 15,
+    "variant": "baseline",
+    "warm_seconds": 2.0603044644999997,
+    "warm_samples_s": [
+      1.833069961,
+      2.287538968
+    ],
+    "peak_process_mib": 281.46484375,
+    "sampled_peak_gpu_resident_mib": 0,
+    "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in the quiet room upstairs. Please return everything before the end of the month and keep your receipt. Our garden needs more water during the summer. The tomatoes are growing well beside them.",
+    "command": [
+      "/home/fire/projects/voice-dictation/target/release/whisper-speed-bench",
+      "/home/fire/.cache/huggingface/hub/models--Systran--faster-whisper-base.en/snapshots/3d3d5dee26484f91867d81cb899cfcf72b96be6c",
+      "3",
+      "/tmp/model-duration-bench/15s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "4",
+      "BENCH_BACKEND": "cpu"
+    }
+  },
+  {
+    "model": "whisper",
+    "duration_s": 15,
+    "variant": "candidate",
+    "warm_seconds": 1.8010566555,
+    "warm_samples_s": [
+      1.776045269,
+      1.826068042
+    ],
+    "peak_process_mib": 281.2421875,
+    "sampled_peak_gpu_resident_mib": 0,
+    "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in the quiet room upstairs. Please return everything before the end of the month and keep your receipt. Our garden needs more water during the summer. The tomatoes are growing well beside them.",
+    "command": [
+      "taskset",
+      "-c",
+      "0-7",
+      "/home/fire/projects/voice-dictation/target/release/whisper-speed-bench",
+      "/home/fire/.cache/huggingface/hub/models--Systran--faster-whisper-base.en/snapshots/3d3d5dee26484f91867d81cb899cfcf72b96be6c",
+      "3",
+      "/tmp/model-duration-bench/15s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "8",
+      "BENCH_BACKEND": "cpu",
+      "BENCH_CUSTOM": "1",
+      "BENCH_FAST_MEL": "1",
+      "BENCH_PAD_SECONDS": "5",
+      "BENCH_MIN_SECONDS": "10",
+      "BENCH_SHORT_ONLY": "1"
+    }
+  },
+  {
+    "model": "whisper",
+    "duration_s": 30,
+    "variant": "baseline",
+    "warm_seconds": 2.7695329324999998,
+    "warm_samples_s": [
+      3.438948692,
+      2.100117173
+    ],
+    "peak_process_mib": 281.62890625,
+    "sampled_peak_gpu_resident_mib": 0,
+    "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in the quiet room upstairs. Please return everything before the end of the month and keep your receipt. Our garden needs more water during the summer. The tomatoes are growing well beside the wooden fence. We should plant carrots next, ring and ask the neighbors to help us remove the weeds. The airport was busy when we arrived yesterday. A friendly person showed us where to leave our bags. After a short wait we found our seats and watched the planes through.",
+    "command": [
+      "/home/fire/projects/voice-dictation/target/release/whisper-speed-bench",
+      "/home/fire/.cache/huggingface/hub/models--Systran--faster-whisper-base.en/snapshots/3d3d5dee26484f91867d81cb899cfcf72b96be6c",
+      "3",
+      "/tmp/model-duration-bench/30s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "4",
+      "BENCH_BACKEND": "cpu"
+    }
+  },
+  {
+    "model": "whisper",
+    "duration_s": 30,
+    "variant": "candidate",
+    "warm_seconds": 1.5935341085,
+    "warm_samples_s": [
+      1.537378728,
+      1.649689489
+    ],
+    "peak_process_mib": 281.52734375,
+    "sampled_peak_gpu_resident_mib": 0,
+    "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in the quiet room upstairs. Please return everything before the end of the month and keep your receipt. Our garden needs more water during the summer. The tomatoes are growing well beside the wooden fence. We should plant carrots next, ring and ask the neighbors to help us remove the weeds. The airport was busy when we arrived yesterday. A friendly person showed us where to leave our bags. After a short wait we found our seats and watched the planes through.",
+    "command": [
+      "taskset",
+      "-c",
+      "0-7",
+      "/home/fire/projects/voice-dictation/target/release/whisper-speed-bench",
+      "/home/fire/.cache/huggingface/hub/models--Systran--faster-whisper-base.en/snapshots/3d3d5dee26484f91867d81cb899cfcf72b96be6c",
+      "3",
+      "/tmp/model-duration-bench/30s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "8",
+      "BENCH_BACKEND": "cpu",
+      "BENCH_CUSTOM": "1",
+      "BENCH_FAST_MEL": "1",
+      "BENCH_PAD_SECONDS": "5",
+      "BENCH_MIN_SECONDS": "10",
+      "BENCH_SHORT_ONLY": "1"
+    }
+  },
+  {
+    "model": "whisper",
+    "duration_s": 60,
+    "variant": "baseline",
+    "warm_seconds": 3.4918231735,
+    "warm_samples_s": [
+      3.466676872,
+      3.516969475
+    ],
+    "peak_process_mib": 295.5,
+    "sampled_peak_gpu_resident_mib": 0,
+    "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in the quiet room upstairs. Please return everything before the end of the month and keep your receipt. Our garden needs more water during the summer. The tomatoes are growing well beside the wooden fence. We should plant carrots next, ring and ask the neighbors to help us remove the weeds. The airport was busy when we arrived yesterday. A friendly person showed us where to leave our bags. After a short wait we found our seats and watched the planes through. the large windows. The kitchen renovation should finish next Friday. We ordered a new table and several comfortable chairs for the family. The workers will paint the wall after they install the lights above the sink. A telescope helps us see distant stars and planets. Tonight the sky should be clear enough for an excellent view. Bring a warm coat because the temperature usually falls after the sun goes down. The mountain trail begins near a small wooden bridge. Walk carefully across the stream and follow the signs toward the camp.",
+    "command": [
+      "/home/fire/projects/voice-dictation/target/release/whisper-speed-bench",
+      "/home/fire/.cache/huggingface/hub/models--Systran--faster-whisper-base.en/snapshots/3d3d5dee26484f91867d81cb899cfcf72b96be6c",
+      "3",
+      "/tmp/model-duration-bench/60s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "4",
+      "BENCH_BACKEND": "cpu"
+    }
+  },
+  {
+    "model": "whisper",
+    "duration_s": 60,
+    "variant": "candidate",
+    "warm_seconds": 3.9156017585000003,
+    "warm_samples_s": [
+      3.402014142,
+      4.429189375
+    ],
+    "peak_process_mib": 295.796875,
+    "sampled_peak_gpu_resident_mib": 0,
+    "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in the quiet room upstairs. Please return everything before the end of the month and keep your receipt. Our garden needs more water during the summer. The tomatoes are growing well beside the wooden fence. We should plant carrots next, ring and ask the neighbors to help us remove the weeds. The airport was busy when we arrived yesterday. A friendly person showed us where to leave our bags. After a short wait we found our seats and watched the planes through. the large windows. The kitchen renovation should finish next Friday. We ordered a new table and several comfortable chairs for the family. The workers will paint the wall after they install the lights above the sink. A telescope helps us see distant stars and planets. Tonight the sky should be clear enough for an excellent view. Bring a warm coat because the temperature usually falls after the sun goes down. The mountain trail begins near a small wooden bridge. Walk carefully across the stream and follow the signs toward the camp.",
+    "command": [
+      "taskset",
+      "-c",
+      "0-7",
+      "/home/fire/projects/voice-dictation/target/release/whisper-speed-bench",
+      "/home/fire/.cache/huggingface/hub/models--Systran--faster-whisper-base.en/snapshots/3d3d5dee26484f91867d81cb899cfcf72b96be6c",
+      "3",
+      "/tmp/model-duration-bench/60s.f32"
+    ],
+    "flags": {
+      "BENCH_SKIP_IDLE": "1",
+      "BENCH_THREADS": "8",
+      "BENCH_BACKEND": "cpu",
+      "BENCH_CUSTOM": "1",
+      "BENCH_FAST_MEL": "1",
+      "BENCH_PAD_SECONDS": "5",
+      "BENCH_MIN_SECONDS": "10",
+      "BENCH_SHORT_ONLY": "1"
+    }
+  }
+]

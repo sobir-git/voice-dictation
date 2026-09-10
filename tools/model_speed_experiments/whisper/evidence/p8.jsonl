@@ -1,0 +1,5 @@
+{"event":"loaded","peak_rss_kib":287732,"seconds":0.204730189,"threads":8}
+{"audio":"/tmp/canary-vulkan-research/five-second-screen.f32","cpu_seconds":2.419858,"event":"transcribed","peak_rss_kib":287732,"round":0,"seconds":0.545478864,"text":"The library opens early on Monday morning. Students can borrow books and read newspapers in"}
+{"audio":"/tmp/canary-vulkan-research/five-second-screen.f32","cpu_seconds":2.3689919999999995,"event":"transcribed","peak_rss_kib":293124,"round":1,"seconds":0.422999222,"text":"The library opens early on Monday morning. Students can borrow books and read newspapers in"}
+{"audio":"/tmp/canary-vulkan-research/five-second-screen.f32","cpu_seconds":2.4148500000000004,"event":"transcribed","peak_rss_kib":293124,"round":2,"seconds":0.467374056,"text":"The library opens early on Monday morning. Students can borrow books and read newspapers in"}
+{"cpu_seconds_over_half_second":0.00004499999999918458,"event":"idle"}

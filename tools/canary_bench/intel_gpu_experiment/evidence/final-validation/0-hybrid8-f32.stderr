@@ -1,0 +1,26 @@
+ggml_vulkan: Found 1 Vulkan devices:
+ggml_vulkan: 0 = Intel(R) Iris(R) Xe Graphics (ADL GT2) (Intel open-source Mesa driver) | uma: 1 | fp16: 0 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 65536 | int dot: 1 | matrix cores: none
+canary: using vulkan backend: Vulkan0
+canary kv_cache: allocated 17.0 MB (f16) (self: 1024 session x 4 layers, cross: 63 T_enc x 4 layers)
+STAGE {"decode_ms":97.54100036621094,"encode_ms":69.20600128173828,"mel_ms":7.126999855041504}
+STAGE {"decode_ms":73.26200103759766,"encode_ms":54.98400115966797,"mel_ms":7.36299991607666}
+canary kv_cache: allocated 17.0 MB (f16) (self: 1024 session x 4 layers, cross: 61 T_enc x 4 layers)
+STAGE {"decode_ms":52.34000015258789,"encode_ms":54.731998443603516,"mel_ms":7.35099983215332}
+canary kv_cache: allocated 17.0 MB (f16) (self: 1024 session x 4 layers, cross: 63 T_enc x 4 layers)
+STAGE {"decode_ms":56.83599853515625,"encode_ms":56.21200180053711,"mel_ms":7.144999980926514}
+STAGE {"decode_ms":109.79100036621094,"encode_ms":55.35200119018555,"mel_ms":7.557000160217285}
+STAGE {"decode_ms":56.57699966430664,"encode_ms":55.84700012207031,"mel_ms":7.696000099182129}
+STAGE {"decode_ms":52.26499938964844,"encode_ms":55.23899841308594,"mel_ms":7.685999870300293}
+STAGE {"decode_ms":62.57500076293945,"encode_ms":55.40999984741211,"mel_ms":7.632999897003174}
+STAGE {"decode_ms":58.856998443603516,"encode_ms":55.96200180053711,"mel_ms":7.892000198364258}
+STAGE {"decode_ms":93.60399627685547,"encode_ms":56.840999603271484,"mel_ms":7.691999912261963}
+STAGE {"decode_ms":160.375,"encode_ms":62.757999420166016,"mel_ms":8.128999710083008}
+canary kv_cache: allocated 17.0 MB (f16) (self: 1024 session x 4 layers, cross: 61 T_enc x 4 layers)
+STAGE {"decode_ms":63.9630012512207,"encode_ms":60.766998291015625,"mel_ms":7.633999824523926}
+canary kv_cache: allocated 17.0 MB (f16) (self: 1024 session x 4 layers, cross: 63 T_enc x 4 layers)
+STAGE {"decode_ms":56.14899826049805,"encode_ms":58.707000732421875,"mel_ms":7.947000026702881}
+STAGE {"decode_ms":67.63600158691406,"encode_ms":55.4109992980957,"mel_ms":7.888000011444092}
+STAGE {"decode_ms":58.768001556396484,"encode_ms":55.52299880981445,"mel_ms":7.681000232696533}
+STAGE {"decode_ms":53.928001403808594,"encode_ms":56.388999938964844,"mel_ms":7.934999942779541}
+STAGE {"decode_ms":62.625,"encode_ms":55.53200149536133,"mel_ms":8.121999740600586}
+STAGE {"decode_ms":65.53399658203125,"encode_ms":55.54499816894531,"mel_ms":7.946000099182129}

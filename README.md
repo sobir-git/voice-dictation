@@ -30,7 +30,7 @@ native X11, Cairo and FreeType libraries, including `libxkbcommon-x11-0` on Debi
 `pkg-config`, `libcairo2-dev` and `libfreetype6-dev`.
 A system font is required; `FIRE_UI_FONT` can select a font file.
 The first build compiles CTranslate2 and oneDNN;
-ONNX Runtime is downloaded for Silero. Inference currently targets the CPU.
+ONNX Runtime is downloaded for Silero. Inference defaults to CPU, with opt-in Vulkan for GGUF models.
 
 Global hotkeys require the `input` group. The launcher activates it when needed.
 GNOME Wayland normally uses `ydotoold`; X11 normally uses `xdotool`. PipeWire ALSA
@@ -60,7 +60,7 @@ UI thread. Microphone tests keep samples in memory and never transcribe them.
 
 Fire UI is also our project. Consume its public APIs here and propose reusable
 framework improvements through [upstream issues or PRs](https://github.com/sobir-git/fire-ui).
-The app pins the published [Fire UI v0.7.0 release](https://github.com/sobir-git/fire-ui/releases/tag/v0.7.0).
+The app pins the published [Fire UI v0.8.0 release](https://github.com/sobir-git/fire-ui/releases/tag/v0.8.0).
 
 ```sh
 cargo test --locked
@@ -101,3 +101,9 @@ Local socket clients can send `start_recording` with a `pipewire_node`, then
 Only the initiating connection can stop or abort that recording; disconnecting
 it discards the capture. Hotkey release does not stop a client-owned recording.
 The socket remains private to the local user; no HTTP control endpoint is added.
+
+## Performance experiments
+
+The service includes a terminal-only benchmark runner and selectable inference profiles. Benchmarking does not change settings. See [the guide](docs/performance-lab.md) for commands, RAM comparisons and experimental short-context inference. The default build stays CPU-only. For GPU support, build with `--features vulkan` or install with `VOICE_DICTATION_FEATURES=vulkan ./install.sh`; builders need Vulkan development headers, loader and a recent glslc compiler. The SDK is not shipped with the app.
+
+Settings shows the active inference engine and CPU or Vulkan backend, including CPU fallback. History shows each attempt's model and end-to-end transcription time, including queueing and model loading after recording stops or a retry is requested. Audio duration remains separate. Existing rows without recorded metadata show unknown values.

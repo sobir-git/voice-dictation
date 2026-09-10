@@ -1,0 +1,55 @@
+[
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--locked"
+    ],
+    "exit_code": 0,
+    "seconds": 1.2175800800323486
+  },
+  {
+    "command": [
+      "cargo",
+      "clippy",
+      "--locked",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 0,
+    "seconds": 0.36532163619995117
+  },
+  {
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-v"
+    ],
+    "exit_code": 0,
+    "seconds": 3.425734281539917
+  },
+  {
+    "command": [
+      "cargo",
+      "build",
+      "--release",
+      "--locked"
+    ],
+    "exit_code": 0,
+    "seconds": 0.26500821113586426
+  },
+  {
+    "command": [
+      "python3",
+      "tools/native_probe.py"
+    ],
+    "exit_code": 0,
+    "seconds": 15.165260553359985
+  }
+]

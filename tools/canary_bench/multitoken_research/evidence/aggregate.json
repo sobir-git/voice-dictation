@@ -1,0 +1,17 @@
+{
+  "manifest": "/tmp/canary-vulkan-research/human/manifest.json",
+  "folds": 5,
+  "all_clips": 73,
+  "all_tokens_including_eos": 1223,
+  "aggregate": [
+    {"context": 1, "k": 1, "tokens": 1223, "rounds": 1181, "accepted": 42, "covered_rounds": 624, "coverage": 0.528365792, "accepted_per_round": 0.035563082, "effective_tokens_per_round": 1.035563082},
+    {"context": 1, "k": 2, "tokens": 1223, "rounds": 1190, "accepted": 33, "covered_rounds": 633, "coverage": 0.531932773, "accepted_per_round": 0.027731092, "effective_tokens_per_round": 1.027731092},
+    {"context": 1, "k": 4, "tokens": 1223, "rounds": 1187, "accepted": 36, "covered_rounds": 630, "coverage": 0.530749789, "accepted_per_round": 0.030328559, "effective_tokens_per_round": 1.030328559},
+    {"context": 2, "k": 1, "tokens": 1223, "rounds": 1211, "accepted": 12, "covered_rounds": 95, "coverage": 0.078447564, "accepted_per_round": 0.009909166, "effective_tokens_per_round": 1.009909166},
+    {"context": 2, "k": 2, "tokens": 1223, "rounds": 1209, "accepted": 14, "covered_rounds": 93, "coverage": 0.076923077, "accepted_per_round": 0.011579818, "effective_tokens_per_round": 1.011579818},
+    {"context": 2, "k": 4, "tokens": 1223, "rounds": 1209, "accepted": 14, "covered_rounds": 93, "coverage": 0.076923077, "accepted_per_round": 0.011579818, "effective_tokens_per_round": 1.011579818},
+    {"context": 3, "k": 1, "tokens": 1223, "rounds": 1221, "accepted": 2, "covered_rounds": 10, "coverage": 0.008190008, "accepted_per_round": 0.001638002, "effective_tokens_per_round": 1.001638002},
+    {"context": 3, "k": 2, "tokens": 1223, "rounds": 1221, "accepted": 2, "covered_rounds": 10, "coverage": 0.008190008, "accepted_per_round": 0.001638002, "effective_tokens_per_round": 1.001638002},
+    {"context": 3, "k": 4, "tokens": 1223, "rounds": 1221, "accepted": 2, "covered_rounds": 10, "coverage": 0.008190008, "accepted_per_round": 0.001638002, "effective_tokens_per_round": 1.001638002}
+  ]
+}

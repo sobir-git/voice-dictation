@@ -1,0 +1,466 @@
+{
+  "cpu": {
+    "seconds": 2.2043757250000002,
+    "word_errors": 4,
+    "reference_words": 111,
+    "wer": 0.036036036036036036,
+    "cases": [
+      {
+        "case": "1272-128104-0001",
+        "seconds": 0.242451544,
+        "reference": "NOR IS MISTER QUILTER'S MANNER LESS INTERESTING THAN HIS MATTER",
+        "text": "Nor is mister Quilter's manner less interesting than his matter.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 10
+      },
+      {
+        "case": "1272-128104-0014",
+        "seconds": 0.110592497,
+        "reference": "BY HARRY QUILTER M A",
+        "text": "By Harry Quilter, M. A.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 5
+      },
+      {
+        "case": "1272-135031-0003",
+        "seconds": 0.24242053,
+        "reference": "THE LITTLE GIRL HAD BEEN ASLEEP BUT SHE HEARD THE RAPS AND OPENED THE DOOR",
+        "text": "The little girl had been asleep, but she heard the raps and opened the door.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 15
+      },
+      {
+        "case": "1272-135031-0004",
+        "seconds": 0.216027021,
+        "reference": "THE KING HAS FLED IN DISGRACE AND YOUR FRIENDS ARE ASKING FOR YOU",
+        "text": "The King is flooding disgrace, and your friends are asking for you.",
+        "error": null,
+        "word_errors": 3,
+        "reference_words": 13
+      },
+      {
+        "case": "1272-135031-0005",
+        "seconds": 0.245333084,
+        "reference": "I BEGGED RUGGEDO LONG AGO TO SEND HIM AWAY BUT HE WOULD NOT DO SO",
+        "text": "I begged Ruggedo long ago to send him away, but he would not do so.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 15
+      },
+      {
+        "case": "1272-135031-0006",
+        "seconds": 0.21744148,
+        "reference": "I ALSO OFFERED TO HELP YOUR BROTHER TO ESCAPE BUT HE WOULD NOT GO",
+        "text": "I also offered to help your brother to escape, but he would not go.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 14
+      },
+      {
+        "case": "1272-135031-0007",
+        "seconds": 0.209421054,
+        "reference": "HE EATS AND SLEEPS VERY STEADILY REPLIED THE NEW KING",
+        "text": "He eats and sleeps very steadily, replied the new King.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 10
+      },
+      {
+        "case": "1272-135031-0008",
+        "seconds": 0.181992552,
+        "reference": "I HOPE HE DOESN'T WORK TOO HARD SAID SHAGGY",
+        "text": "I hope he doesn't work too hard, said Shaggy.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 9
+      },
+      {
+        "case": "1272-135031-0009",
+        "seconds": 0.094780851,
+        "reference": "HE DOESN'T WORK AT ALL",
+        "text": "He doesn't work at all.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 5
+      },
+      {
+        "case": "1272-135031-0011",
+        "seconds": 0.159316687,
+        "reference": "NOT EXACTLY RETURNED KALIKO",
+        "text": "Not exactly, returned Callico.",
+        "error": null,
+        "word_errors": 1,
+        "reference_words": 4
+      },
+      {
+        "case": "1272-135031-0012",
+        "seconds": 0.100349595,
+        "reference": "WHERE IS MY BROTHER NOW",
+        "text": "Where is my brother now?",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 5
+      },
+      {
+        "case": "1272-135031-0013",
+        "seconds": 0.18424883,
+        "reference": "INQUIRED SHAGGY IN THE METAL FOREST",
+        "text": "inquired Shaggy. In the Metal Forest.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 6
+      }
+    ]
+  },
+  "hybrid": {
+    "seconds": 1.491182968,
+    "word_errors": 4,
+    "reference_words": 111,
+    "wer": 0.036036036036036036,
+    "cases": [
+      {
+        "case": "1272-128104-0001",
+        "seconds": 0.130647993,
+        "reference": "NOR IS MISTER QUILTER'S MANNER LESS INTERESTING THAN HIS MATTER",
+        "text": "Nor is mister Quilter's manner less interesting than his matter.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 10
+      },
+      {
+        "case": "1272-128104-0014",
+        "seconds": 0.098992105,
+        "reference": "BY HARRY QUILTER M A",
+        "text": "By Harry Quilter, M. A.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 5
+      },
+      {
+        "case": "1272-135031-0003",
+        "seconds": 0.199060041,
+        "reference": "THE LITTLE GIRL HAD BEEN ASLEEP BUT SHE HEARD THE RAPS AND OPENED THE DOOR",
+        "text": "The little girl had been asleep, but she heard the raps and opened the door.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 15
+      },
+      {
+        "case": "1272-135031-0004",
+        "seconds": 0.119521601,
+        "reference": "THE KING HAS FLED IN DISGRACE AND YOUR FRIENDS ARE ASKING FOR YOU",
+        "text": "The King is flooding disgrace, and your friends are asking for you.",
+        "error": null,
+        "word_errors": 3,
+        "reference_words": 13
+      },
+      {
+        "case": "1272-135031-0005",
+        "seconds": 0.130050432,
+        "reference": "I BEGGED RUGGEDO LONG AGO TO SEND HIM AWAY BUT HE WOULD NOT DO SO",
+        "text": "I begged Ruggedo long ago to send him away, but he would not do so.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 15
+      },
+      {
+        "case": "1272-135031-0006",
+        "seconds": 0.198593003,
+        "reference": "I ALSO OFFERED TO HELP YOUR BROTHER TO ESCAPE BUT HE WOULD NOT GO",
+        "text": "I also offered to help your brother to escape, but he would not go.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 14
+      },
+      {
+        "case": "1272-135031-0007",
+        "seconds": 0.11808915,
+        "reference": "HE EATS AND SLEEPS VERY STEADILY REPLIED THE NEW KING",
+        "text": "He eats and sleeps very steadily, replied the new King.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 10
+      },
+      {
+        "case": "1272-135031-0008",
+        "seconds": 0.118078885,
+        "reference": "I HOPE HE DOESN'T WORK TOO HARD SAID SHAGGY",
+        "text": "I hope he doesn't work too hard, said Shaggy.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 9
+      },
+      {
+        "case": "1272-135031-0009",
+        "seconds": 0.088976904,
+        "reference": "HE DOESN'T WORK AT ALL",
+        "text": "He doesn't work at all.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 5
+      },
+      {
+        "case": "1272-135031-0011",
+        "seconds": 0.100937189,
+        "reference": "NOT EXACTLY RETURNED KALIKO",
+        "text": "Not exactly, returned Callico.",
+        "error": null,
+        "word_errors": 1,
+        "reference_words": 4
+      },
+      {
+        "case": "1272-135031-0012",
+        "seconds": 0.084850699,
+        "reference": "WHERE IS MY BROTHER NOW",
+        "text": "Where is my brother now?",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 5
+      },
+      {
+        "case": "1272-135031-0013",
+        "seconds": 0.103384966,
+        "reference": "INQUIRED SHAGGY IN THE METAL FOREST",
+        "text": "inquired Shaggy. In the Metal Forest.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 6
+      }
+    ]
+  },
+  "q4-decoder": {
+    "seconds": 1.168597162,
+    "word_errors": 3,
+    "reference_words": 111,
+    "wer": 0.02702702702702703,
+    "cases": [
+      {
+        "case": "1272-128104-0001",
+        "seconds": 0.11322866,
+        "reference": "NOR IS MISTER QUILTER'S MANNER LESS INTERESTING THAN HIS MATTER",
+        "text": "Nor is mister Quilter's manner less interesting than his matter.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 10
+      },
+      {
+        "case": "1272-128104-0014",
+        "seconds": 0.08709122,
+        "reference": "BY HARRY QUILTER M A",
+        "text": "By Harry Quilter, M. A.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 5
+      },
+      {
+        "case": "1272-135031-0003",
+        "seconds": 0.112267639,
+        "reference": "THE LITTLE GIRL HAD BEEN ASLEEP BUT SHE HEARD THE RAPS AND OPENED THE DOOR",
+        "text": "The little girl had been asleep, but she heard the raps and opened the door.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 15
+      },
+      {
+        "case": "1272-135031-0004",
+        "seconds": 0.103588919,
+        "reference": "THE KING HAS FLED IN DISGRACE AND YOUR FRIENDS ARE ASKING FOR YOU",
+        "text": "The King is flooded in disgrace, and your friends are asking for you.",
+        "error": null,
+        "word_errors": 2,
+        "reference_words": 13
+      },
+      {
+        "case": "1272-135031-0005",
+        "seconds": 0.111204042,
+        "reference": "I BEGGED RUGGEDO LONG AGO TO SEND HIM AWAY BUT HE WOULD NOT DO SO",
+        "text": "I begged Ruggedo long ago to send him away, but he would not do so.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 15
+      },
+      {
+        "case": "1272-135031-0006",
+        "seconds": 0.104298557,
+        "reference": "I ALSO OFFERED TO HELP YOUR BROTHER TO ESCAPE BUT HE WOULD NOT GO",
+        "text": "I also offered to help your brother to escape, but he would not go.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 14
+      },
+      {
+        "case": "1272-135031-0007",
+        "seconds": 0.100054659,
+        "reference": "HE EATS AND SLEEPS VERY STEADILY REPLIED THE NEW KING",
+        "text": "He eats and sleeps very steadily, replied the new King.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 10
+      },
+      {
+        "case": "1272-135031-0008",
+        "seconds": 0.09735357,
+        "reference": "I HOPE HE DOESN'T WORK TOO HARD SAID SHAGGY",
+        "text": "I hope he doesn't work too hard, said Shaggy.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 9
+      },
+      {
+        "case": "1272-135031-0009",
+        "seconds": 0.081574627,
+        "reference": "HE DOESN'T WORK AT ALL",
+        "text": "He doesn't work at all.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 5
+      },
+      {
+        "case": "1272-135031-0011",
+        "seconds": 0.085123358,
+        "reference": "NOT EXACTLY RETURNED KALIKO",
+        "text": "Not exactly, returned Callico.",
+        "error": null,
+        "word_errors": 1,
+        "reference_words": 4
+      },
+      {
+        "case": "1272-135031-0012",
+        "seconds": 0.079330728,
+        "reference": "WHERE IS MY BROTHER NOW",
+        "text": "Where is my brother now?",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 5
+      },
+      {
+        "case": "1272-135031-0013",
+        "seconds": 0.093481183,
+        "reference": "INQUIRED SHAGGY IN THE METAL FOREST",
+        "text": "inquired Shaggy. In the Metal Forest.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 6
+      }
+    ]
+  },
+  "q4-all": {
+    "seconds": 1.402499416,
+    "word_errors": 3,
+    "reference_words": 111,
+    "wer": 0.02702702702702703,
+    "cases": [
+      {
+        "case": "1272-128104-0001",
+        "seconds": 0.107526931,
+        "reference": "NOR IS MISTER QUILTER'S MANNER LESS INTERESTING THAN HIS MATTER",
+        "text": "Nor is mister Quilter's manner less interesting than his matter.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 10
+      },
+      {
+        "case": "1272-128104-0014",
+        "seconds": 0.183588288,
+        "reference": "BY HARRY QUILTER M A",
+        "text": "By Harry Quilter, M. A.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 5
+      },
+      {
+        "case": "1272-135031-0003",
+        "seconds": 0.110760139,
+        "reference": "THE LITTLE GIRL HAD BEEN ASLEEP BUT SHE HEARD THE RAPS AND OPENED THE DOOR",
+        "text": "The little girl had been asleep, but she heard the raps and opened the door.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 15
+      },
+      {
+        "case": "1272-135031-0004",
+        "seconds": 0.101395918,
+        "reference": "THE KING HAS FLED IN DISGRACE AND YOUR FRIENDS ARE ASKING FOR YOU",
+        "text": "The King is flooded in disgrace, and your friends are asking for you.",
+        "error": null,
+        "word_errors": 2,
+        "reference_words": 13
+      },
+      {
+        "case": "1272-135031-0005",
+        "seconds": 0.141640577,
+        "reference": "I BEGGED RUGGEDO LONG AGO TO SEND HIM AWAY BUT HE WOULD NOT DO SO",
+        "text": "I begged Ruggedo long ago to send him away, but he would not do so.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 15
+      },
+      {
+        "case": "1272-135031-0006",
+        "seconds": 0.100143587,
+        "reference": "I ALSO OFFERED TO HELP YOUR BROTHER TO ESCAPE BUT HE WOULD NOT GO",
+        "text": "I also offered to help your brother to escape, but he would not go.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 14
+      },
+      {
+        "case": "1272-135031-0007",
+        "seconds": 0.098857873,
+        "reference": "HE EATS AND SLEEPS VERY STEADILY REPLIED THE NEW KING",
+        "text": "He eats and sleeps very steadily, replied the New King.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 10
+      },
+      {
+        "case": "1272-135031-0008",
+        "seconds": 0.09449261,
+        "reference": "I HOPE HE DOESN'T WORK TOO HARD SAID SHAGGY",
+        "text": "I hope he doesn't work too hard, said Shaggy.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 9
+      },
+      {
+        "case": "1272-135031-0009",
+        "seconds": 0.143938428,
+        "reference": "HE DOESN'T WORK AT ALL",
+        "text": "He doesn't work at all.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 5
+      },
+      {
+        "case": "1272-135031-0011",
+        "seconds": 0.082416949,
+        "reference": "NOT EXACTLY RETURNED KALIKO",
+        "text": "Not exactly, returned Callico.",
+        "error": null,
+        "word_errors": 1,
+        "reference_words": 4
+      },
+      {
+        "case": "1272-135031-0012",
+        "seconds": 0.068720951,
+        "reference": "WHERE IS MY BROTHER NOW",
+        "text": "Where is my brother now?",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 5
+      },
+      {
+        "case": "1272-135031-0013",
+        "seconds": 0.169017165,
+        "reference": "INQUIRED SHAGGY IN THE METAL FOREST",
+        "text": "inquired Shaggy. In the Metal Forest.",
+        "error": null,
+        "word_errors": 0,
+        "reference_words": 6
+      }
+    ]
+  }
+}

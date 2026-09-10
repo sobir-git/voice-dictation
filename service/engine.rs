@@ -1,6 +1,6 @@
 use crate::{
     config::{expand, Config},
-    process,
+    optimization, process,
 };
 use anyhow::{bail, Context, Result};
 use ct2rs::{
@@ -31,11 +31,15 @@ fn parakeet_stream_options() -> transcribe_cpp::StreamOptions {
     }
 }
 
-fn load_transcribe_model(path: PathBuf) -> Result<transcribe_cpp::Model> {
+fn load_transcribe_model(path: PathBuf, config: &Config) -> Result<transcribe_cpp::Model> {
     Ok(transcribe_cpp::Model::load_with(
         path,
         &transcribe_cpp::ModelOptions {
-            backend: transcribe_cpp::Backend::Cpu,
+            backend: if optimization::profile(config) == "vulkan" {
+                transcribe_cpp::Backend::Vulkan
+            } else {
+                transcribe_cpp::Backend::Cpu
+            },
             device: None,
         },
     )?)
@@ -120,6 +124,7 @@ pub enum Engine {
 }
 impl Engine {
     pub fn load(config: &Config) -> Result<Self> {
+        optimization::check_profile(config)?;
         let name = config.string("transcription", "model");
         let compute = config.string("transcription", "compute_type");
         if name == PARAKEET_MODEL || name.ends_with(".gguf") {
@@ -134,11 +139,14 @@ impl Engine {
                 }
                 path
             };
-            let model = load_transcribe_model(path)?;
+            let model = load_transcribe_model(path, config)?;
             if !model.capabilities().supports_streaming {
                 bail!("The selected Parakeet model does not support streaming")
             }
-            let mut session = model.session()?;
+            let mut session = model.session_with(&transcribe_cpp::SessionOptions {
+                n_threads: optimization::threads(config, 0) as i32,
+                ..Default::default()
+            })?;
             // transcribe.cpp prepares some kernels lazily. Exercise the actual
             // stream path while the daemon is loading in the background so the
             // user's first dictation does not pay that one-time cost.
@@ -153,18 +161,21 @@ impl Engine {
             }
             return Ok(Self::Parakeet {
                 session,
-                identity: (name.into(), compute.into()),
+                identity: optimization::identity(config),
             });
         }
         if name == CANARY_MODEL {
             let api = hf_hub::api::sync::Api::new()?
                 .model("handy-computer/canary-180m-flash-gguf".into());
             let path = api.get("canary-180m-flash-Q8_0.gguf")?;
-            let model = load_transcribe_model(path)?;
-            let session = model.session()?;
+            let model = load_transcribe_model(path, config)?;
+            let session = model.session_with(&transcribe_cpp::SessionOptions {
+                n_threads: optimization::threads(config, 0) as i32,
+                ..Default::default()
+            })?;
             return Ok(Self::Canary {
                 session,
-                identity: (name.into(), compute.into()),
+                identity: optimization::identity(config),
             });
         }
         let compute_type = match compute {
@@ -184,7 +195,7 @@ impl Engine {
             &path,
             ct2rs::Config {
                 compute_type,
-                num_threads_per_replica: 4,
+                num_threads_per_replica: optimization::threads(config, 4),
                 ..Default::default()
             },
         )?;
@@ -193,7 +204,7 @@ impl Engine {
         Ok(Self::Whisper {
             model,
             tokenizer: Box::new(tokenizer),
-            identity: (name.into(), compute.into()),
+            identity: optimization::identity(config),
         })
     }
     pub fn matches(&self, c: &Config) -> bool {
@@ -202,23 +213,33 @@ impl Engine {
             | Self::Parakeet { identity, .. }
             | Self::Canary { identity, .. } => identity,
         };
-        identity.0 == c.string("transcription", "model")
-            && identity.1 == c.string("transcription", "compute_type")
+        *identity == optimization::identity(c)
+    }
+    pub fn set_identity(&mut self, requested: (String, String)) {
+        match self {
+            Self::Whisper { identity, .. }
+            | Self::Parakeet { identity, .. }
+            | Self::Canary { identity, .. } => *identity = requested,
+        }
     }
     pub fn supports_streaming(&self) -> bool {
         matches!(self, Self::Parakeet { .. })
     }
     pub fn transcribe(&mut self, samples: &[f32], config: &Config) -> Result<String> {
         if let Self::Parakeet { session, .. } = self {
-            return Ok(session
-                .run(
-                    samples,
-                    &transcribe_cpp::RunOptions {
-                        language: Some("en".into()),
-                        ..Default::default()
-                    },
-                )?
-                .text);
+            // Use the same buffered stream for history retries and benchmarks as live dictation.
+            let mut stream = session.stream(
+                &transcribe_cpp::RunOptions {
+                    language: Some("en".into()),
+                    ..Default::default()
+                },
+                &parakeet_stream_options(),
+            )?;
+            for chunk in samples.chunks(1600) {
+                stream.feed(chunk)?;
+            }
+            stream.finalize()?;
+            return Ok(stream.text().full);
         }
         if let Self::Canary { session, .. } = self {
             let language = config.string("transcription", "language");
@@ -256,9 +277,20 @@ impl Engine {
             if chunk.len() < 1600 {
                 continue;
             }
-            let mut features = log_mel(chunk, model.n_mels());
+            let mut features = if matches!(optimization::profile(config), "fast" | "adaptive") {
+                fast_log_mel(chunk, model.n_mels())
+            } else {
+                log_mel(chunk, model.n_mels())
+            };
+            let frames = optimization::context_frames(config, chunk.len());
+            if frames < 3000 {
+                features = features
+                    .chunks_exact(3000)
+                    .flat_map(|bin| bin[..frames].iter().copied())
+                    .collect();
+            }
             let view = StorageView::new(
-                &[1, model.n_mels(), 3000],
+                &[1, model.n_mels(), frames],
                 &mut features,
                 Default::default(),
             )?;
@@ -533,5 +565,93 @@ mod tests {
         let m = log_mel(&vec![0.; 16000], 80);
         assert_eq!(m.len(), 240000);
         assert!(m.iter().all(|v| (*v + 1.5).abs() < 1e-6));
+    }
+}
+
+/// Equivalent full-context features, skipping FFT work on zero padding.
+pub fn fast_log_mel(samples: &[f32], bins: usize) -> Vec<f32> {
+    fn hz_to_mel(hz: f32) -> f32 {
+        if hz < 1000. {
+            hz / (200. / 3.)
+        } else {
+            15. + (hz / 1000.).ln() / (6.4_f32.ln() / 27.)
+        }
+    }
+    fn mel_to_hz(m: f32) -> f32 {
+        if m < 15. {
+            m * (200. / 3.)
+        } else {
+            1000. * ((m - 15.) * (6.4_f32.ln() / 27.)).exp()
+        }
+    }
+    let edges: Vec<_> = (0..bins + 2)
+        .map(|i| mel_to_hz(hz_to_mel(8000.) * i as f32 / (bins + 1) as f32))
+        .collect();
+    let filters: Vec<Vec<(usize, f32)>> = (0..bins)
+        .map(|b| {
+            (0..201)
+                .filter_map(|i| {
+                    let hz = i as f32 * 40.;
+                    let w = ((hz - edges[b]) / (edges[b + 1] - edges[b]))
+                        .min((edges[b + 2] - hz) / (edges[b + 2] - edges[b + 1]))
+                        .max(0.)
+                        * 2.
+                        / (edges[b + 2] - edges[b]);
+                    (w > 0.).then_some((i, w))
+                })
+                .collect()
+        })
+        .collect();
+    let fft = FftPlanner::new().plan_fft_forward(400);
+    let mut buffer = vec![Complex32::default(); 400];
+    let mut scratch = vec![Complex32::default(); fft.get_inplace_scratch_len()];
+    let mut output = vec![-10.; bins * 3000];
+    let mut maximum = -10_f32;
+    let window: Vec<f32> = (0..400)
+        .map(|i| 0.5 - 0.5 * (std::f32::consts::TAU * i as f32 / 400.).cos())
+        .collect();
+    let frames = samples.len().saturating_add(200).div_ceil(160).min(3000);
+    for frame in 0..frames {
+        for (i, v) in buffer.iter_mut().enumerate() {
+            let index = (frame as isize * 160 + i as isize - 200).unsigned_abs();
+            let sample = samples.get(index).copied().unwrap_or(0.);
+            *v = Complex32::new(sample * window[i], 0.);
+        }
+        fft.process_with_scratch(&mut buffer, &mut scratch);
+        for (b, filter) in filters.iter().enumerate() {
+            let value = filter
+                .iter()
+                .map(|(i, w)| buffer[*i].norm_sqr() * w)
+                .sum::<f32>()
+                .max(1e-10)
+                .log10();
+            output[b * 3000 + frame] = value;
+            maximum = maximum.max(value);
+        }
+    }
+    for v in &mut output {
+        *v = (v.max(maximum - 8.) + 4.) / 4.;
+    }
+    output
+}
+
+#[cfg(test)]
+mod optimization_tests {
+    use super::*;
+    #[test]
+    fn fast_features_match_reference_at_padding_boundaries() {
+        for n in [0, 1, 159, 160, 199, 200, 319, 80_000, 479_999, 480_000] {
+            let samples: Vec<f32> = (0..n)
+                .map(|i| (i as f32 * 0.1321).sin() * 0.3 + (i % 17) as f32 * 0.0001)
+                .collect();
+            for bins in [80, 128] {
+                let a = log_mel(&samples, bins);
+                let b = fast_log_mel(&samples, bins);
+                assert!(
+                    a.iter().zip(b).all(|(a, b)| a.to_bits() == b.to_bits()),
+                    "length {n}, bins {bins}"
+                );
+            }
+        }
     }
 }

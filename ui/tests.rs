@@ -27,7 +27,7 @@ fn setup(size: Size) -> Ui<Desktop> {
     send(
         &mut ui,
         Command::Backend(Arc::new(
-            json!({"type":"state","listening":true,"model_ready":true,"log_level":"INFO"}),
+            json!({"type":"state","listening":true,"model_ready":true,"log_level":"INFO","runtime_profile":"standard"}),
         )),
     );
     ui
@@ -188,4 +188,43 @@ fn transcript_edits_survive_page_changes() {
     send(&mut ui, Command::Page(1));
     send(&mut ui, Command::Page(0));
     assert_eq!(ui.root().transcript_text, "Edited text. Салом!");
+}
+
+#[test]
+fn history_displays_recorded_model_and_transcription_time() {
+    assert_eq!(
+        history::format_metadata(
+            &json!({"model":"base.en","transcription_seconds":1.375,"duration":60})
+        ),
+        "Model: base.en · Transcription: 1.38 s"
+    );
+    assert_eq!(
+        history::format_metadata(&json!({"duration":60})),
+        "Model: unknown · Transcription: unavailable"
+    );
+}
+
+#[test]
+fn settings_describe_the_actual_inference_backend() {
+    assert_eq!(
+        preferences::format_backend(
+            &json!({"transcription":{"model":"base.en"}}),
+            "adaptive"
+        ),
+        "Backend: CTranslate2 · CPU · Adaptive short context"
+    );
+    assert_eq!(
+        preferences::format_backend(
+            &json!({"transcription":{"model":"parakeet-unified-en-0.6b"}}),
+            "vulkan"
+        ),
+        "Backend: transcribe.cpp · Vulkan"
+    );
+    assert_eq!(
+        preferences::format_backend(
+            &json!({"transcription":{"model":"canary-180m-flash"}}),
+            "CPU fallback: GPU initialization failed"
+        ),
+        "Backend: transcribe.cpp · CPU fallback"
+    );
 }

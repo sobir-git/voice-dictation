@@ -1,0 +1,34 @@
+{
+  "canary_cpu": {
+    "peak_process_rss_mib": 444.125,
+    "max_sampled_gpu_resident_mib": 0.0,
+    "last_process_rss_mib": 377.55859375,
+    "last_process_pss_mib": 371.837890625
+  },
+  "canary_hybrid": {
+    "peak_process_rss_mib": 236.96875,
+    "max_sampled_gpu_resident_mib": 235.0546875,
+    "last_process_rss_mib": 237.64453125,
+    "last_process_pss_mib": 231.712890625
+  },
+  "parakeet_cpu": {
+    "peak_process_rss_mib": 1152.0390625,
+    "max_sampled_gpu_resident_mib": 0.0,
+    "last_process_rss_mib": 1152.6640625,
+    "last_process_pss_mib": 1147.005859375
+  },
+  "parakeet_gpu": {
+    "peak_process_rss_mib": 163.28125,
+    "max_sampled_gpu_resident_mib": 764.8125,
+    "last_process_rss_mib": 163.69921875,
+    "last_process_pss_mib": 157.802734375
+  },
+  "whisper_baseline": {
+    "peak_process_rss_mib": 283.10546875,
+    "gpu": "not used"
+  },
+  "whisper_min10": {
+    "peak_process_rss_mib": 281.484375,
+    "gpu": "not used"
+  }
+}

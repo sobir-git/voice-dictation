@@ -1,0 +1,27 @@
+ggml_vulkan: Found 1 Vulkan devices:
+ggml_vulkan: 0 = Intel(R) Iris(R) Xe Graphics (ADL GT2) (Intel open-source Mesa driver) | uma: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 65536 | int dot: 1 | matrix cores: none
+canary: using cpu backend (strict)
+canary: promoted 34 conv pointwise weights from F16 → F32 for CPU backend
+canary kv_cache: allocated 17.0 MB (f16) (self: 1024 session x 4 layers, cross: 63 T_enc x 4 layers)
+STAGE {"decode_ms":135.7790069580078,"encode_ms":136.427001953125,"mel_ms":6.964000225067139}
+STAGE {"decode_ms":105.96199798583984,"encode_ms":136.39500427246094,"mel_ms":7.086999893188477}
+canary kv_cache: allocated 17.0 MB (f16) (self: 1024 session x 4 layers, cross: 61 T_enc x 4 layers)
+STAGE {"decode_ms":86.46700286865234,"encode_ms":140.1020050048828,"mel_ms":12.659000396728516}
+canary kv_cache: allocated 17.0 MB (f16) (self: 1024 session x 4 layers, cross: 63 T_enc x 4 layers)
+STAGE {"decode_ms":92.6520004272461,"encode_ms":137.2949981689453,"mel_ms":7.00600004196167}
+STAGE {"decode_ms":105.5459976196289,"encode_ms":145.66200256347656,"mel_ms":7.1519999504089355}
+STAGE {"decode_ms":92.91300201416016,"encode_ms":146.57899475097656,"mel_ms":7.2230000495910645}
+STAGE {"decode_ms":89.88200378417969,"encode_ms":142.7220001220703,"mel_ms":7.184999942779541}
+STAGE {"decode_ms":100.29900360107422,"encode_ms":142.38099670410156,"mel_ms":7.51200008392334}
+STAGE {"decode_ms":95.06300354003906,"encode_ms":140.18899536132812,"mel_ms":6.98799991607666}
+STAGE {"decode_ms":125.24700164794922,"encode_ms":134.30499267578125,"mel_ms":7.5329999923706055}
+STAGE {"decode_ms":104.24099731445312,"encode_ms":146.2969970703125,"mel_ms":7.622000217437744}
+canary kv_cache: allocated 17.0 MB (f16) (self: 1024 session x 4 layers, cross: 61 T_enc x 4 layers)
+STAGE {"decode_ms":88.52999877929688,"encode_ms":143.7830047607422,"mel_ms":7.688000202178955}
+canary kv_cache: allocated 17.0 MB (f16) (self: 1024 session x 4 layers, cross: 63 T_enc x 4 layers)
+STAGE {"decode_ms":98.19499969482422,"encode_ms":142.89599609375,"mel_ms":7.918000221252441}
+STAGE {"decode_ms":114.96099853515625,"encode_ms":143.0290069580078,"mel_ms":7.2779998779296875}
+STAGE {"decode_ms":112.13099670410156,"encode_ms":137.26600646972656,"mel_ms":8.392999649047852}
+STAGE {"decode_ms":89.4260025024414,"encode_ms":145.28799438476562,"mel_ms":14.16100025177002}
+STAGE {"decode_ms":106.5999984741211,"encode_ms":141.90199279785156,"mel_ms":7.39900016784668}
+STAGE {"decode_ms":100.55699920654297,"encode_ms":130.156005859375,"mel_ms":7.925000190734863}

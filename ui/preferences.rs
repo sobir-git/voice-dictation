@@ -34,7 +34,7 @@ impl<W: Widget> Widget for Field<W> {
 }
 
 pub(super) enum PreferenceCommand {
-    Sync(Arc<Value>, Arc<Vec<Value>>, bool),
+    Sync(Arc<Value>, Arc<Vec<Value>>, bool, Arc<str>),
     Select(usize, usize),
     Toggle(usize, bool),
     Language(EditorOutput),
@@ -42,12 +42,13 @@ pub(super) enum PreferenceCommand {
 impl Data for PreferenceCommand {
     fn bytes(&self) -> usize {
         match self {
-            Self::Sync(config, microphones, _) => {
+            Self::Sync(config, microphones, _, runtime) => {
                 config.to_string().len()
                     + microphones
                         .iter()
                         .map(|v| v.to_string().len())
                         .sum::<usize>()
+                    + runtime.len()
             }
             Self::Language(value) => value.bytes(),
             _ => 32,
@@ -58,6 +59,7 @@ pub(super) struct Preferences {
     choices: Vec<(usize, Child<Field<Dropdown>>)>,
     switches: Vec<(usize, Child<Switch>)>,
     language: Child<Field<Editor>>,
+    backend: Child<Label>,
     headings: Vec<Child<Label>>,
     values: Vec<Vec<Value>>,
     captions: Vec<Vec<Arc<str>>>,
@@ -100,6 +102,9 @@ impl Preferences {
                 ),
                 |v| PreferenceCommand::Language(v.clone()),
             ),
+            backend: c.add(Element::leaf(
+                Label::toned("Backend: loading", TextRole::Small, ColorRole::Muted).wrap(),
+            )),
             headings: ["Capture & recognition", "Text output", "Feedback"]
                 .into_iter()
                 .map(|s| c.add(Element::leaf(Label::styled(s, TextRole::Heading))))
@@ -174,7 +179,8 @@ impl Widget for Preferences {
     type Output = Command;
     fn update(&mut self, cx: &mut Update<'_, Self>, command: Self::Command) {
         match command {
-            PreferenceCommand::Sync(config, microphones, disabled) => {
+            PreferenceCommand::Sync(config, microphones, disabled, runtime) => {
+                let _ = cx.send(self.backend, format_backend(&config, &runtime));
                 for &(i, child) in &self.choices {
                     let (_, section, key) = FIELDS[i];
                     let current = &config[section][key];
@@ -245,6 +251,16 @@ impl Widget for Preferences {
                 &[Entry::natural(self.headings[group])],
             );
             y += heading.size.height + unit * 2.;
+            if group == 0 {
+                let backend = column_at(
+                    cx,
+                    Point::new(0., y),
+                    limits,
+                    Flow::default(),
+                    &[Entry::natural(self.backend)],
+                );
+                y += backend.size.height + unit * 2.;
+            }
             let ids: &[usize] = match group {
                 0 => &[0, 1, 2, 3],
                 1 => &[6],
@@ -287,4 +303,27 @@ impl Widget for Preferences {
         }
         Metrics::new(c.constrain(Size::new(c.max.width, y)))
     }
+}
+
+pub(super) fn format_backend(config: &Value, runtime: &str) -> String {
+    let model = config["transcription"]["model"].as_str().unwrap_or("");
+    let engine = if model.ends_with(".en")
+        || matches!(
+            model,
+            "tiny" | "base" | "small" | "medium" | "large-v3"
+        )
+    {
+        "CTranslate2"
+    } else {
+        "transcribe.cpp"
+    };
+    let mode = match runtime {
+        "standard" => "CPU",
+        "fast" => "CPU · Fast preprocessing",
+        "adaptive" => "CPU · Adaptive short context",
+        "vulkan" => "Vulkan",
+        value if value.starts_with("CPU fallback:") => "CPU fallback",
+        _ => "loading",
+    };
+    format!("Backend: {engine} · {mode}")
 }

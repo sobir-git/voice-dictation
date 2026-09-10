@@ -1,0 +1,302 @@
+[
+  {
+    "order": 0,
+    "variant": "baseline",
+    "case": "short",
+    "warm_seconds": [
+      0.5879374,
+      0.606182594
+    ],
+    "median_seconds": 0.597059997
+  },
+  {
+    "order": 0,
+    "variant": "baseline",
+    "case": "medium",
+    "warm_seconds": [
+      1.710756474,
+      1.735331098
+    ],
+    "median_seconds": 1.723043786
+  },
+  {
+    "order": 0,
+    "variant": "baseline",
+    "case": "long",
+    "warm_seconds": [
+      7.486432322,
+      7.603215835
+    ],
+    "median_seconds": 7.5448240785
+  },
+  {
+    "order": 0,
+    "variant": "baseline",
+    "case": "technical",
+    "warm_seconds": [
+      1.002053467,
+      1.002988874
+    ],
+    "median_seconds": 1.0025211705000001
+  },
+  {
+    "order": 0,
+    "variant": "baseline",
+    "case": "silence",
+    "warm_seconds": [
+      0.122099738,
+      0.113387388
+    ],
+    "median_seconds": 0.117743563
+  },
+  {
+    "order": 0,
+    "variant": "dw",
+    "case": "short",
+    "warm_seconds": [
+      0.532685769,
+      0.554425205
+    ],
+    "median_seconds": 0.543555487
+  },
+  {
+    "order": 0,
+    "variant": "dw",
+    "case": "medium",
+    "warm_seconds": [
+      1.629830189,
+      1.599140808
+    ],
+    "median_seconds": 1.6144854985000001
+  },
+  {
+    "order": 0,
+    "variant": "dw",
+    "case": "long",
+    "warm_seconds": [
+      6.910852437,
+      6.932859404
+    ],
+    "median_seconds": 6.9218559205000005
+  },
+  {
+    "order": 0,
+    "variant": "dw",
+    "case": "technical",
+    "warm_seconds": [
+      0.878236507,
+      0.88238827
+    ],
+    "median_seconds": 0.8803123884999999
+  },
+  {
+    "order": 0,
+    "variant": "dw",
+    "case": "silence",
+    "warm_seconds": [
+      0.097979355,
+      0.097112362
+    ],
+    "median_seconds": 0.0975458585
+  },
+  {
+    "order": 0,
+    "variant": "combined",
+    "case": "short",
+    "warm_seconds": [
+      0.519947514,
+      0.548465316
+    ],
+    "median_seconds": 0.5342064150000001
+  },
+  {
+    "order": 0,
+    "variant": "combined",
+    "case": "medium",
+    "warm_seconds": [
+      1.56159195,
+      1.594400005
+    ],
+    "median_seconds": 1.5779959775
+  },
+  {
+    "order": 0,
+    "variant": "combined",
+    "case": "long",
+    "warm_seconds": [
+      6.8601969,
+      6.774037455
+    ],
+    "median_seconds": 6.8171171775
+  },
+  {
+    "order": 0,
+    "variant": "combined",
+    "case": "technical",
+    "warm_seconds": [
+      1.042091421,
+      0.885549756
+    ],
+    "median_seconds": 0.9638205885
+  },
+  {
+    "order": 0,
+    "variant": "combined",
+    "case": "silence",
+    "warm_seconds": [
+      0.095295445,
+      0.083117514
+    ],
+    "median_seconds": 0.0892064795
+  },
+  {
+    "order": 1,
+    "variant": "combined",
+    "case": "short",
+    "warm_seconds": [
+      0.539293214,
+      0.596638537
+    ],
+    "median_seconds": 0.5679658755
+  },
+  {
+    "order": 1,
+    "variant": "combined",
+    "case": "medium",
+    "warm_seconds": [
+      1.583628723,
+      1.597499933
+    ],
+    "median_seconds": 1.590564328
+  },
+  {
+    "order": 1,
+    "variant": "combined",
+    "case": "long",
+    "warm_seconds": [
+      6.830391366,
+      6.832395682
+    ],
+    "median_seconds": 6.831393523999999
+  },
+  {
+    "order": 1,
+    "variant": "combined",
+    "case": "technical",
+    "warm_seconds": [
+      1.018643598,
+      0.883032741
+    ],
+    "median_seconds": 0.9508381694999999
+  },
+  {
+    "order": 1,
+    "variant": "combined",
+    "case": "silence",
+    "warm_seconds": [
+      0.092278828,
+      0.088058799
+    ],
+    "median_seconds": 0.0901688135
+  },
+  {
+    "order": 1,
+    "variant": "dw",
+    "case": "short",
+    "warm_seconds": [
+      0.550278682,
+      0.566582393
+    ],
+    "median_seconds": 0.5584305375
+  },
+  {
+    "order": 1,
+    "variant": "dw",
+    "case": "medium",
+    "warm_seconds": [
+      1.638902793,
+      1.646986068
+    ],
+    "median_seconds": 1.6429444305
+  },
+  {
+    "order": 1,
+    "variant": "dw",
+    "case": "long",
+    "warm_seconds": [
+      7.035766125,
+      7.05769265
+    ],
+    "median_seconds": 7.0467293875
+  },
+  {
+    "order": 1,
+    "variant": "dw",
+    "case": "technical",
+    "warm_seconds": [
+      0.885167713,
+      0.885491995
+    ],
+    "median_seconds": 0.885329854
+  },
+  {
+    "order": 1,
+    "variant": "dw",
+    "case": "silence",
+    "warm_seconds": [
+      0.101932566,
+      0.103794315
+    ],
+    "median_seconds": 0.1028634405
+  },
+  {
+    "order": 1,
+    "variant": "baseline",
+    "case": "short",
+    "warm_seconds": [
+      0.63531714,
+      0.637678377
+    ],
+    "median_seconds": 0.6364977585
+  },
+  {
+    "order": 1,
+    "variant": "baseline",
+    "case": "medium",
+    "warm_seconds": [
+      1.822285032,
+      1.7523971280000001
+    ],
+    "median_seconds": 1.78734108
+  },
+  {
+    "order": 1,
+    "variant": "baseline",
+    "case": "long",
+    "warm_seconds": [
+      7.678554014,
+      7.65817981
+    ],
+    "median_seconds": 7.668366912
+  },
+  {
+    "order": 1,
+    "variant": "baseline",
+    "case": "technical",
+    "warm_seconds": [
+      0.974946667,
+      0.95925883
+    ],
+    "median_seconds": 0.9671027485
+  },
+  {
+    "order": 1,
+    "variant": "baseline",
+    "case": "silence",
+    "warm_seconds": [
+      0.119217681,
+      0.122262778
+    ],
+    "median_seconds": 0.1207402295
+  }
+]

@@ -1,0 +1,226 @@
+{
+  "reference_words": 256,
+  "word_errors": 9,
+  "wer": 0.03515625,
+  "normalization": "lowercase alphanumeric words, retaining internal apostrophes; no number or title expansion",
+  "speaker_count": 1,
+  "clips": [
+    {
+      "audio": "1272-128104-0001.f32",
+      "reference_words": 10,
+      "word_errors": 0,
+      "reference": "NOR IS MISTER QUILTER'S MANNER LESS INTERESTING THAN HIS MATTER",
+      "transcript": "Nor is mister Quilter's manner less interesting than his matter."
+    },
+    {
+      "audio": "1272-128104-0014.f32",
+      "reference_words": 5,
+      "word_errors": 0,
+      "reference": "BY HARRY QUILTER M A",
+      "transcript": "By Harry Quilter, M. A."
+    },
+    {
+      "audio": "1272-135031-0003.f32",
+      "reference_words": 15,
+      "word_errors": 0,
+      "reference": "THE LITTLE GIRL HAD BEEN ASLEEP BUT SHE HEARD THE RAPS AND OPENED THE DOOR",
+      "transcript": "The little girl had been asleep, but she heard the raps and opened the door."
+    },
+    {
+      "audio": "1272-135031-0004.f32",
+      "reference_words": 13,
+      "word_errors": 3,
+      "reference": "THE KING HAS FLED IN DISGRACE AND YOUR FRIENDS ARE ASKING FOR YOU",
+      "transcript": "The King is flooding disgrace, and your friends are asking for you."
+    },
+    {
+      "audio": "1272-135031-0005.f32",
+      "reference_words": 15,
+      "word_errors": 0,
+      "reference": "I BEGGED RUGGEDO LONG AGO TO SEND HIM AWAY BUT HE WOULD NOT DO SO",
+      "transcript": "I begged Ruggedo long ago to send him away, but he would not do so."
+    },
+    {
+      "audio": "1272-135031-0006.f32",
+      "reference_words": 14,
+      "word_errors": 0,
+      "reference": "I ALSO OFFERED TO HELP YOUR BROTHER TO ESCAPE BUT HE WOULD NOT GO",
+      "transcript": "I also offered to help your brother to escape, but he would not go."
+    },
+    {
+      "audio": "1272-135031-0007.f32",
+      "reference_words": 10,
+      "word_errors": 0,
+      "reference": "HE EATS AND SLEEPS VERY STEADILY REPLIED THE NEW KING",
+      "transcript": "He eats and sleeps very steadily, replied the new King."
+    },
+    {
+      "audio": "1272-135031-0008.f32",
+      "reference_words": 9,
+      "word_errors": 0,
+      "reference": "I HOPE HE DOESN'T WORK TOO HARD SAID SHAGGY",
+      "transcript": "I hope he doesn't work too hard, said Shaggy."
+    },
+    {
+      "audio": "1272-135031-0009.f32",
+      "reference_words": 5,
+      "word_errors": 0,
+      "reference": "HE DOESN'T WORK AT ALL",
+      "transcript": "He doesn't work at all."
+    },
+    {
+      "audio": "1272-135031-0011.f32",
+      "reference_words": 4,
+      "word_errors": 1,
+      "reference": "NOT EXACTLY RETURNED KALIKO",
+      "transcript": "Not exactly, returned Callico."
+    },
+    {
+      "audio": "1272-135031-0012.f32",
+      "reference_words": 5,
+      "word_errors": 0,
+      "reference": "WHERE IS MY BROTHER NOW",
+      "transcript": "Where is my brother now?"
+    },
+    {
+      "audio": "1272-135031-0013.f32",
+      "reference_words": 6,
+      "word_errors": 0,
+      "reference": "INQUIRED SHAGGY IN THE METAL FOREST",
+      "transcript": "inquired Shaggy. In the Metal Forest."
+    },
+    {
+      "audio": "1272-135031-0014.f32",
+      "reference_words": 3,
+      "word_errors": 0,
+      "reference": "WHERE IS THAT",
+      "transcript": "Where is that?"
+    },
+    {
+      "audio": "1272-135031-0016.f32",
+      "reference_words": 2,
+      "word_errors": 1,
+      "reference": "KALIKO HESITATED",
+      "transcript": "Calligo hesitated."
+    },
+    {
+      "audio": "1272-135031-0018.f32",
+      "reference_words": 7,
+      "word_errors": 0,
+      "reference": "OH NO I'M QUITE SURE HE DIDN'T",
+      "transcript": "Oh, no, I'm quite sure he didn't."
+    },
+    {
+      "audio": "1272-135031-0019.f32",
+      "reference_words": 5,
+      "word_errors": 0,
+      "reference": "THAT'S FUNNY REMARKED BETSY THOUGHTFULLY",
+      "transcript": "That's funny, remarked Betsy thoughtfully."
+    },
+    {
+      "audio": "1272-135031-0020.f32",
+      "reference_words": 13,
+      "word_errors": 1,
+      "reference": "I DON'T BELIEVE ANN KNEW ANY MAGIC OR SHE'D HAVE WORKED IT BEFORE",
+      "transcript": "I don't believe Anne knew any magic, or she'd have worked it before."
+    },
+    {
+      "audio": "1272-135031-0021.f32",
+      "reference_words": 6,
+      "word_errors": 0,
+      "reference": "I DO NOT KNOW CONFESSED SHAGGY",
+      "transcript": "I do not know, confessed Shaggy,"
+    },
+    {
+      "audio": "1272-135031-0022.f32",
+      "reference_words": 3,
+      "word_errors": 1,
+      "reference": "TRUE AGREED KALIKO",
+      "transcript": "True, agreed Callicot."
+    },
+    {
+      "audio": "1272-141231-0000.f32",
+      "reference_words": 9,
+      "word_errors": 0,
+      "reference": "A MAN SAID TO THE UNIVERSE SIR I EXIST",
+      "transcript": "A man said to the universe, Sir, I exist."
+    },
+    {
+      "audio": "1272-141231-0006.f32",
+      "reference_words": 9,
+      "word_errors": 2,
+      "reference": "THE BUZZER'S WHIRR TRIGGERED HIS MUSCLES INTO COMPLETE RELAXATION",
+      "transcript": "The buzzard's whir triggered his muscles into complete relaxation."
+    },
+    {
+      "audio": "1272-141231-0007.f32",
+      "reference_words": 12,
+      "word_errors": 0,
+      "reference": "ONLY HIS HEART AND LUNGS WORKED ON AT A STRONG MEASURED RATE",
+      "transcript": "Only his heart and lungs worked on at a strong measured rate."
+    },
+    {
+      "audio": "1272-141231-0008.f32",
+      "reference_words": 10,
+      "word_errors": 0,
+      "reference": "HE WAS IN REVERIE SLIDING ALONG THE BORDERS OF CONSCIOUSNESS",
+      "transcript": "He was in reverie, sliding along the borders of consciousness."
+    },
+    {
+      "audio": "1272-141231-0013.f32",
+      "reference_words": 2,
+      "word_errors": 0,
+      "reference": "THE TWENTIES",
+      "transcript": "The Twenties,"
+    },
+    {
+      "audio": "1272-141231-0016.f32",
+      "reference_words": 2,
+      "word_errors": 0,
+      "reference": "TEN SECONDS",
+      "transcript": "Ten Seconds."
+    },
+    {
+      "audio": "1272-141231-0017.f32",
+      "reference_words": 10,
+      "word_errors": 0,
+      "reference": "HE ASKED THE HANDLER WHO WAS KNEADING HIS ACHING MUSCLES",
+      "transcript": "he asked the handler, who was kneading his aching muscles."
+    },
+    {
+      "audio": "1272-141231-0019.f32",
+      "reference_words": 13,
+      "word_errors": 0,
+      "reference": "THERE COULD BE LITTLE ART IN THIS LAST AND FINAL ROUND OF FENCING",
+      "transcript": "There could be little art in this last and final round of fencing."
+    },
+    {
+      "audio": "1272-141231-0020.f32",
+      "reference_words": 9,
+      "word_errors": 0,
+      "reference": "JUST THRUST AND PARRY AND VICTORY TO THE STRONGER",
+      "transcript": "just thrust and parry, and victory to the stronger."
+    },
+    {
+      "audio": "1272-141231-0021.f32",
+      "reference_words": 11,
+      "word_errors": 0,
+      "reference": "EVERY MAN WHO ENTERED THE TWENTIES HAD HIS OWN TRAINING TRICKS",
+      "transcript": "Every man who entered the twenties had his own training tricks."
+    },
+    {
+      "audio": "1272-141231-0024.f32",
+      "reference_words": 6,
+      "word_errors": 0,
+      "reference": "THIS IS PHYSICALLY IMPOSSIBLE WHEN CONSCIOUS",
+      "transcript": "This is physically impossible when conscious."
+    },
+    {
+      "audio": "1272-141231-0032.f32",
+      "reference_words": 13,
+      "word_errors": 0,
+      "reference": "THEN THE POWERFUL TWIST THAT THRUST IT ASIDE IN AND UNDER THE GUARD",
+      "transcript": "Then the powerful twist that thrust it aside, in and under the guard,"
+    }
+  ]
+}

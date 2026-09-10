@@ -1,0 +1,281 @@
+--- a/ggml/src/ggml-cpu/ggml-cpu.c
++++ b/ggml/src/ggml-cpu/ggml-cpu.c
+@@ -1196,6 +1196,12 @@
+ 
+ // ggml_compute_forward_mul_mat
+ 
++static bool research_q8x4 = false;
++static bool research_gemv_bias = false;
++#if defined(__AVX2__)
++extern void research_q8_dot4(int n, float * out, const void * weights, size_t stride, const void * activation);
++#endif
++
+ static void ggml_compute_forward_mul_mat_one_chunk(
+     const struct ggml_compute_params * params,
+     struct ggml_tensor * dst,
+@@ -1274,7 +1280,15 @@
+                 //    vec_dot(ne00, &dst_col[ir0], src0_row + ir0*nb01, src1_col);
+                 //}
+ 
+-                for (int64_t ir0 = iir0; ir0 < iir0 + blck_0 && ir0 < ir0_end; ir0 += num_rows_per_vec_dot) {
++                int64_t ir0 = iir0;
++#if defined(__AVX2__)
++                if (research_q8x4 && type == GGML_TYPE_Q8_0 && num_rows_per_vec_dot == 1 && ne11 == 1) {
++                    for (; ir0 + 4 <= MIN(iir0 + blck_0, ir0_end); ir0 += 4) {
++                        research_q8_dot4(ne00, &tmp[ir0 - iir0], src0_row + ir0 * nb01, nb01, src1_col);
++                    }
++                }
++#endif
++                for (; ir0 < iir0 + blck_0 && ir0 < ir0_end; ir0 += num_rows_per_vec_dot) {
+                     vec_dot(ne00, &tmp[ir0 - iir0], (num_rows_per_vec_dot > 1 ? 16 : 0), src0_row + ir0 * nb01, (num_rows_per_vec_dot > 1 ? nb01 : 0), src1_col, (num_rows_per_vec_dot > 1 ? src1_col_stride : 0), num_rows_per_vec_dot);
+                 }
+ 
+@@ -3059,8 +3073,36 @@
+ }
+ 
+ 
++#if defined(__AVX2__)
++static void research_compute_gemv_bias(const struct ggml_compute_params * params,
++                                     const struct ggml_tensor * mat, struct ggml_tensor * add) {
++    const struct ggml_tensor * w = mat->src[0];
++    const struct ggml_tensor * x = mat->src[1];
++    const struct ggml_tensor * bias = add->src[add->src[0] == mat ? 1 : 0];
++    const int64_t k = w->ne[0], m = w->ne[1];
++    const int64_t blocks = k / 32;
++    const int64_t begin = params->ith * blocks / params->nth;
++    const int64_t end = (params->ith + 1) * blocks / params->nth;
++    const size_t block_bytes = ggml_type_size(GGML_TYPE_Q8_0);
++    GGML_ASSERT(params->wsize >= ggml_row_size(GGML_TYPE_Q8_0, k));
++    type_traits_cpu[GGML_TYPE_Q8_0].from_float((const float *) x->data + begin*32,
++        (char *) params->wdata + begin*block_bytes, (end-begin)*32);
++    ggml_barrier(params->threadpool);
++    float * output = (float *)add->data;
++    const float * b = (const float *)bias->data;
++    const int64_t row_begin = (params->ith * (m/4) / params->nth)*4;
++    const int64_t row_end = ((params->ith+1) * (m/4) / params->nth)*4;
++    for (int64_t row = row_begin; row < row_end; row += 4) {
++        float values[4];
++        research_q8_dot4(k, values, (const char *)w->data + row*w->nb[1], w->nb[1], params->wdata);
++        for (int i=0; i<4; ++i) output[row+i] = values[i] + b[row+i];
++    }
++}
++#endif
++
+ // Try to fuse the current node with subsequent nodes for better performance.
+ // Returns the number of nodes skipped by fusion (>=1), or 0 if no fusion was applied.
++static bool research_fuse_ln = false;
+ static bool ggml_cpu_disable_fusion = false;  // initialized once in ggml_cpu_init(), read-only afterwards
+ 
+ static int ggml_cpu_try_fuse_ops(
+@@ -3074,6 +3116,47 @@
+     }
+ 
+     struct ggml_tensor * node = cgraph->nodes[node_n];
++
++#if defined(__AVX2__)
++    if (research_gemv_bias && node->op == GGML_OP_MUL_MAT && node->src[0]->type == GGML_TYPE_Q8_0 &&
++        node->src[1]->type == GGML_TYPE_F32 && node->type == GGML_TYPE_F32 &&
++        node->ne[1] == 1 && node->ne[2] == 1 && node->ne[3] == 1 && node->ne[0] % 4 == 0 &&
++        node->src[0]->ne[2] == 1 && node->src[0]->ne[3] == 1 && ggml_is_contiguous(node->src[1])) {
++        const enum ggml_op pattern[] = { GGML_OP_MUL_MAT, GGML_OP_ADD };
++        if (ggml_can_fuse(cgraph, node_n, pattern, 2)) {
++            struct ggml_tensor * add = cgraph->nodes[node_n+1];
++            const struct ggml_tensor * bias = add->src[add->src[0] == node ? 1 : 0];
++            if ((add->src[0] == node || add->src[1] == node) && add->type == GGML_TYPE_F32 &&
++                bias->type == GGML_TYPE_F32 && ggml_is_contiguous(bias) && ggml_is_contiguous(add) &&
++                bias->ne[0] == node->ne[0] && ggml_nelements(bias) == node->ne[0]) {
++                research_compute_gemv_bias(params, node, add);
++                return 1;
++            }
++        }
++    }
++#endif
++
++    if (research_fuse_ln && node->op == GGML_OP_NORM) {
++        const enum ggml_op pattern[] = { GGML_OP_NORM, GGML_OP_MUL, GGML_OP_ADD };
++        if (ggml_can_fuse(cgraph, node_n, pattern, 3)) {
++            struct ggml_tensor * mul = cgraph->nodes[node_n + 1];
++            struct ggml_tensor * add = cgraph->nodes[node_n + 2];
++            const struct ggml_tensor * gamma = mul->src[mul->src[0] == node ? 1 : 0];
++            const struct ggml_tensor * beta = add->src[add->src[0] == mul ? 1 : 0];
++            if ((mul->src[0] == node || mul->src[1] == node) &&
++                (add->src[0] == mul || add->src[1] == mul) &&
++                node->src[0]->type == GGML_TYPE_F32 && node->type == GGML_TYPE_F32 &&
++                mul->type == GGML_TYPE_F32 && add->type == GGML_TYPE_F32 &&
++                gamma->type == GGML_TYPE_F32 && beta->type == GGML_TYPE_F32 &&
++                ggml_is_contiguous(node->src[0]) && ggml_is_contiguous(add) &&
++                ggml_is_contiguous(gamma) && ggml_is_contiguous(beta) &&
++                gamma->ne[0] == node->ne[0] && beta->ne[0] == node->ne[0] &&
++                ggml_nelements(gamma) == node->ne[0] && ggml_nelements(beta) == node->ne[0]) {
++                ggml_compute_forward_norm_affine_fused(params, node, mul, add);
++                return 2;
++            }
++        }
++    }
+ 
+     if (node->op == GGML_OP_RMS_NORM) {
+         // RMS_NORM + MUL fusion
+@@ -3155,7 +3238,9 @@
+         if (node_n + 1 < cgraph->n_nodes) {
+             ggml_barrier(state->threadpool);
+         }
+-    }
++
++    }
++
+ 
+ #ifdef GGML_USE_OPENMP
+     GGML_PRINT_DEBUG("thread #%d compute-done cplan %p\n", state->ith, (const void *)cplan);
+@@ -3926,6 +4011,9 @@
+         {
+             const char * env = getenv("GGML_CPU_DISABLE_FUSION");
+             ggml_cpu_disable_fusion = (env != NULL && atoi(env) == 1);
++            research_fuse_ln = getenv("CANARY_FUSE_LN") != NULL;
++            research_q8x4 = getenv("CANARY_Q8X4") != NULL;
++            research_gemv_bias = getenv("CANARY_GEMV_BIAS") != NULL;
+         }
+ 
+         is_first_call = false;
+--- a/ggml/src/ggml-cpu/ops.h
++++ b/ggml/src/ggml-cpu/ops.h
+@@ -42,6 +42,7 @@
+ void ggml_compute_forward_repeat_back(const struct ggml_compute_params * params, struct ggml_tensor * dst);
+ void ggml_compute_forward_concat(const struct ggml_compute_params * params, struct ggml_tensor * dst);
+ void ggml_compute_forward_silu_back(const struct ggml_compute_params * params, struct ggml_tensor * dst);
++void ggml_compute_forward_norm_affine_fused(const struct ggml_compute_params * params, struct ggml_tensor * norm, struct ggml_tensor * mul, struct ggml_tensor * add);
+ void ggml_compute_forward_norm(const struct ggml_compute_params * params, struct ggml_tensor * dst);
+ void ggml_compute_forward_rms_norm(const struct ggml_compute_params * params, struct ggml_tensor * dst);
+ void ggml_compute_forward_rms_norm_mul_fused(const struct ggml_compute_params * params, struct ggml_tensor * dst_rms_norm, struct ggml_tensor * dst_mul);
+--- a/ggml/src/ggml-cpu/ops.cpp
++++ b/ggml/src/ggml-cpu/ops.cpp
+@@ -12012,3 +12012,32 @@
+         }
+     }
+ }
++
++// Experimental exact-order layer norm + per-channel scale + bias fusion.
++// Only contiguous F32 tensors and 1-D affine weights enter this function.
++void ggml_compute_forward_norm_affine_fused(
++    const ggml_compute_params * params, ggml_tensor * norm,
++    ggml_tensor * mul, ggml_tensor * add) {
++    const ggml_tensor * src = norm->src[0];
++    const ggml_tensor * gamma = mul->src[mul->src[0] == norm ? 1 : 0];
++    const ggml_tensor * beta = add->src[add->src[0] == mul ? 1 : 0];
++    const int64_t width = src->ne[0];
++    const int64_t rows = ggml_nrows(src);
++    const float * g = (const float *) gamma->data;
++    const float * b = (const float *) beta->data;
++    float eps;
++    memcpy(&eps, norm->op_params, sizeof(float));
++    for (int64_t row = params->ith; row < rows; row += params->nth) {
++        const float * x = (const float *) src->data + row * width;
++        float * y = (float *) add->data + row * width;
++        float sum = 0;
++        ggml_vec_sum_f32(width, &sum, x);
++        const float mean = sum / width;
++        const float variance = ggml_vec_cvar_f32(width, y, x, mean);
++        const float scale = 1.0f / sqrtf(variance + eps);
++        // Preserve each original rounding step. Reuse one output row in cache.
++        ggml_vec_scale_f32(width, y, scale);
++        ggml_vec_mul_f32(width, y, y, g);
++        ggml_vec_add_f32(width, y, y, b);
++    }
++}
+--- a/ggml/src/ggml-cpu/arch/x86/quants.c
++++ b/ggml/src/ggml-cpu/arch/x86/quants.c
+@@ -4106,3 +4106,31 @@
+     ggml_vec_dot_iq4_xs_q8_K_generic(n, s, bs, vx, bx, vy, by, nrc);
+ #endif
+ }
++
++#if defined(__AVX2__)
++// Four independent output rows share one activation block load and conversion.
++// Arithmetic within each row retains the reference q8_0 dot-product order.
++void research_q8_dot4(int n, float * out, const void * weights, size_t stride, const void * activation) {
++    const block_q8_0 * y = (const block_q8_0 *) activation;
++    const block_q8_0 * x0 = (const block_q8_0 *) weights;
++    const block_q8_0 * x1 = (const block_q8_0 *) ((const char *)weights + stride);
++    const block_q8_0 * x2 = (const block_q8_0 *) ((const char *)weights + 2*stride);
++    const block_q8_0 * x3 = (const block_q8_0 *) ((const char *)weights + 3*stride);
++    __m256 a0 = _mm256_setzero_ps(), a1 = a0, a2 = a0, a3 = a0;
++    for (int i = 0; i < n/QK8_0; ++i) {
++        const __m256i qy = _mm256_loadu_si256((const __m256i *)y[i].qs);
++        const float dy = GGML_CPU_FP16_TO_FP32(y[i].d);
++#define RESEARCH_ROW(R) \
++        const __m256 d##R = _mm256_set1_ps(GGML_CPU_FP16_TO_FP32(x##R[i].d) * dy); \
++        const __m256i q##R = _mm256_loadu_si256((const __m256i *)x##R[i].qs); \
++        a##R = _mm256_fmadd_ps(d##R, mul_sum_i8_pairs_float(q##R, qy), a##R);
++        RESEARCH_ROW(0)
++        RESEARCH_ROW(1)
++        RESEARCH_ROW(2)
++        RESEARCH_ROW(3)
++#undef RESEARCH_ROW
++    }
++    out[0] = hsum_float_8(a0); out[1] = hsum_float_8(a1);
++    out[2] = hsum_float_8(a2); out[3] = hsum_float_8(a3);
++}
++#endif
+--- a/src/arch/canary/encoder.cpp
++++ b/src/arch/canary/encoder.cpp
+@@ -105,7 +105,7 @@
+     policy.direct_pw               = conf::detect_direct_pw(backend_name);
+     const bool direct_dw           = detect_direct_dw_in_block(backend_name);
+     policy.direct_dw_in_block      = direct_dw;
+-    policy.direct_dw_in_pre_encode = false;  // parakeet-style: im2col here
++    policy.direct_dw_in_pre_encode = std::getenv("CANARY_DIRECT_PRE_DW") != nullptr;  // parakeet-style: im2col here
+ 
+     EncoderBuild eb{};
+ 
+--- a/src/arch/canary/model.cpp
++++ b/src/arch/canary/model.cpp
+@@ -1117,6 +1117,11 @@
+         }
+ 
+         int n_past = prompt_len;
++        // Keep encoder/prefill parallelism, but independently tune one-token steps.
++        if (const char * threads = std::getenv("CANARY_STEP_THREADS")) {
++            const int count = std::atoi(threads);
++            if (count >= 1 && count <= 16) transcribe::configure_sched_n_threads(cc->sched, count);
++        }
+ 
+         // Commit accumulated generated_ids as the run's segment + full
+         // text. Called both on normal loop exit and on abort so the
+@@ -1183,12 +1188,13 @@
+                                     cm->plan.primary_kind != transcribe::BackendKind::Accel &&
+                                     cm->plan.primary_kind != transcribe::BackendKind::Unknown;
+ 
+-        if (primary_is_gpu) {
++        const bool research_bucket = !primary_is_gpu && std::getenv("CANARY_BUCKET_STEP") != nullptr;
++        if (primary_is_gpu || research_bucket) {
+             // Static-graph step path (GPU). max_n_kv: pad to next power of two
+             // with a 1024 floor — Vulkan/Metal flash-attn dispatches ~30%
+             // faster on pow2 ne[1].
+-            int max_n_kv = 1024;
+-            while (max_n_kv < prompt_len + max_tokens) {
++            int max_n_kv = research_bucket ? 32 : 1024;
++            while (max_n_kv < (research_bucket ? prompt_len + 1 : prompt_len + max_tokens)) {
+                 max_n_kv *= 2;
+             }
+             if (max_n_kv > cc->kv_cache.n_ctx) {
+@@ -1232,6 +1238,21 @@
+                 if (cc->poll_abort()) {
+                     commit_result();
+                     return TRANSCRIBE_ERR_ABORTED;
++                }
++                if (research_bucket && n_past + 1 > max_n_kv && max_n_kv < cc->kv_cache.n_ctx) {
++                    max_n_kv = std::min(max_n_kv * 2, cc->kv_cache.n_ctx);
++                    // Reset scheduler before destroying the old graph context. KV tensors live separately.
++                    ggml_backend_sched_reset(cc->sched);
++                    if (!new_compute_ctx(8 * 1024 * 1024)) {
++                        commit_result();
++                        return TRANSCRIBE_ERR_OOM;
++                    }
++                    sb = build_step_graph(cc->compute_ctx, cm->weights, cm->hparams, cc->kv_cache, max_n_kv, T_enc, cc->decoder_use_flash);
++                    if (!sb.graph || !sb.argmax_out || !ggml_backend_sched_alloc_graph(cc->sched, sb.graph)) {
++                        commit_result();
++                        return TRANSCRIBE_ERR_OOM;
++                    }
++                    step_mask.resize(max_n_kv, mask_neg_inf);
+                 }
+                 if (n_past + 1 > max_n_kv) {
+                     transcribe::log_msg(TRANSCRIBE_LOG_LEVEL_WARN, "canary run: hit max_n_kv=%d at n_past=%d", max_n_kv,

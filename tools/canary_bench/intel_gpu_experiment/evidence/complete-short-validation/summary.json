@@ -1,0 +1,514 @@
+{
+  "finished_epoch": 1788989633.2405188,
+  "sum_of_clip_medians_seconds": {
+    "baseline": 5.882622667,
+    "hybrid8-f32": 3.335177489
+  },
+  "speedup_vs_baseline": {
+    "baseline": 1.0,
+    "hybrid8-f32": 1.763810977497276
+  },
+  "all_texts_match": true,
+  "idle_cpu_seconds_over_2s": {
+    "baseline": [],
+    "hybrid8-f32": []
+  },
+  "clips": [
+    {
+      "audio": "1272-128104-0001.f32",
+      "medians": {
+        "baseline": 0.239167904,
+        "hybrid8-f32": 0.131812509
+      },
+      "texts": {
+        "baseline": [
+          "Nor is mister Quilter's manner less interesting than his matter."
+        ],
+        "hybrid8-f32": [
+          "Nor is mister Quilter's manner less interesting than his matter."
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-128104-0014.f32",
+      "medians": {
+        "baseline": 0.131478774,
+        "hybrid8-f32": 0.095612853
+      },
+      "texts": {
+        "baseline": [
+          "By Harry Quilter, M. A."
+        ],
+        "hybrid8-f32": [
+          "By Harry Quilter, M. A."
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-135031-0003.f32",
+      "medians": {
+        "baseline": 0.268512127,
+        "hybrid8-f32": 0.131150289
+      },
+      "texts": {
+        "baseline": [
+          "The little girl had been asleep, but she heard the raps and opened the door."
+        ],
+        "hybrid8-f32": [
+          "The little girl had been asleep, but she heard the raps and opened the door."
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-135031-0004.f32",
+      "medians": {
+        "baseline": 0.221169878,
+        "hybrid8-f32": 0.117732969
+      },
+      "texts": {
+        "baseline": [
+          "The King is flooding disgrace, and your friends are asking for you."
+        ],
+        "hybrid8-f32": [
+          "The King is flooding disgrace, and your friends are asking for you."
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-135031-0005.f32",
+      "medians": {
+        "baseline": 0.249509641,
+        "hybrid8-f32": 0.129406759
+      },
+      "texts": {
+        "baseline": [
+          "I begged Ruggedo long ago to send him away, but he would not do so."
+        ],
+        "hybrid8-f32": [
+          "I begged Ruggedo long ago to send him away, but he would not do so."
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-135031-0006.f32",
+      "medians": {
+        "baseline": 0.227270637,
+        "hybrid8-f32": 0.125633335
+      },
+      "texts": {
+        "baseline": [
+          "I also offered to help your brother to escape, but he would not go."
+        ],
+        "hybrid8-f32": [
+          "I also offered to help your brother to escape, but he would not go."
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-135031-0007.f32",
+      "medians": {
+        "baseline": 0.233262046,
+        "hybrid8-f32": 0.114745184
+      },
+      "texts": {
+        "baseline": [
+          "He eats and sleeps very steadily, replied the new King."
+        ],
+        "hybrid8-f32": [
+          "He eats and sleeps very steadily, replied the new King."
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-135031-0008.f32",
+      "medians": {
+        "baseline": 0.210768415,
+        "hybrid8-f32": 0.109391505
+      },
+      "texts": {
+        "baseline": [
+          "I hope he doesn't work too hard, said Shaggy."
+        ],
+        "hybrid8-f32": [
+          "I hope he doesn't work too hard, said Shaggy."
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-135031-0009.f32",
+      "medians": {
+        "baseline": 0.099336433,
+        "hybrid8-f32": 0.083209303
+      },
+      "texts": {
+        "baseline": [
+          "He doesn't work at all."
+        ],
+        "hybrid8-f32": [
+          "He doesn't work at all."
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-135031-0011.f32",
+      "medians": {
+        "baseline": 0.152394261,
+        "hybrid8-f32": 0.092022287
+      },
+      "texts": {
+        "baseline": [
+          "Not exactly, returned Callico."
+        ],
+        "hybrid8-f32": [
+          "Not exactly, returned Callico."
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-135031-0012.f32",
+      "medians": {
+        "baseline": 0.100852932,
+        "hybrid8-f32": 0.082510194
+      },
+      "texts": {
+        "baseline": [
+          "Where is my brother now?"
+        ],
+        "hybrid8-f32": [
+          "Where is my brother now?"
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-135031-0013.f32",
+      "medians": {
+        "baseline": 0.183835132,
+        "hybrid8-f32": 0.102343097
+      },
+      "texts": {
+        "baseline": [
+          "inquired Shaggy. In the Metal Forest."
+        ],
+        "hybrid8-f32": [
+          "inquired Shaggy. In the Metal Forest."
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-135031-0014.f32",
+      "medians": {
+        "baseline": 0.086286,
+        "hybrid8-f32": 0.075497052
+      },
+      "texts": {
+        "baseline": [
+          "Where is that?"
+        ],
+        "hybrid8-f32": [
+          "Where is that?"
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-135031-0016.f32",
+      "medians": {
+        "baseline": 0.112200088,
+        "hybrid8-f32": 0.084407568
+      },
+      "texts": {
+        "baseline": [
+          "Calligo hesitated."
+        ],
+        "hybrid8-f32": [
+          "Calligo hesitated."
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-135031-0018.f32",
+      "medians": {
+        "baseline": 0.145405527,
+        "hybrid8-f32": 0.101168394
+      },
+      "texts": {
+        "baseline": [
+          "Oh, no, I'm quite sure he didn't."
+        ],
+        "hybrid8-f32": [
+          "Oh, no, I'm quite sure he didn't."
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-135031-0019.f32",
+      "medians": {
+        "baseline": 0.213305372,
+        "hybrid8-f32": 0.11242306
+      },
+      "texts": {
+        "baseline": [
+          "That's funny, remarked Betsy thoughtfully."
+        ],
+        "hybrid8-f32": [
+          "That's funny, remarked Betsy thoughtfully."
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-135031-0020.f32",
+      "medians": {
+        "baseline": 0.258007569,
+        "hybrid8-f32": 0.132985153
+      },
+      "texts": {
+        "baseline": [
+          "I don't believe Anne knew any magic, or she'd have worked it before."
+        ],
+        "hybrid8-f32": [
+          "I don't believe Anne knew any magic, or she'd have worked it before."
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-135031-0021.f32",
+      "medians": {
+        "baseline": 0.137901381,
+        "hybrid8-f32": 0.087495
+      },
+      "texts": {
+        "baseline": [
+          "I do not know, confessed Shaggy,"
+        ],
+        "hybrid8-f32": [
+          "I do not know, confessed Shaggy,"
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-135031-0022.f32",
+      "medians": {
+        "baseline": 0.123736432,
+        "hybrid8-f32": 0.082363813
+      },
+      "texts": {
+        "baseline": [
+          "True, agreed Callicot."
+        ],
+        "hybrid8-f32": [
+          "True, agreed Callicot."
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-141231-0000.f32",
+      "medians": {
+        "baseline": 0.218138208,
+        "hybrid8-f32": 0.113013693
+      },
+      "texts": {
+        "baseline": [
+          "A man said to the universe, Sir, I exist."
+        ],
+        "hybrid8-f32": [
+          "A man said to the universe, Sir, I exist."
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-141231-0006.f32",
+      "medians": {
+        "baseline": 0.261296351,
+        "hybrid8-f32": 0.138297037
+      },
+      "texts": {
+        "baseline": [
+          "The buzzard's whir triggered his muscles into complete relaxation."
+        ],
+        "hybrid8-f32": [
+          "The buzzard's whir triggered his muscles into complete relaxation."
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-141231-0007.f32",
+      "medians": {
+        "baseline": 0.245276255,
+        "hybrid8-f32": 0.116335508
+      },
+      "texts": {
+        "baseline": [
+          "Only his heart and lungs worked on at a strong measured rate."
+        ],
+        "hybrid8-f32": [
+          "Only his heart and lungs worked on at a strong measured rate."
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-141231-0008.f32",
+      "medians": {
+        "baseline": 0.232263035,
+        "hybrid8-f32": 0.119207644
+      },
+      "texts": {
+        "baseline": [
+          "He was in reverie, sliding along the borders of consciousness."
+        ],
+        "hybrid8-f32": [
+          "He was in reverie, sliding along the borders of consciousness."
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-141231-0013.f32",
+      "medians": {
+        "baseline": 0.080418266,
+        "hybrid8-f32": 0.09068505
+      },
+      "texts": {
+        "baseline": [
+          "The Twenties,"
+        ],
+        "hybrid8-f32": [
+          "The Twenties,"
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-141231-0016.f32",
+      "medians": {
+        "baseline": 0.085872236,
+        "hybrid8-f32": 0.075957678
+      },
+      "texts": {
+        "baseline": [
+          "Ten Seconds."
+        ],
+        "hybrid8-f32": [
+          "Ten Seconds."
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-141231-0017.f32",
+      "medians": {
+        "baseline": 0.201111026,
+        "hybrid8-f32": 0.111138779
+      },
+      "texts": {
+        "baseline": [
+          "he asked the handler, who was kneading his aching muscles."
+        ],
+        "hybrid8-f32": [
+          "he asked the handler, who was kneading his aching muscles."
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-141231-0019.f32",
+      "medians": {
+        "baseline": 0.240504602,
+        "hybrid8-f32": 0.121894764
+      },
+      "texts": {
+        "baseline": [
+          "There could be little art in this last and final round of fencing."
+        ],
+        "hybrid8-f32": [
+          "There could be little art in this last and final round of fencing."
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-141231-0020.f32",
+      "medians": {
+        "baseline": 0.221857353,
+        "hybrid8-f32": 0.111514641
+      },
+      "texts": {
+        "baseline": [
+          "just thrust and parry, and victory to the stronger."
+        ],
+        "hybrid8-f32": [
+          "just thrust and parry, and victory to the stronger."
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-141231-0021.f32",
+      "medians": {
+        "baseline": 0.240162732,
+        "hybrid8-f32": 0.117854873
+      },
+      "texts": {
+        "baseline": [
+          "Every man who entered the twenties had his own training tricks."
+        ],
+        "hybrid8-f32": [
+          "Every man who entered the twenties had his own training tricks."
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-141231-0024.f32",
+      "medians": {
+        "baseline": 0.197031475,
+        "hybrid8-f32": 0.101397134
+      },
+      "texts": {
+        "baseline": [
+          "This is physically impossible when conscious."
+        ],
+        "hybrid8-f32": [
+          "This is physically impossible when conscious."
+        ]
+      },
+      "texts_match": true
+    },
+    {
+      "audio": "1272-141231-0032.f32",
+      "medians": {
+        "baseline": 0.264290579,
+        "hybrid8-f32": 0.125970364
+      },
+      "texts": {
+        "baseline": [
+          "Then the powerful twist that thrust it aside, in and under the guard,"
+        ],
+        "hybrid8-f32": [
+          "Then the powerful twist that thrust it aside, in and under the guard,"
+        ]
+      },
+      "texts_match": true
+    }
+  ]
+}

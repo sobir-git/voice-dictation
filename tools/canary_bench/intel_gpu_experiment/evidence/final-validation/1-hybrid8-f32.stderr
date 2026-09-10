@@ -1,0 +1,26 @@
+ggml_vulkan: Found 1 Vulkan devices:
+ggml_vulkan: 0 = Intel(R) Iris(R) Xe Graphics (ADL GT2) (Intel open-source Mesa driver) | uma: 1 | fp16: 0 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 65536 | int dot: 1 | matrix cores: none
+canary: using vulkan backend: Vulkan0
+canary kv_cache: allocated 17.0 MB (f16) (self: 1024 session x 4 layers, cross: 63 T_enc x 4 layers)
+STAGE {"decode_ms":117.70099639892578,"encode_ms":69.59400177001953,"mel_ms":7.01200008392334}
+STAGE {"decode_ms":73.83399963378906,"encode_ms":55.39799880981445,"mel_ms":7.543000221252441}
+canary kv_cache: allocated 17.0 MB (f16) (self: 1024 session x 4 layers, cross: 61 T_enc x 4 layers)
+STAGE {"decode_ms":62.01599884033203,"encode_ms":54.96900177001953,"mel_ms":7.619999885559082}
+canary kv_cache: allocated 17.0 MB (f16) (self: 1024 session x 4 layers, cross: 63 T_enc x 4 layers)
+STAGE {"decode_ms":59.624000549316406,"encode_ms":56.24700164794922,"mel_ms":7.760000228881836}
+STAGE {"decode_ms":64.6259994506836,"encode_ms":55.70399856567383,"mel_ms":7.804999828338623}
+STAGE {"decode_ms":60.426998138427734,"encode_ms":54.72600173950195,"mel_ms":7.859000205993652}
+STAGE {"decode_ms":51.92100143432617,"encode_ms":55.555999755859375,"mel_ms":7.808000087738037}
+STAGE {"decode_ms":65.4209976196289,"encode_ms":55.02899932861328,"mel_ms":7.97599983215332}
+STAGE {"decode_ms":59.05400085449219,"encode_ms":56.73400115966797,"mel_ms":7.684999942779541}
+STAGE {"decode_ms":76.43399810791016,"encode_ms":55.082000732421875,"mel_ms":7.7820000648498535}
+STAGE {"decode_ms":65.7969970703125,"encode_ms":55.17499923706055,"mel_ms":7.709000110626221}
+canary kv_cache: allocated 17.0 MB (f16) (self: 1024 session x 4 layers, cross: 61 T_enc x 4 layers)
+STAGE {"decode_ms":52.80099868774414,"encode_ms":54.5989990234375,"mel_ms":7.572999954223633}
+canary kv_cache: allocated 17.0 MB (f16) (self: 1024 session x 4 layers, cross: 63 T_enc x 4 layers)
+STAGE {"decode_ms":57.03300094604492,"encode_ms":55.6150016784668,"mel_ms":8.029999732971191}
+STAGE {"decode_ms":64.58100128173828,"encode_ms":55.00199890136719,"mel_ms":7.745999813079834}
+STAGE {"decode_ms":56.21200180053711,"encode_ms":54.96200180053711,"mel_ms":7.828999996185303}
+STAGE {"decode_ms":53.268001556396484,"encode_ms":54.97700119018555,"mel_ms":7.86299991607666}
+STAGE {"decode_ms":62.90999984741211,"encode_ms":54.97800064086914,"mel_ms":7.953999996185303}
+STAGE {"decode_ms":67.99199676513672,"encode_ms":55.4119987487793,"mel_ms":7.848999977111816}

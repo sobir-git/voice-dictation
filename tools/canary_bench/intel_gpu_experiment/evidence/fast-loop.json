@@ -1,0 +1,13 @@
+{
+  "two_shader_compile_seconds": 0.2168549889465794,
+  "probe_wall_seconds": {
+    "embedded": 0.2038131810259074,
+    "external": 0.18941590189933777,
+    "reordered": 0.22982429107651114,
+    "reordered_tile": 0.3187743079615757
+  },
+  "external_vs_embedded_bit_equal": true,
+  "reordered_vs_embedded_bit_equal": true,
+  "reordered_tile_max_abs_error": 1.2874603271484375e-05,
+  "scope": "Four deterministic Q8 GEMV+bias shapes. Screening only; not full inference speedup."
+}

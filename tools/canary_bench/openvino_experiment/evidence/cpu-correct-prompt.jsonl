@@ -1,0 +1,9 @@
+{"event": "compiling", "device": "CPU"}
+{"event": "encoder_compiled", "seconds": 1.1742903779959306}
+{"event": "loaded", "seconds": 1.5964434569468722}
+{"event": "encoded", "round": 0, "encoder_ms": 227.47215605340898}
+{"event": "transcribed", "device": "CPU", "round": 0, "seconds": 1.0564040309982374, "mel_ms": 4.753554007038474, "encoder_ms": 227.47215605340898, "decoder_ms": 824.17832093779, "tokens": 43, "eos": true, "text": "The library opens early on Monday morning. Students scan Morrow books and read newspapers in"}
+{"event": "encoded", "round": 1, "encoder_ms": 109.17426692321897}
+{"event": "transcribed", "device": "CPU", "round": 1, "seconds": 0.8539078619796783, "mel_ms": 4.273250000551343, "encoder_ms": 109.17426692321897, "decoder_ms": 740.460345055908, "tokens": 43, "eos": true, "text": "The library opens early on Monday morning. Students scan Morrow books and read newspapers in"}
+{"event": "encoded", "round": 2, "encoder_ms": 108.09996200259775}
+{"event": "transcribed", "device": "CPU", "round": 2, "seconds": 0.8476926370058209, "mel_ms": 4.2609169613569975, "encoder_ms": 108.09996200259775, "decoder_ms": 735.3317580418661, "tokens": 43, "eos": true, "text": "The library opens early on Monday morning. Students scan Morrow books and read newspapers in"}

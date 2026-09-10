@@ -1,0 +1,6 @@
+ggml_vulkan: Found 1 Vulkan devices:
+ggml_vulkan: 0 = Intel(R) Iris(R) Xe Graphics (ADL GT2) (Intel open-source Mesa driver) | uma: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 65536 | int dot: 1 | matrix cores: none
+parakeet: using vulkan backend: Vulkan0
+STREAM_FINALIZE_MS 379.94814199999996
+STREAM_FINALIZE_MS 265.72526899999997
+STREAM_FINALIZE_MS 300.740119

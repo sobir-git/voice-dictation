@@ -1,0 +1,50 @@
+[
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--locked"
+    ],
+    "exit_code": 0
+  },
+  {
+    "command": [
+      "cargo",
+      "clippy",
+      "--locked",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 0
+  },
+  {
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-v"
+    ],
+    "exit_code": 0
+  },
+  {
+    "command": [
+      "cargo",
+      "build",
+      "--release",
+      "--locked"
+    ],
+    "exit_code": 0
+  },
+  {
+    "command": [
+      "python3",
+      "tools/native_probe.py"
+    ],
+    "exit_code": 0
+  }
+]

@@ -1,0 +1,65 @@
+canary: using cpu backend (strict)
+canary: promoted 34 conv pointwise weights from F16 → F32 for CPU backend
+canary kv_cache: allocated 18.0 MB (f16) (self: 1024 session x 4 layers, cross: 129 T_enc x 4 layers)
+STAGE {"decode_ms":262.3070068359375,"encode_ms":235.41400146484375,"mel_ms":16.628000259399414}
+canary kv_cache: allocated 21.0 MB (f16) (self: 1024 session x 4 layers, cross: 318 T_enc x 4 layers)
+STAGE {"decode_ms":660.4229736328125,"encode_ms":607.5679931640625,"mel_ms":38.84199905395508}
+canary kv_cache: allocated 17.1 MB (f16) (self: 1024 session x 4 layers, cross: 71 T_enc x 4 layers)
+STAGE {"decode_ms":146.13099670410156,"encode_ms":149.9739990234375,"mel_ms":9.91100025177002}
+canary kv_cache: allocated 20.9 MB (f16) (self: 1024 session x 4 layers, cross: 315 T_enc x 4 layers)
+STAGE {"decode_ms":721.7169799804688,"encode_ms":660.2880249023438,"mel_ms":57.104000091552734}
+STAGE {"decode_ms":549.0880126953125,"encode_ms":591.8599853515625,"mel_ms":42.33399963378906}
+canary kv_cache: allocated 20.9 MB (f16) (self: 1024 session x 4 layers, cross: 313 T_enc x 4 layers)
+STAGE {"decode_ms":676.2559814453125,"encode_ms":591.60400390625,"mel_ms":38.12699890136719}
+canary kv_cache: allocated 21.0 MB (f16) (self: 1024 session x 4 layers, cross: 319 T_enc x 4 layers)
+STAGE {"decode_ms":646.89501953125,"encode_ms":600.0830078125,"mel_ms":43.676998138427734}
+canary kv_cache: allocated 20.9 MB (f16) (self: 1024 session x 4 layers, cross: 315 T_enc x 4 layers)
+STAGE {"decode_ms":632.8150024414062,"encode_ms":595.8179931640625,"mel_ms":41.05500030517578}
+canary kv_cache: allocated 17.7 MB (f16) (self: 1024 session x 4 layers, cross: 107 T_enc x 4 layers)
+STAGE {"decode_ms":222.51600646972656,"encode_ms":200.21499633789062,"mel_ms":12.970000267028809}
+canary kv_cache: allocated 19.4 MB (f16) (self: 1024 session x 4 layers, cross: 215 T_enc x 4 layers)
+STAGE {"decode_ms":427.156005859375,"encode_ms":402.5669860839844,"mel_ms":28.79800033569336}
+canary kv_cache: allocated 16.6 MB (f16) (self: 1024 session x 4 layers, cross: 38 T_enc x 4 layers)
+STAGE {"decode_ms":12.623000144958496,"encode_ms":76.49299621582031,"mel_ms":4.831999778747559}
+canary kv_cache: allocated 18.0 MB (f16) (self: 1024 session x 4 layers, cross: 129 T_enc x 4 layers)
+STAGE {"decode_ms":269.3689880371094,"encode_ms":232.82699584960938,"mel_ms":15.404999732971191}
+canary kv_cache: allocated 21.0 MB (f16) (self: 1024 session x 4 layers, cross: 318 T_enc x 4 layers)
+STAGE {"decode_ms":666.1749877929688,"encode_ms":605.7069702148438,"mel_ms":40.766998291015625}
+canary kv_cache: allocated 17.1 MB (f16) (self: 1024 session x 4 layers, cross: 71 T_enc x 4 layers)
+STAGE {"decode_ms":137.37100219726562,"encode_ms":149.822998046875,"mel_ms":8.322999954223633}
+canary kv_cache: allocated 20.9 MB (f16) (self: 1024 session x 4 layers, cross: 315 T_enc x 4 layers)
+STAGE {"decode_ms":693.0120239257812,"encode_ms":587.989990234375,"mel_ms":41.43199920654297}
+STAGE {"decode_ms":578.9229736328125,"encode_ms":589.0390014648438,"mel_ms":40.900001525878906}
+canary kv_cache: allocated 20.9 MB (f16) (self: 1024 session x 4 layers, cross: 313 T_enc x 4 layers)
+STAGE {"decode_ms":679.4199829101562,"encode_ms":585.6400146484375,"mel_ms":37.202999114990234}
+canary kv_cache: allocated 21.0 MB (f16) (self: 1024 session x 4 layers, cross: 319 T_enc x 4 layers)
+STAGE {"decode_ms":659.1099853515625,"encode_ms":602.7509765625,"mel_ms":39.082000732421875}
+canary kv_cache: allocated 20.9 MB (f16) (self: 1024 session x 4 layers, cross: 315 T_enc x 4 layers)
+STAGE {"decode_ms":620.135986328125,"encode_ms":600.2930297851562,"mel_ms":39.78300094604492}
+canary kv_cache: allocated 17.7 MB (f16) (self: 1024 session x 4 layers, cross: 107 T_enc x 4 layers)
+STAGE {"decode_ms":219.91700744628906,"encode_ms":206.98199462890625,"mel_ms":14.07699966430664}
+canary kv_cache: allocated 19.4 MB (f16) (self: 1024 session x 4 layers, cross: 215 T_enc x 4 layers)
+STAGE {"decode_ms":433.7430114746094,"encode_ms":406.7430114746094,"mel_ms":27.20800018310547}
+canary kv_cache: allocated 16.6 MB (f16) (self: 1024 session x 4 layers, cross: 38 T_enc x 4 layers)
+STAGE {"decode_ms":13.168000221252441,"encode_ms":76.37899780273438,"mel_ms":4.946000099182129}
+canary kv_cache: allocated 18.0 MB (f16) (self: 1024 session x 4 layers, cross: 129 T_enc x 4 layers)
+STAGE {"decode_ms":275.45098876953125,"encode_ms":253.28900146484375,"mel_ms":17.048999786376953}
+canary kv_cache: allocated 21.0 MB (f16) (self: 1024 session x 4 layers, cross: 318 T_enc x 4 layers)
+STAGE {"decode_ms":654.5089721679688,"encode_ms":591.4619750976562,"mel_ms":41.61899948120117}
+canary kv_cache: allocated 17.1 MB (f16) (self: 1024 session x 4 layers, cross: 71 T_enc x 4 layers)
+STAGE {"decode_ms":138.00999450683594,"encode_ms":145.83999633789062,"mel_ms":9.17300033569336}
+canary kv_cache: allocated 20.9 MB (f16) (self: 1024 session x 4 layers, cross: 315 T_enc x 4 layers)
+STAGE {"decode_ms":710.7739868164062,"encode_ms":606.4559936523438,"mel_ms":38.28099822998047}
+STAGE {"decode_ms":552.0260009765625,"encode_ms":590.2249755859375,"mel_ms":41.770999908447266}
+canary kv_cache: allocated 20.9 MB (f16) (self: 1024 session x 4 layers, cross: 313 T_enc x 4 layers)
+STAGE {"decode_ms":657.35302734375,"encode_ms":597.60400390625,"mel_ms":41.42599868774414}
+canary kv_cache: allocated 21.0 MB (f16) (self: 1024 session x 4 layers, cross: 319 T_enc x 4 layers)
+STAGE {"decode_ms":641.405029296875,"encode_ms":616.031982421875,"mel_ms":43.0260009765625}
+canary kv_cache: allocated 20.9 MB (f16) (self: 1024 session x 4 layers, cross: 315 T_enc x 4 layers)
+STAGE {"decode_ms":628.0150146484375,"encode_ms":596.385986328125,"mel_ms":68.10700225830078}
+canary kv_cache: allocated 17.7 MB (f16) (self: 1024 session x 4 layers, cross: 107 T_enc x 4 layers)
+STAGE {"decode_ms":207.447998046875,"encode_ms":205.2310028076172,"mel_ms":14.043000221252441}
+canary kv_cache: allocated 19.4 MB (f16) (self: 1024 session x 4 layers, cross: 215 T_enc x 4 layers)
+STAGE {"decode_ms":440.5950012207031,"encode_ms":401.1700134277344,"mel_ms":29.358999252319336}
+canary kv_cache: allocated 16.6 MB (f16) (self: 1024 session x 4 layers, cross: 38 T_enc x 4 layers)
+STAGE {"decode_ms":13.657999992370605,"encode_ms":75.51000213623047,"mel_ms":4.591000080108643}

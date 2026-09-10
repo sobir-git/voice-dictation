@@ -1,0 +1,222 @@
+[
+  {
+    "t": 6.085028871893883e-06,
+    "gt_act_freq_mhz": 0,
+    "gt_cur_freq_mhz": 0
+  },
+  {
+    "t": 0.020142577006481588,
+    "gt_act_freq_mhz": 0,
+    "gt_cur_freq_mhz": 0
+  },
+  {
+    "t": 0.04040673200506717,
+    "gt_act_freq_mhz": 0,
+    "gt_cur_freq_mhz": 0
+  },
+  {
+    "t": 0.06072208099067211,
+    "gt_act_freq_mhz": 0,
+    "gt_cur_freq_mhz": 800
+  },
+  {
+    "t": 0.08122396003454924,
+    "gt_act_freq_mhz": 0,
+    "gt_cur_freq_mhz": 800
+  },
+  {
+    "t": 0.10165066504850984,
+    "gt_act_freq_mhz": 0,
+    "gt_cur_freq_mhz": 800
+  },
+  {
+    "t": 0.12217738199979067,
+    "gt_act_freq_mhz": 0,
+    "gt_cur_freq_mhz": 800
+  },
+  {
+    "t": 0.14261307602282614,
+    "gt_act_freq_mhz": 0,
+    "gt_cur_freq_mhz": 800
+  },
+  {
+    "t": 0.1630924210185185,
+    "gt_act_freq_mhz": 800,
+    "gt_cur_freq_mhz": 800
+  },
+  {
+    "t": 0.1833326549967751,
+    "gt_act_freq_mhz": 800,
+    "gt_cur_freq_mhz": 800
+  },
+  {
+    "t": 0.2036931290058419,
+    "gt_act_freq_mhz": 950,
+    "gt_cur_freq_mhz": 950
+  },
+  {
+    "t": 0.22403392009437084,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.24427022109739482,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.26450627599842846,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.2847885120427236,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.3051558840088546,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.32558282604441047,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.34601721609942615,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.3663656390272081,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.38682930602226406,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.4071394690545276,
+    "gt_act_freq_mhz": 0,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.4275169650791213,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.44776560203172266,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.4680061209946871,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.4882989430334419,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.5086760900449008,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.5291383360745385,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.5494620490353554,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.5698268320411444,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.5902032509911805,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.6106128130340949,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.6310059929965064,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.6512727449880913,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.6716076560551301,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.6919449539855123,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.7122714039869606,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.7325161810731515,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.7529969530878589,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.7733680510427803,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.7936754110269248,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.8141113050514832,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.8344802249921486,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.8548505860380828,
+    "gt_act_freq_mhz": 1300,
+    "gt_cur_freq_mhz": 1300
+  },
+  {
+    "t": 0.8751114020124078,
+    "gt_act_freq_mhz": 1200,
+    "gt_cur_freq_mhz": 1300
+  }
+]

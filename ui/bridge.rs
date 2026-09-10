@@ -101,6 +101,7 @@ pub fn demo(output: Output, wake: &WakeHandle<Desktop>, state: &mut Value) {
                 "notifications":{"enabled":true,"audio_feedback":true},"logging":{"level":"INFO"}
             },"microphones":[{"name":"desk-mic","description":"Desk microphone"}]}))));
             let _ = wake.post(Command::Backend(Arc::new(json!({"type":"transcription","text":"A thought worth keeping.\n\nLet's make the next version simpler, faster, and a pleasure to use.","duration":3.2}))));
+            state["runtime_profile"] = json!("standard");
             state.clone()
         }
         Output::Request(value) => {
@@ -112,7 +113,7 @@ pub fn demo(output: Output, wake: &WakeHandle<Desktop>, state: &mut Value) {
                 }
                 "history" => {
                     json!({"type":"history","search":value["search"].as_str().unwrap_or(""),"items":[
-                        {"id":4,"timestamp":"Today, 11:48","text":"","failed":true,"favorite":false,"audio_path":"/tmp/synthetic-failed.wav","duration":4.0},
+                        {"id":4,"timestamp":"Today, 11:48","text":"","failed":true,"favorite":false,"audio_path":"/tmp/synthetic-failed.wav","duration":4.0,"model":"base.en","transcription_seconds":1.37},
                         {"id":3,"timestamp":"Today, 11:42","text":"A thought worth keeping.\n\nLet's make the next version simpler, faster, and a pleasure to use.","failed":false,"favorite":true,"audio_path":"/tmp/synthetic-three.wav","duration":12.0},
                         {"id":2,"timestamp":"Today, 10:18","text":"Remember to leave room for the unexpected. Good tools should get out of the way.","failed":false,"favorite":false,"audio_path":"/tmp/synthetic-two.wav","duration":8.0},
                         {"id":1,"timestamp":"Yesterday, 17:06","text":"Three ideas for tomorrow: finish the prototype, take a walk, and call home.","failed":false,"favorite":false,"audio_path":"/tmp/synthetic-one.wav","duration":6.0}

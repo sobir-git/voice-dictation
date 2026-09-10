@@ -6,7 +6,7 @@ use crate::{
     history::History,
     hotkey::{Hotkeys, KeyEvent},
     ipc::Server,
-    output,
+    optimization, output,
 };
 use anyhow::{bail, Result};
 use serde_json::{json, Value};
@@ -14,7 +14,7 @@ use std::{
     collections::{HashMap, VecDeque},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        mpsc, Arc,
+        mpsc, Arc, OnceLock,
     },
     thread,
     time::{Duration, Instant},
@@ -27,16 +27,24 @@ pub enum Event {
     Key(KeyEvent),
     Level(u64, f32, f32),
     Preview(u64, String, String),
-    Model((String, String), Result<()>),
-    Transcribed(u64, Result<String>, f64, Option<i64>),
+    Model((String, String), Result<String>),
+    Transcribed(u64, Result<String>, f64, Option<i64>, String),
     Delivered(u64, Result<()>),
     Test(u64, Value),
+    Benchmark(Value),
+    BenchmarkDone(Result<Value>),
     Stop,
 }
 enum Work {
+    Benchmark(Config, Vec<u64>, Arc<AtomicBool>),
     Load(Config),
-    Transcribe(std::path::PathBuf, Config, u64, Option<i64>),
-    Stream(Config, u64, mpsc::Receiver<StreamInput>),
+    Transcribe(std::path::PathBuf, Config, u64, Option<i64>, Instant),
+    Stream(
+        Config,
+        u64,
+        mpsc::Receiver<StreamInput>,
+        Arc<OnceLock<Instant>>,
+    ),
 }
 #[derive(Default)]
 struct Flow {
@@ -83,6 +91,7 @@ pub struct Daemon {
     worker: mpsc::SyncSender<Work>,
     live_stream: Option<mpsc::Sender<StreamInput>>,
     stream_history_id: Option<i64>,
+    stream_finished: Option<Arc<OnceLock<Instant>>>,
     generation: Arc<AtomicU64>,
     hotkeys: Option<Hotkeys>,
     companion: Option<Companion>,
@@ -94,6 +103,11 @@ pub struct Daemon {
     test: Option<MicTest>,
     test_serial: u64,
     quitting: bool,
+    benchmarking: bool,
+    benchmark_cancel: Arc<AtomicBool>,
+    benchmark_status: Value,
+    benchmark_client: Option<u64>,
+    runtime_profile: String,
 }
 impl Daemon {
     pub fn new(config: Config, probe: bool, probe_tray: bool) -> Result<Self> {
@@ -112,9 +126,19 @@ impl Daemon {
         let current = generation.clone();
         thread::spawn(move || {
             let mut engine: Option<Engine> = None;
+            let mut runtime_profile = String::new();
             while let Ok(work) = receive.recv() {
-                if let Work::Transcribe(_, _, generation, _) | Work::Stream(_, generation, _) =
-                    &work
+                if let Work::Benchmark(config, durations, cancel) = work {
+                    // Benchmark children own the only resident model during measurement.
+                    engine = None;
+                    let result = optimization::run(&config, &durations, &cancel, |value| {
+                        let _ = events.send(Event::Benchmark(value));
+                    });
+                    let _ = events.send(Event::BenchmarkDone(result));
+                    continue;
+                }
+                if let Work::Transcribe(_, _, generation, _, _)
+                | Work::Stream(_, generation, _, _) = &work
                 {
                     if *generation != current.load(Ordering::Acquire) {
                         let _ = events.send(Event::Transcribed(
@@ -122,21 +146,34 @@ impl Daemon {
                             Ok(String::new()),
                             0.,
                             None,
+                            String::new(),
                         ));
                         continue;
                     }
                 }
                 let config = match &work {
-                    Work::Load(c) | Work::Transcribe(_, c, _, _) | Work::Stream(c, _, _) => c,
+                    Work::Load(c) | Work::Transcribe(_, c, _, _, _) | Work::Stream(c, _, _, _) => c,
+                    Work::Benchmark(..) => unreachable!(),
                 };
-                let identity = (
-                    config.string("transcription", "model").to_owned(),
-                    config.string("transcription", "compute_type").to_owned(),
-                );
+                let identity = optimization::identity(config);
+                let model_name = identity.0.clone();
                 if !engine.as_ref().is_some_and(|e| e.matches(config)) {
                     let started = Instant::now();
                     log::info!("Loading speech model: {} / {}", identity.0, identity.1);
-                    match Engine::load(config) {
+                    engine = None;
+                    runtime_profile = optimization::profile(config).into();
+                    let loaded = Engine::load(config).or_else(|error| {
+                        if optimization::profile(config) != "vulkan" {
+                            return Err(error);
+                        }
+                        runtime_profile = format!("CPU fallback: {error}");
+                        log::warn!("{runtime_profile}");
+                        let cpu = config.changed(&json!({"performance":{"profile":"standard"}}))?;
+                        let mut fallback = Engine::load(&cpu)?;
+                        fallback.set_identity(identity.clone());
+                        Ok(fallback)
+                    });
+                    match loaded {
                         Ok(loaded) => {
                             engine = Some(loaded);
                             log::info!(
@@ -146,18 +183,20 @@ impl Daemon {
                         }
                         Err(e) => {
                             match work {
+                                Work::Benchmark(..) => unreachable!(),
                                 Work::Load(_) => {
                                     let _ = events.send(Event::Model(identity, Err(e)));
                                 }
-                                Work::Transcribe(_, _, generation, history_id) => {
+                                Work::Transcribe(_, _, generation, history_id, queued) => {
                                     let _ = events.send(Event::Transcribed(
                                         generation,
                                         Err(e),
-                                        0.,
+                                        queued.elapsed().as_secs_f64(),
                                         history_id,
+                                        model_name,
                                     ));
                                 }
-                                Work::Stream(_, generation, receive) => {
+                                Work::Stream(_, generation, receive, finished) => {
                                     while !matches!(
                                         receive.recv(),
                                         Ok(StreamInput::Finish | StreamInput::Cancel) | Err(_)
@@ -165,8 +204,12 @@ impl Daemon {
                                     let _ = events.send(Event::Transcribed(
                                         generation,
                                         Err(e),
-                                        0.,
+                                        finished
+                                            .get()
+                                            .map(|s| s.elapsed().as_secs_f64())
+                                            .unwrap_or(0.),
                                         None,
+                                        model_name,
                                     ));
                                 }
                             }
@@ -174,9 +217,8 @@ impl Daemon {
                         }
                     }
                 }
-                let _ = events.send(Event::Model(identity, Ok(())));
-                if let Work::Transcribe(file, config, generation, history_id) = work {
-                    let started = Instant::now();
+                let _ = events.send(Event::Model(identity, Ok(runtime_profile.clone())));
+                if let Work::Transcribe(file, config, generation, history_id, started) = work {
                     let result =
                         crate::engine::read_audio(&file, config.flag("audio", "preprocess"))
                             .and_then(|samples| {
@@ -187,9 +229,9 @@ impl Daemon {
                         result,
                         started.elapsed().as_secs_f64(),
                         history_id,
+                        model_name,
                     ));
-                } else if let Work::Stream(_, generation, receive) = work {
-                    let started = Instant::now();
+                } else if let Work::Stream(_, generation, receive, finished) = work {
                     let preview_events = events.clone();
                     let result =
                         engine
@@ -199,12 +241,19 @@ impl Daemon {
                                 let _ = preview_events
                                     .send(Event::Preview(generation, committed, tentative));
                             });
+                    if result.is_err() {
+                        while !matches!(
+                            receive.recv(),
+                            Ok(StreamInput::Finish | StreamInput::Cancel) | Err(_)
+                        ) {}
+                    }
                     if let Ok(None) = result {
                         let _ = events.send(Event::Transcribed(
                             generation,
                             Ok(String::new()),
                             0.,
                             None,
+                            model_name,
                         ));
                     } else {
                         let _ = events.send(Event::Transcribed(
@@ -212,8 +261,12 @@ impl Daemon {
                             result.and_then(|text| {
                                 text.ok_or_else(|| anyhow::anyhow!("Streaming was cancelled"))
                             }),
-                            started.elapsed().as_secs_f64(),
+                            finished
+                                .get()
+                                .map(|s| s.elapsed().as_secs_f64())
+                                .unwrap_or(0.),
                             None,
+                            model_name,
                         ));
                     }
                 }
@@ -263,6 +316,7 @@ impl Daemon {
             worker,
             live_stream: None,
             stream_history_id: None,
+            stream_finished: None,
             generation,
             hotkeys,
             companion,
@@ -274,6 +328,11 @@ impl Daemon {
             test: None,
             test_serial: 0,
             quitting: false,
+            benchmarking: false,
+            benchmark_cancel: Arc::new(AtomicBool::new(false)),
+            runtime_profile: String::new(),
+            benchmark_client: None,
+            benchmark_status: json!({"type":"benchmark","running":false,"message":"Choose a configuration and run a local benchmark."}),
         };
         if !probe {
             daemon
@@ -323,7 +382,7 @@ impl Daemon {
         Ok(())
     }
     fn state(&self) -> Value {
-        json!({"type":"state","protocol":2,"engine":"Rust speech engines","listening":self.flow.listening,"recording":self.flow.recording,"processing":self.flow.pending>0,"pending":self.flow.pending,"capture_ready":self.capture_ready,"model_ready":self.ready,"output_method":self.resolved,"last_error":self.last_error,"log_level":self.config.string("logging","level"),"hotkey":self.config.string("input","trigger_key"),"microphone":if self.config.string("audio","pipewire_node").is_empty(){self.config.string("audio","device")}else{self.config.string("audio","pipewire_node")}})
+        json!({"type":"state","protocol":2,"engine":"Rust speech engines","listening":self.flow.listening,"recording":self.flow.recording,"processing":self.flow.pending>0,"pending":self.flow.pending,"capture_ready":self.capture_ready,"model_ready":self.ready,"benchmarking":self.benchmarking,"runtime_profile":self.runtime_profile,"performance":self.config.data["performance"],"model":self.config.string("transcription","model"),"output_method":self.resolved,"last_error":self.last_error,"log_level":self.config.string("logging","level"),"hotkey":self.config.string("input","trigger_key"),"microphone":if self.config.string("audio","pipewire_node").is_empty(){self.config.string("audio","device")}else{self.config.string("audio","pipewire_node")}})
     }
     fn reply(&mut self, id: u64, value: Value) {
         if self
@@ -383,6 +442,7 @@ impl Daemon {
             }
             Event::Disconnect(id) => {
                 self.clients.remove(&id);
+                if self.benchmark_client == Some(id) { self.benchmark_cancel.store(true, Ordering::Relaxed); }
                 if self.recording_client == Some(id) { self.discard_remote_recording(); }
                 if self.key_capture.as_ref().is_some_and(|k| k.client == id) { self.end_key_capture(); }
                 if self.test.as_ref().is_some_and(|t| t.client == id) { self.stop_test(); }
@@ -417,15 +477,32 @@ impl Daemon {
                     self.broadcast(json!({"type":"transcription_preview","committed":committed,"tentative":tentative}));
                 }
             }
-            Event::Model(identity, result) => {
-                if identity != (self.config.string("transcription","model").to_owned(), self.config.string("transcription","compute_type").to_owned()) { return; }
-                self.ready = result.is_ok();
-                if let Err(error) = result { self.error(format!("Model load failed: {error}")); }
+            Event::Benchmark(value) => {
+                self.benchmark_status = value.clone();
+                self.broadcast(value);
+            }
+            Event::BenchmarkDone(result) => {
+                self.benchmarking = false;
+                self.benchmark_client = None;
+                self.benchmark_status = match result {
+                    Ok(report) => json!({"type":"benchmark","running":false,"message":"Finished. Results saved locally; settings were not changed.","report":report}),
+                    Err(error) => json!({"type":"benchmark","running":false,"message":error.to_string()}),
+                };
+                self.broadcast(self.benchmark_status.clone());
+                if self.worker.try_send(Work::Load(self.config.clone())).is_err() {
+                    self.error("Could not restore the selected model after the benchmark".into());
+                }
                 self.broadcast_state();
             }
-            Event::Transcribed(generation, result, duration, history_id) => {
+            Event::Model(identity, result) => {
+                if identity != optimization::identity(&self.config) { return; }
+                self.ready = result.is_ok();
+                match result { Ok(profile) => self.runtime_profile = profile, Err(error) => self.error(format!("Model load failed: {error}")) }
+                self.broadcast_state();
+            }
+            Event::Transcribed(generation, result, duration, history_id, model) => {
                 let history_id = history_id.or_else(|| self.stream_history_id.take());
-                self.transcribed_recording(generation, result, duration, history_id)
+                self.transcribed_recording(generation, result, duration, history_id, &model)
             }
             Event::Delivered(_, result) => {
                 self.flow.outputting = false;
@@ -445,7 +522,7 @@ impl Daemon {
     }
     #[cfg(test)]
     fn transcribed(&mut self, generation: u64, result: Result<String>, duration: f64) {
-        self.transcribed_recording(generation, result, duration, None);
+        self.transcribed_recording(generation, result, duration, None, "test-model");
     }
     fn transcribed_recording(
         &mut self,
@@ -453,6 +530,7 @@ impl Daemon {
         result: Result<String>,
         duration: f64,
         history_id: Option<i64>,
+        model: &str,
     ) {
         if generation != self.flow.generation {
             self.flow.pending = self.flow.pending.saturating_sub(1);
@@ -464,14 +542,17 @@ impl Daemon {
                         text.chars().count()
                     );
                     let saved = if let Some(id) = history_id {
-                        self.history.update_transcription(id, &text, false)
+                        self.history
+                            .finish_transcription(id, &text, false, model, duration)
                     } else {
-                        self.history.add(&text).map(|_| ())
+                        self.history
+                            .add_transcription(&text, model, duration)
+                            .map(|_| ())
                     };
                     if let Err(error) = saved {
                         self.error(format!("Could not save transcription history: {error}"));
                     }
-                    self.broadcast(json!({"type":"transcription","text":text,"duration":duration}));
+                    self.broadcast(json!({"type":"transcription","text":text,"duration":duration,"model":model}));
                     self.completed.push_back((generation, text));
                 }
                 result => {
@@ -483,7 +564,9 @@ impl Daemon {
                             "No speech detected. Check the microphone in Settings.".into()
                         });
                     if let Some(id) = history_id {
-                        let _ = self.history.update_transcription(id, "", true);
+                        let _ = self
+                            .history
+                            .finish_transcription(id, "", true, model, duration);
                     }
                     self.error(message);
                 }
@@ -496,6 +579,9 @@ impl Daemon {
         self.start_recording_from(self.config.clone());
     }
     fn start_recording_from(&mut self, config: Config) {
+        if self.benchmarking {
+            return;
+        }
         if !self.flow.can_record() {
             if self.flow.listening && !self.flow.recording {
                 self.error("Wait for pending dictation or text output to finish.".into());
@@ -527,6 +613,7 @@ impl Daemon {
                 self.flow.recording = true;
                 self.capture_ready = false;
                 self.recording_started = Instant::now();
+                let finished = Arc::new(OnceLock::new());
                 if streaming
                     && self
                         .worker
@@ -534,10 +621,12 @@ impl Daemon {
                             config.clone(),
                             self.flow.generation,
                             stream_receive,
+                            finished.clone(),
                         ))
                         .is_ok()
                 {
                     self.live_stream = Some(stream_send);
+                    self.stream_finished = Some(finished);
                 }
             }
             Err(e) => self.error(format!("Recording failed: {e}")),
@@ -545,12 +634,16 @@ impl Daemon {
         self.broadcast_state();
     }
     fn stop_recording(&mut self) {
+        let stopped = Instant::now();
         if !self.flow.recording {
             return;
         }
         self.flow.recording = false;
         self.recording_client = None;
         self.capture_ready = false;
+        if let Some(finished) = self.stream_finished.take() {
+            let _ = finished.set(stopped);
+        }
         if let Some(capture) = self.capture.take() {
             match capture.finish() {
                 Ok(file) => {
@@ -592,6 +685,7 @@ impl Daemon {
                             self.config.clone(),
                             self.flow.generation,
                             history_id,
+                            stopped,
                         ))
                         .is_err()
                     {
@@ -667,7 +761,60 @@ impl Daemon {
         );
     }
     fn command(&mut self, id: u64, message: &Value) -> Result<()> {
-        match message["cmd"].as_str().unwrap_or("") {
+        let command = message["cmd"].as_str().unwrap_or("");
+        if self.benchmarking
+            && matches!(
+                command,
+                "save_config"
+                    | "reload_config"
+                    | "retry_history"
+                    | "start_recording"
+                    | "test_microphone"
+            )
+        {
+            bail!("Finish or cancel the benchmark first");
+        }
+        match command {
+            "benchmark_status" => {
+                let mut status = self.benchmark_status.clone();
+                status["reports"] = optimization::reports(&self.config);
+                self.reply(id, status);
+            }
+            "cancel_benchmark" => {
+                if self.benchmark_client != Some(id) {
+                    bail!("This client does not own the benchmark");
+                }
+                self.benchmark_cancel.store(true, Ordering::Relaxed);
+            }
+            "benchmark" => {
+                if self.benchmarking
+                    || self.flow.busy()
+                    || self.flow.outputting
+                    || !self.ready
+                    || self.test.is_some()
+                {
+                    bail!("Wait for the model and pending dictation before benchmarking");
+                }
+                let candidate = self.config.changed(&json!({
+                    "transcription":message["transcription"], "performance":message["performance"]
+                }))?;
+                optimization::check_profile(&candidate)?;
+                let durations = optimization::durations(&message["durations"])?;
+                self.benchmark_cancel.store(false, Ordering::Relaxed);
+                self.worker
+                    .try_send(Work::Benchmark(
+                        candidate,
+                        durations,
+                        self.benchmark_cancel.clone(),
+                    ))
+                    .map_err(|_| anyhow::anyhow!("Speech worker is busy"))?;
+                self.benchmarking = true;
+                self.benchmark_client = Some(id);
+                self.ready = false;
+                self.benchmark_status = json!({"type":"benchmark","running":true,"message":"Starting local benchmark. Dictation resumes when it finishes."});
+                self.broadcast(self.benchmark_status.clone());
+                self.broadcast_state();
+            }
             "start_recording" => {
                 if id == 0 || !self.clients.contains_key(&id) {
                     bail!("Recording requires a connected client")
@@ -735,6 +882,7 @@ impl Daemon {
                 self.reply(id, json!({"type":"history_changed"}));
             }
             "retry_history" => {
+                let requested = Instant::now();
                 let history_id = message["id"].as_i64().unwrap_or_default();
                 let item = self
                     .history
@@ -762,6 +910,7 @@ impl Daemon {
                         config,
                         self.flow.generation,
                         Some(history_id),
+                        requested,
                     ))
                     .is_err()
                 {
@@ -821,7 +970,7 @@ impl Daemon {
                 if self.flow.busy() || self.key_capture.is_some() || self.test.is_some() {
                     bail!("Wait for dictation or microphone/hotkey testing to finish, then save settings again.")
                 }
-                let candidate = if message["cmd"] == "reload_config" {
+                let mut candidate = if message["cmd"] == "reload_config" {
                     Config::load()?
                 } else if message["cmd"] == "set_log_level" {
                     self.config
@@ -829,10 +978,17 @@ impl Daemon {
                 } else {
                     self.config.changed(&message["config"])?
                 };
-                let model_changed = candidate.string("transcription", "model")
+                if candidate.string("transcription", "model")
                     != self.config.string("transcription", "model")
-                    || candidate.string("transcription", "compute_type")
-                        != self.config.string("transcription", "compute_type");
+                    && candidate.data["performance"] == self.config.data["performance"]
+                    && optimization::check_profile(&candidate).is_err()
+                {
+                    candidate =
+                        candidate.changed(&json!({"performance":{"profile":"standard"}}))?;
+                }
+                optimization::check_profile(&candidate)?;
+                let model_changed =
+                    optimization::identity(&candidate) != optimization::identity(&self.config);
                 let resolved = output::resolve(candidate.string("output", "method"));
                 if model_changed {
                     self.worker
@@ -1042,16 +1198,22 @@ impl Daemon {
 }
 impl Drop for Daemon {
     fn drop(&mut self) {
+        self.benchmark_cancel.store(true, Ordering::Relaxed);
         self.capture.take();
         self.stop_test();
     }
 }
 
 fn retry_config(saved: &Config, message: &Value) -> Result<Config> {
-    match message.get("transcription") {
-        Some(settings) => saved.changed(&json!({"transcription": settings})),
-        None => Ok(saved.clone()),
+    let mut changes = json!({});
+    for key in ["transcription", "performance"] {
+        if let Some(value) = message.get(key) {
+            changes[key] = value.clone();
+        }
     }
+    let selected = saved.changed(&changes)?;
+    optimization::check_profile(&selected)?;
+    Ok(selected)
 }
 
 #[cfg(test)]
@@ -1069,6 +1231,85 @@ mod tests {
         let server = Server::bind(root.path().join("run/daemon.sock")).unwrap();
         let daemon = Daemon::with_server(config, true, false, server).unwrap();
         (root, daemon)
+    }
+    #[test]
+    fn benchmark_blocks_competing_work_and_cancels_without_changing_settings() {
+        let (_root, mut daemon) = isolated();
+        let original = daemon.config.data.clone();
+        daemon.benchmarking = true;
+        daemon.benchmark_client = Some(1);
+        assert!(daemon
+            .command(1, &json!({"cmd":"save_config","config":{}}))
+            .is_err());
+        assert!(daemon
+            .command(1, &json!({"cmd":"retry_history","id":1}))
+            .is_err());
+        assert!(daemon
+            .command(1, &json!({"cmd":"benchmark","durations":[5]}))
+            .is_err());
+        daemon.start_recording();
+        assert!(!daemon.flow.recording);
+        assert!(daemon
+            .command(2, &json!({"cmd":"cancel_benchmark"}))
+            .is_err());
+        assert!(!daemon.benchmark_cancel.load(Ordering::Relaxed));
+        daemon
+            .command(1, &json!({"cmd":"cancel_benchmark"}))
+            .unwrap();
+        assert!(daemon.benchmark_cancel.load(Ordering::Relaxed));
+        assert_eq!(daemon.config.data, original);
+    }
+    #[test]
+    fn failed_load_records_job_model_and_elapsed_queue_time() {
+        let (_root, mut daemon) = isolated();
+        let id = daemon
+            .history
+            .add_recording("", std::path::Path::new("synthetic.wav"), 5., true)
+            .unwrap();
+        let config = daemon
+            .config
+            .changed(&json!({"transcription":{"model":"/nonexistent/synthetic-model.gguf"}}))
+            .unwrap();
+        daemon
+            .worker
+            .send(Work::Transcribe(
+                "synthetic.wav".into(),
+                config,
+                0,
+                Some(id),
+                Instant::now() - Duration::from_millis(200),
+            ))
+            .unwrap();
+        let event = daemon
+            .server
+            .receive
+            .recv_timeout(Duration::from_secs(3))
+            .unwrap();
+        assert!(
+            matches!(&event, Event::Transcribed(_, Err(_), seconds, Some(_), model) if *seconds >= 0.2 && model == "/nonexistent/synthetic-model.gguf")
+        );
+        daemon.event(event);
+        let row = daemon.history.get(id).unwrap().unwrap();
+        assert_eq!(row["model"], "/nonexistent/synthetic-model.gguf");
+        assert!(row["transcription_seconds"].as_f64().unwrap() >= 0.2);
+        assert_eq!(row["failed"], true);
+    }
+
+    #[test]
+    fn retry_carries_unsaved_performance_settings() {
+        let root = tempfile::tempdir().unwrap();
+        let saved = Config::at(root.path()).unwrap();
+        let selected = retry_config(
+            &saved,
+            &json!({"performance":{"profile":"standard","threads":2}}),
+        )
+        .unwrap();
+        assert_eq!(selected.number("performance", "threads"), 2);
+        assert_eq!(saved.number("performance", "threads"), 0);
+        assert_ne!(
+            optimization::identity(&saved),
+            optimization::identity(&selected)
+        );
     }
     #[test]
     fn history_retry_uses_selected_settings_without_changing_saved_config() {
@@ -1103,7 +1344,7 @@ mod tests {
             "transcription":{"model":"canary-180m-flash"}}),
             )
             .unwrap();
-        let Work::Transcribe(queued_path, config, _, history_id) = receive.try_recv().unwrap()
+        let Work::Transcribe(queued_path, config, _, history_id, _) = receive.try_recv().unwrap()
         else {
             panic!("Expected a history transcription");
         };

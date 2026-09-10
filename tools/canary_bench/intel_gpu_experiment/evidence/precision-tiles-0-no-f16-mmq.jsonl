@@ -1,0 +1,3 @@
+{"backend":"gguf","event":"loaded","peak_rss_kib":190976,"seconds":0.169368548}
+{"audio":"/tmp/canary-vulkan-research/five-second-screen.f32","audio_seconds":5.0,"backend":"gguf","cpu_seconds":0.46548300000000004,"error":null,"event":"transcribed","peak_rss_kib":232404,"round":0,"seconds":0.232630675,"text":"The library opens early on Monday morning. Students scan marble books and read newspapers in"}
+{"audio":"/tmp/canary-vulkan-research/five-second-screen.f32","audio_seconds":5.0,"backend":"gguf","cpu_seconds":0.37082499999999996,"error":null,"event":"transcribed","peak_rss_kib":233300,"round":1,"seconds":0.156882379,"text":"The library opens early on Monday morning. Students scan marble books and read newspapers in"}

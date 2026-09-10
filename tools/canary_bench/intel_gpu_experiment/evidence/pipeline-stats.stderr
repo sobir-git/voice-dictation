@@ -1,0 +1,70 @@
+ggml_vulkan: Found 1 Vulkan devices:
+ggml_vulkan: 0 = Intel(R) Iris(R) Xe Graphics (ADL GT2) (Intel open-source Mesa driver) | uma: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 65536 | int dot: 1 | matrix cores: none
+canary: using vulkan backend: Vulkan0
+ggml_vulkan: pipeline stats for matmul_f16_f32_f16acc_m:
+ggml_vulkan:   Instruction Count: 4128
+ggml_vulkan:   SEND Count: 181
+ggml_vulkan:   Loop Count: 1
+ggml_vulkan:   Cycle Count: 245342
+ggml_vulkan:   Spill Count: 77
+ggml_vulkan:   Fill Count: 180
+ggml_vulkan:   Scratch Memory Size: 2048
+ggml_vulkan:   Max dispatch width: 8
+ggml_vulkan:   Max live registers: 174
+ggml_vulkan:   Workgroup Memory Size: 8704
+ggml_vulkan:   Source hash: 883353457
+ggml_vulkan:   Non SSA regs after NIR: 1759
+ggml_vulkan: pipeline stats for matmul_f16_f32_f16acc_aligned_m:
+ggml_vulkan:   Instruction Count: 3610
+ggml_vulkan:   SEND Count: 95
+ggml_vulkan:   Loop Count: 1
+ggml_vulkan:   Cycle Count: 144878
+ggml_vulkan:   Spill Count: 77
+ggml_vulkan:   Fill Count: 164
+ggml_vulkan:   Scratch Memory Size: 2048
+ggml_vulkan:   Max dispatch width: 8
+ggml_vulkan:   Max live registers: 172
+ggml_vulkan:   Workgroup Memory Size: 8704
+ggml_vulkan:   Source hash: 709263119
+ggml_vulkan:   Non SSA regs after NIR: 1667
+ggml_vulkan: pipeline stats for matmul_q8_0_q8_1_m:
+ggml_vulkan:   Instruction Count: 1424
+ggml_vulkan:   SEND Count: 109
+ggml_vulkan:   Loop Count: 4
+ggml_vulkan:   Cycle Count: 583760
+ggml_vulkan:   Spill Count: 0
+ggml_vulkan:   Fill Count: 0
+ggml_vulkan:   Scratch Memory Size: 0
+ggml_vulkan:   Max dispatch width: 8
+ggml_vulkan:   Max live registers: 110
+ggml_vulkan:   Workgroup Memory Size: 18432
+ggml_vulkan:   Source hash: 1559197929
+ggml_vulkan:   Non SSA regs after NIR: 131
+ggml_vulkan: pipeline stats for matmul_f32_f32_aligned_m:
+ggml_vulkan:   Instruction Count: 2910
+ggml_vulkan:   SEND Count: 97
+ggml_vulkan:   Loop Count: 1
+ggml_vulkan:   Cycle Count: 79188
+ggml_vulkan:   Spill Count: 47
+ggml_vulkan:   Fill Count: 66
+ggml_vulkan:   Scratch Memory Size: 1024
+ggml_vulkan:   Max dispatch width: 8
+ggml_vulkan:   Max live registers: 169
+ggml_vulkan:   Workgroup Memory Size: 8704
+ggml_vulkan:   Source hash: 2170317002
+ggml_vulkan:   Non SSA regs after NIR: 495
+ggml_vulkan: pipeline stats for matmul_f16_aligned_m:
+ggml_vulkan:   Instruction Count: 2838
+ggml_vulkan:   SEND Count: 93
+ggml_vulkan:   Loop Count: 1
+ggml_vulkan:   Cycle Count: 73704
+ggml_vulkan:   Spill Count: 47
+ggml_vulkan:   Fill Count: 66
+ggml_vulkan:   Scratch Memory Size: 1024
+ggml_vulkan:   Max dispatch width: 8
+ggml_vulkan:   Max live registers: 169
+ggml_vulkan:   Workgroup Memory Size: 8704
+ggml_vulkan:   Source hash: 1974628371
+ggml_vulkan:   Non SSA regs after NIR: 463
+canary kv_cache: allocated 17.0 MB (f16) (self: 1024 session x 4 layers, cross: 63 T_enc x 4 layers)
+STAGE {"decode_ms":104.62899780273438,"encode_ms":81.52300262451172,"mel_ms":7.4629998207092285}

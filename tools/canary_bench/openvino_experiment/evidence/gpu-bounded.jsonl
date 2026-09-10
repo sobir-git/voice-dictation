@@ -1,0 +1,4 @@
+{"event": "compiling", "device": "GPU"}
+{"event": "encoder_compiled", "seconds": 1.134067514911294}
+{"event": "loaded", "seconds": 1.4855961949797347}
+{"event": "encoded", "round": 0, "encoder_ms": 525.1530120149255}

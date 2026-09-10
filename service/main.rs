@@ -10,8 +10,17 @@ fn main() -> Result<()> {
     if args.iter().any(|a| a == "--adapter") {
         return voice_dictation::adapter::run();
     }
+    if let Some(index) = args.iter().position(|s| s == "--benchmark-case") {
+        return voice_dictation::optimization::child(
+            std::path::Path::new(args.get(index + 1).context("Missing benchmark request")?),
+            std::path::Path::new(args.get(index + 2).context("Missing benchmark output")?),
+        );
+    }
     let config = Config::load()?;
     logging::init(&config)?;
+    if voice_dictation::optimization::cli(&args, &config)? {
+        return Ok(());
+    }
     if let Some(index) = args.iter().position(|s| s == "--transcribe") {
         let path = std::path::Path::new(
             args.get(index + 1)

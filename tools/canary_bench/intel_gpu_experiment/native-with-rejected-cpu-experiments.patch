@@ -1,0 +1,633 @@
+--- a/ggml/src/ggml-cpu/arch/x86/quants.c
++++ b/ggml/src/ggml-cpu/arch/x86/quants.c
+@@ -4106,3 +4106,53 @@
+     ggml_vec_dot_iq4_xs_q8_K_generic(n, s, bs, vx, bx, vy, by, nrc);
+ #endif
+ }
++
++#if defined(__AVX2__)
++// Four independent output rows share one activation block load and conversion.
++// Arithmetic within each row retains the reference q8_0 dot-product order.
++void research_q8_dot4(int n, float * out, const void * weights, size_t stride, const void * activation) {
++    const block_q8_0 * y = (const block_q8_0 *) activation;
++    const block_q8_0 * x0 = (const block_q8_0 *) weights;
++    const block_q8_0 * x1 = (const block_q8_0 *) ((const char *)weights + stride);
++    const block_q8_0 * x2 = (const block_q8_0 *) ((const char *)weights + 2*stride);
++    const block_q8_0 * x3 = (const block_q8_0 *) ((const char *)weights + 3*stride);
++    __m256 a0 = _mm256_setzero_ps(), a1 = a0, a2 = a0, a3 = a0;
++    for (int i = 0; i < n/QK8_0; ++i) {
++        const __m256i qy = _mm256_loadu_si256((const __m256i *)y[i].qs);
++        const float dy = GGML_CPU_FP16_TO_FP32(y[i].d);
++#define RESEARCH_ROW(R) \
++        const __m256 d##R = _mm256_set1_ps(GGML_CPU_FP16_TO_FP32(x##R[i].d) * dy); \
++        const __m256i q##R = _mm256_loadu_si256((const __m256i *)x##R[i].qs); \
++        a##R = _mm256_fmadd_ps(d##R, mul_sum_i8_pairs_float(q##R, qy), a##R);
++        RESEARCH_ROW(0)
++        RESEARCH_ROW(1)
++        RESEARCH_ROW(2)
++        RESEARCH_ROW(3)
++#undef RESEARCH_ROW
++    }
++    out[0] = hsum_float_8(a0); out[1] = hsum_float_8(a1);
++    out[2] = hsum_float_8(a2); out[3] = hsum_float_8(a3);
++}
++#endif
++
++#if defined(__AVXVNNI__)
++void research_q8_dot4_packed(int n, float * out, const void * weights, const ggml_fp16_t * scales, const void * activation) {
++    const block_q8_0 * y = (const block_q8_0 *)activation;
++    const unsigned char * x = (const unsigned char *)weights;
++    __m256 a0 = _mm256_setzero_ps(), a1 = a0, a2 = a0, a3 = a0;
++    const __m256i zero = _mm256_setzero_si256(), offset = _mm256_set1_epi8((char)128);
++    for (int b = 0; b < n/32; ++b) {
++        const __m256i qy = _mm256_loadu_si256((const __m256i *)y[b].qs);
++        const __m256i correction = _mm256_dpbusd_avx_epi32(zero, offset, qy);
++        const float dy = GGML_CPU_FP16_TO_FP32(y[b].d);
++        const __m128 ds = _mm_mul_ps(_mm_cvtph_ps(_mm_loadl_epi64((const __m128i *)(scales+b*4))), _mm_set1_ps(dy));
++#define PACK_ROW(R) \
++        const __m256i q##R = _mm256_load_si256((const __m256i *)(x + b*128 + R*32)); \
++        const __m256i dot##R = _mm256_sub_epi32(_mm256_dpbusd_avx_epi32(zero, q##R, qy), correction); \
++        a##R = _mm256_fmadd_ps(_mm256_broadcastss_ps(_mm_shuffle_ps(ds, ds, _MM_SHUFFLE(R,R,R,R))), _mm256_cvtepi32_ps(dot##R), a##R);
++        PACK_ROW(0) PACK_ROW(1) PACK_ROW(2) PACK_ROW(3)
++#undef PACK_ROW
++    }
++    out[0] = hsum_float_8(a0); out[1] = hsum_float_8(a1); out[2] = hsum_float_8(a2); out[3] = hsum_float_8(a3);
++}
++#endif
+--- a/ggml/src/ggml-cpu/ggml-cpu.c
++++ b/ggml/src/ggml-cpu/ggml-cpu.c
+@@ -1196,6 +1196,17 @@
+ 
+ // ggml_compute_forward_mul_mat
+ 
++static bool research_q8x4 = false;
++static bool research_gemv_bias = false;
++static bool research_store_bias = false;
++static _Thread_local const float * research_bias_store = NULL;
++static _Thread_local const float * research_residual_store = NULL;
++static bool research_cpu_pack = false;
++#if defined(__AVX2__)
++extern void research_q8_dot4_packed(int n, float * out, const void * weights, const ggml_fp16_t * scales, const void * activation);
++extern void research_q8_dot4(int n, float * out, const void * weights, size_t stride, const void * activation);
++#endif
++
+ static void ggml_compute_forward_mul_mat_one_chunk(
+     const struct ggml_compute_params * params,
+     struct ggml_tensor * dst,
+@@ -1274,10 +1285,31 @@
+                 //    vec_dot(ne00, &dst_col[ir0], src0_row + ir0*nb01, src1_col);
+                 //}
+ 
+-                for (int64_t ir0 = iir0; ir0 < iir0 + blck_0 && ir0 < ir0_end; ir0 += num_rows_per_vec_dot) {
++                int64_t ir0 = iir0;
++#if defined(__AVX2__)
++                if (research_cpu_pack && src0->extra && type == GGML_TYPE_Q8_0 && num_rows_per_vec_dot == 1 && ne11 == 1 && ne02 == 1 && ne03 == 1 && ir0 % 4 == 0) {
++                    const char * packed = (const char *)src0->extra;
++                    const ggml_fp16_t * scales = (const ggml_fp16_t *)(packed + ne00*ne01);
++                    for (; ir0 + 4 <= MIN(iir0 + blck_0, ir0_end); ir0 += 4) {
++                        research_q8_dot4_packed(ne00, &tmp[ir0-iir0], packed + ir0*ne00, scales + ir0*(ne00/32), src1_col);
++                    }
++                }
++                if (research_q8x4 && type == GGML_TYPE_Q8_0 && num_rows_per_vec_dot == 1 && ne11 == 1) {
++                    for (; ir0 + 4 <= MIN(iir0 + blck_0, ir0_end); ir0 += 4) {
++                        research_q8_dot4(ne00, &tmp[ir0 - iir0], src0_row + ir0 * nb01, nb01, src1_col);
++                    }
++                }
++#endif
++                for (; ir0 < iir0 + blck_0 && ir0 < ir0_end; ir0 += num_rows_per_vec_dot) {
+                     vec_dot(ne00, &tmp[ir0 - iir0], (num_rows_per_vec_dot > 1 ? 16 : 0), src0_row + ir0 * nb01, (num_rows_per_vec_dot > 1 ? nb01 : 0), src1_col, (num_rows_per_vec_dot > 1 ? src1_col_stride : 0), num_rows_per_vec_dot);
+                 }
+ 
++                if (research_bias_store) {
++                    for (int64_t ri = 0; ri < MIN(iir0 + blck_0, ir0_end) - iir0; ++ri) {
++                        tmp[ri] += research_bias_store[iir0+ri];
++                        if (research_residual_store) tmp[ri] += research_residual_store[iir0+ri];
++                    }
++                }
+                 for (int cn = 0; cn < num_rows_per_vec_dot; ++cn) {
+                     memcpy(&dst_col[iir0 + cn * nb1 / nb0], tmp + (cn * 16), (MIN(iir0 + blck_0, ir0_end) - iir0) * sizeof(float));
+                 }
+@@ -1334,7 +1366,7 @@
+ 
+     const bool src1_cont = ggml_is_contiguous(src1);
+ 
+-    if (src1_cont) {
++    if (src1_cont && !research_bias_store) {
+         for (int64_t i13 = 0; i13 < ne13; i13++)
+             for (int64_t i12 = 0; i12 < ne12; i12++)
+                 if (!llamafile_sgemm(params,
+@@ -1399,7 +1431,7 @@
+     ggml_barrier(params->threadpool);
+ 
+ #if GGML_USE_LLAMAFILE
+-    if (src1->type != vec_dot_type) {
++    if (src1->type != vec_dot_type && !research_bias_store) {
+         const void* wdata = (src1->type == vec_dot_type) ? src1->data : params->wdata;
+         const size_t row_size = ggml_row_size(vec_dot_type, ne10);
+ 
+@@ -3059,8 +3091,42 @@
+ }
+ 
+ 
++#if defined(__AVX2__)
++static void research_compute_gemv_bias(const struct ggml_compute_params * params,
++                                     const struct ggml_tensor * mat, struct ggml_tensor * add) {
++    const struct ggml_tensor * w = mat->src[0];
++    const struct ggml_tensor * x = mat->src[1];
++    const struct ggml_tensor * bias = add->src[add->src[0] == mat ? 1 : 0];
++    const int64_t k = w->ne[0], m = w->ne[1];
++    const int64_t blocks = k / 32;
++    const int64_t begin = params->ith * blocks / params->nth;
++    const int64_t end = (params->ith + 1) * blocks / params->nth;
++    const size_t block_bytes = ggml_type_size(GGML_TYPE_Q8_0);
++    GGML_ASSERT(params->wsize >= ggml_row_size(GGML_TYPE_Q8_0, k));
++    type_traits_cpu[GGML_TYPE_Q8_0].from_float((const float *) x->data + begin*32,
++        (char *) params->wdata + begin*block_bytes, (end-begin)*32);
++    ggml_barrier(params->threadpool);
++    float * output = (float *)add->data;
++    const float * b = (const float *)bias->data;
++    const int64_t row_begin = (params->ith * (m/4) / params->nth)*4;
++    const int64_t row_end = ((params->ith+1) * (m/4) / params->nth)*4;
++    for (int64_t row = row_begin; row < row_end; row += 4) {
++        float values[4];
++        if (research_cpu_pack && w->extra) {
++            const char * packed = (const char *) w->extra;
++            const ggml_fp16_t * scales = (const ggml_fp16_t *)(packed + k*m);
++            research_q8_dot4_packed(k, values, packed + row*k, scales + row*blocks, params->wdata);
++        } else {
++            research_q8_dot4(k, values, (const char *)w->data + row*w->nb[1], w->nb[1], params->wdata);
++        }
++        for (int i=0; i<4; ++i) output[row+i] = values[i] + b[row+i];
++    }
++}
++#endif
++
+ // Try to fuse the current node with subsequent nodes for better performance.
+ // Returns the number of nodes skipped by fusion (>=1), or 0 if no fusion was applied.
++static bool research_fuse_ln = false;
+ static bool ggml_cpu_disable_fusion = false;  // initialized once in ggml_cpu_init(), read-only afterwards
+ 
+ static int ggml_cpu_try_fuse_ops(
+@@ -3074,6 +3140,71 @@
+     }
+ 
+     struct ggml_tensor * node = cgraph->nodes[node_n];
++
++#if defined(__AVX2__)
++    if ((research_gemv_bias || research_store_bias) && node->op == GGML_OP_MUL_MAT && node->src[0]->type == GGML_TYPE_Q8_0 &&
++        node->src[1]->type == GGML_TYPE_F32 && node->type == GGML_TYPE_F32 &&
++        node->ne[1] == 1 && node->ne[2] == 1 && node->ne[3] == 1 && node->ne[0] % 4 == 0 &&
++        node->src[0]->ne[2] == 1 && node->src[0]->ne[3] == 1 && ggml_is_contiguous(node->src[1])) {
++        const enum ggml_op pattern[] = { GGML_OP_MUL_MAT, GGML_OP_ADD };
++        if (ggml_can_fuse(cgraph, node_n, pattern, 2)) {
++            struct ggml_tensor * add = cgraph->nodes[node_n+1];
++            const struct ggml_tensor * bias = add->src[add->src[0] == node ? 1 : 0];
++            if ((add->src[0] == node || add->src[1] == node) && add->type == GGML_TYPE_F32 &&
++                bias->type == GGML_TYPE_F32 && ggml_is_contiguous(bias) && ggml_is_contiguous(add) &&
++                bias->ne[0] == node->ne[0] && ggml_nelements(bias) == node->ne[0]) {
++                if (research_store_bias) {
++                    struct ggml_tensor * final_add = add;
++                    int skip = 1;
++                    const enum ggml_op triple[] = {GGML_OP_MUL_MAT, GGML_OP_ADD, GGML_OP_ADD};
++                    if (getenv("CANARY_MAT_STORE_RESIDUAL") && ggml_can_fuse(cgraph, node_n, triple, 3)) {
++                        struct ggml_tensor * next = cgraph->nodes[node_n+2];
++                        const struct ggml_tensor * residual = next->src[next->src[0] == add ? 1 : 0];
++                        if ((next->src[0] == add || next->src[1] == add) && next->type == GGML_TYPE_F32 &&
++                            residual->type == GGML_TYPE_F32 && ggml_is_contiguous(residual) && ggml_is_contiguous(next) &&
++                            ggml_nelements(residual) == node->ne[0] && ggml_nelements(next) == node->ne[0]) {
++                            research_residual_store = (const float *)residual->data;
++                            final_add = next; skip = 2;
++                        }
++                    }
++                    struct ggml_tensor output = *node;
++                    output.data = final_add->data;
++                    output.buffer = final_add->buffer;
++                    research_bias_store = (const float *)bias->data;
++                    ggml_compute_forward_mul_mat(params, &output);
++                    research_bias_store = NULL;
++                    research_residual_store = NULL;
++                    return skip;
++                } else {
++                    research_compute_gemv_bias(params, node, add);
++                }
++                return 1;
++            }
++        }
++    }
++#endif
++
++    if (research_fuse_ln && node->op == GGML_OP_NORM) {
++        const enum ggml_op pattern[] = { GGML_OP_NORM, GGML_OP_MUL, GGML_OP_ADD };
++        if (ggml_can_fuse(cgraph, node_n, pattern, 3)) {
++            struct ggml_tensor * mul = cgraph->nodes[node_n + 1];
++            struct ggml_tensor * add = cgraph->nodes[node_n + 2];
++            const struct ggml_tensor * gamma = mul->src[mul->src[0] == node ? 1 : 0];
++            const struct ggml_tensor * beta = add->src[add->src[0] == mul ? 1 : 0];
++            if ((mul->src[0] == node || mul->src[1] == node) &&
++                (add->src[0] == mul || add->src[1] == mul) &&
++                node->src[0]->type == GGML_TYPE_F32 && node->type == GGML_TYPE_F32 &&
++                mul->type == GGML_TYPE_F32 && add->type == GGML_TYPE_F32 &&
++                gamma->type == GGML_TYPE_F32 && beta->type == GGML_TYPE_F32 &&
++                ggml_is_contiguous(node->src[0]) && ggml_is_contiguous(add) &&
++                ggml_is_contiguous(gamma) && ggml_is_contiguous(beta) &&
++                gamma->ne[0] == node->ne[0] && beta->ne[0] == node->ne[0] &&
++                ggml_nelements(gamma) == node->ne[0] && ggml_nelements(beta) == node->ne[0]) {
++                ggml_compute_forward_norm_affine_fused(params, node, mul, add);
++                return 2;
++            }
++        }
++    }
+ 
+     if (node->op == GGML_OP_RMS_NORM) {
+         // RMS_NORM + MUL fusion
+@@ -3155,7 +3286,9 @@
+         if (node_n + 1 < cgraph->n_nodes) {
+             ggml_barrier(state->threadpool);
+         }
+-    }
++
++    }
++
+ 
+ #ifdef GGML_USE_OPENMP
+     GGML_PRINT_DEBUG("thread #%d compute-done cplan %p\n", state->ith, (const void *)cplan);
+@@ -3926,6 +4059,11 @@
+         {
+             const char * env = getenv("GGML_CPU_DISABLE_FUSION");
+             ggml_cpu_disable_fusion = (env != NULL && atoi(env) == 1);
++            research_fuse_ln = getenv("CANARY_FUSE_LN") != NULL;
++            research_q8x4 = getenv("CANARY_Q8X4") != NULL;
++            research_gemv_bias = getenv("CANARY_GEMV_BIAS") != NULL;
++            research_store_bias = getenv("CANARY_MAT_STORE_BIAS") != NULL;
++            research_cpu_pack = getenv("CANARY_CPU_PACK") != NULL;
+         }
+ 
+         is_first_call = false;
+--- a/ggml/src/ggml-cpu/ops.cpp
++++ b/ggml/src/ggml-cpu/ops.cpp
+@@ -12012,3 +12012,32 @@
+         }
+     }
+ }
++
++// Experimental exact-order layer norm + per-channel scale + bias fusion.
++// Only contiguous F32 tensors and 1-D affine weights enter this function.
++void ggml_compute_forward_norm_affine_fused(
++    const ggml_compute_params * params, ggml_tensor * norm,
++    ggml_tensor * mul, ggml_tensor * add) {
++    const ggml_tensor * src = norm->src[0];
++    const ggml_tensor * gamma = mul->src[mul->src[0] == norm ? 1 : 0];
++    const ggml_tensor * beta = add->src[add->src[0] == mul ? 1 : 0];
++    const int64_t width = src->ne[0];
++    const int64_t rows = ggml_nrows(src);
++    const float * g = (const float *) gamma->data;
++    const float * b = (const float *) beta->data;
++    float eps;
++    memcpy(&eps, norm->op_params, sizeof(float));
++    for (int64_t row = params->ith; row < rows; row += params->nth) {
++        const float * x = (const float *) src->data + row * width;
++        float * y = (float *) add->data + row * width;
++        float sum = 0;
++        ggml_vec_sum_f32(width, &sum, x);
++        const float mean = sum / width;
++        const float variance = ggml_vec_cvar_f32(width, y, x, mean);
++        const float scale = 1.0f / sqrtf(variance + eps);
++        // Preserve each original rounding step. Reuse one output row in cache.
++        ggml_vec_scale_f32(width, y, scale);
++        ggml_vec_mul_f32(width, y, y, g);
++        ggml_vec_add_f32(width, y, y, b);
++    }
++}
+--- a/ggml/src/ggml-cpu/ops.h
++++ b/ggml/src/ggml-cpu/ops.h
+@@ -42,6 +42,7 @@
+ void ggml_compute_forward_repeat_back(const struct ggml_compute_params * params, struct ggml_tensor * dst);
+ void ggml_compute_forward_concat(const struct ggml_compute_params * params, struct ggml_tensor * dst);
+ void ggml_compute_forward_silu_back(const struct ggml_compute_params * params, struct ggml_tensor * dst);
++void ggml_compute_forward_norm_affine_fused(const struct ggml_compute_params * params, struct ggml_tensor * norm, struct ggml_tensor * mul, struct ggml_tensor * add);
+ void ggml_compute_forward_norm(const struct ggml_compute_params * params, struct ggml_tensor * dst);
+ void ggml_compute_forward_rms_norm(const struct ggml_compute_params * params, struct ggml_tensor * dst);
+ void ggml_compute_forward_rms_norm_mul_fused(const struct ggml_compute_params * params, struct ggml_tensor * dst_rms_norm, struct ggml_tensor * dst_mul);
+--- a/ggml/src/ggml-vulkan/ggml-vulkan.cpp
++++ b/ggml/src/ggml-vulkan/ggml-vulkan.cpp
+@@ -2330,6 +2330,7 @@
+ };
+ 
+ struct ggml_backend_vk_context {
++    std::unordered_map<const ggml_tensor *, vk_buffer> canary_q8_reordered;
+     std::string name;
+ 
+     vk_device device;
+@@ -2842,10 +2843,50 @@
+     VK_LOG_DEBUG("ggml_vk_create_pipeline(" << device->name << ", " << pipeline->name << ", " << entrypoint << ", " << parameter_count <<
+                  ", (" << wg_denoms[0] << "," << wg_denoms[1] << "," << wg_denoms[2] << "), specialization_constants, " <<
+                  disable_robustness << ", " << require_full_subgroups << ", " << required_subgroup_size << ")");
++    const bool canary_float_mm = pipeline->name.rfind("matmul_f16", 0) == 0 || pipeline->name.rfind("matmul_f32", 0) == 0;
++    if (const char * tile = getenv(canary_float_mm ? "CANARY_VK_FLOAT_TILE" : "CANARY_VK_MMQ_TILE")) {
++        if (canary_float_mm || pipeline->name.rfind("matmul_q8_0_q8_1_", 0) == 0) {
++            std::vector<uint32_t> values;
++            std::stringstream input(tile);
++            uint32_t value;
++            while (input >> value) { values.push_back(value); if (input.peek() == ',') input.get(); }
++            GGML_ASSERT(values.size() == 11);
++            const auto block = values[0], bm = values[1], bn = values[2], wm = values[4], wn = values[5], wi = values[6], tm = values[7], tn = values[8], warp = values[10];
++            GGML_ASSERT(block && bm && bn && wm && wn && wi && tm && tn && warp);
++            GGML_ASSERT(bm <= 128 && bn <= 128 && values[3] == (canary_float_mm ? 16 : 32));
++            GGML_ASSERT(bm % wm == 0 && bn % wn == 0 && block == warp * (bm/wm) * (bn/wn));
++            GGML_ASSERT(wm % wi == 0 && (wm*wn) % (warp*tm*tn*wi) == 0 && wm*wn >= warp*tm*tn*wi);
++            if (canary_float_mm && specialization_constants.size() > 11) values.push_back(specialization_constants[11]); // BK is unchanged; preserve input-load alignment.
++            specialization_constants = values;
++            wg_denoms = pipeline->wg_denoms = {bm, bn, 1};
++            required_subgroup_size = warp;
++            require_full_subgroups = true;
++        }
++    }
+     GGML_ASSERT(parameter_count > 0);
+     GGML_ASSERT(parameter_count <= MAX_PARAMETER_COUNT);
+     GGML_ASSERT(wg_denoms[0] > 0 && wg_denoms[1] > 0 && wg_denoms[2] > 0); // NOLINT
+ 
++    // Research-only override: edit and compile two small shaders without rebuilding Rust/ggml.
++    std::vector<uint32_t> canary_external_spirv;
++    if (const char * dir = getenv("CANARY_VK_SHADER_DIR")) {
++        if (pipeline->name == "mul_mat_vec_q8_0_q8_1_f32") {
++            const std::string path = std::string(dir) +
++                (specialization_constants.at(0) == required_subgroup_size ? "/mmvq-subgroup.spv" : "/mmvq-hybrid.spv");
++            FILE * file = fopen(path.c_str(), "rb");
++            GGML_ASSERT(file);
++            GGML_ASSERT(fseek(file, 0, SEEK_END) == 0);
++            const long size = ftell(file);
++            GGML_ASSERT(size >= 20 && size % 4 == 0);
++            rewind(file);
++            canary_external_spirv.resize(size / 4);
++            GGML_ASSERT(fread(canary_external_spirv.data(), 1, size, file) == size_t(size));
++            fclose(file);
++            GGML_ASSERT(canary_external_spirv.front() == 0x07230203);
++            spv_data = canary_external_spirv.data();
++            spv_size = size;
++        }
++    }
+     vk::ShaderModuleCreateInfo shader_module_create_info({}, spv_size, reinterpret_cast<const uint32_t *>(spv_data));
+ 
+     // Patch SPIR-V to enable supported FP16 float controls, avoiding the need
+@@ -5199,6 +5240,13 @@
+         rm_stdq = 2;
+         rm_stdq_int = 2;
+     }
++    if (device->vendor_id == VK_VENDOR_ID_INTEL) {
++        if (const char * value = getenv("CANARY_VK_ROWS")) {
++            const int rows = atoi(value);
++            GGML_ASSERT(rows == 1 || rows == 2 || rows == 4 || rows == 8);
++            rm_stdq = rm_stdq_int = rows;
++        }
++    }
+     uint32_t rm_iq = 2 * rm_kq;
+ 
+     const bool use_subgroups = device->subgroup_arithmetic;
+@@ -5292,7 +5340,11 @@
+ 
+ #if defined(GGML_VULKAN_INTEGER_DOT_GLSLC_SUPPORT)
+             if (device->integer_dot_product) {
+-                const uint32_t subgroup_size_int = (device->vendor_id == VK_VENDOR_ID_INTEL && device->subgroup_size_control) ? device->subgroup_min_size : device->subgroup_size;
++                uint32_t subgroup_size_int = (device->vendor_id == VK_VENDOR_ID_INTEL && device->subgroup_size_control) ? device->subgroup_min_size : device->subgroup_size;
++                if (device->vendor_id == VK_VENDOR_ID_INTEL && getenv("CANARY_VK_SUBGROUP")) {
++                    subgroup_size_int = atoi(getenv("CANARY_VK_SUBGROUP"));
++                    GGML_ASSERT(device->subgroup_size_control && subgroup_size_int >= device->subgroup_min_size && subgroup_size_int <= device->subgroup_max_size && (subgroup_size_int & (subgroup_size_int - 1)) == 0);
++                }
+                 const uint32_t wg_size_subgroup_int = (w == DMMV_WG_SIZE_SUBGROUP) ? subgroup_size_int : (subgroup_size_int * 4);
+ 
+                 ggml_vk_create_pipeline(device, device->pipeline_dequant_mul_mat_vec_q8_1_f32[w][GGML_TYPE_Q2_0][i], "mul_mat_vec_q2_0_q8_1_f32", arr_dmmv_q2_0_q8_1_f32_len[reduc], arr_dmmv_q2_0_q8_1_f32_data[reduc], "main", mul_mat_vec_num_bindings, sizeof(vk_mat_vec_push_constants), {2*rm_kq_int, 1, 1}, {wg_size_subgroup_int, 2*rm_kq_int, i+1}, 1, true, use_subgroups, subgroup_size_int);
+@@ -5300,7 +5352,7 @@
+                 ggml_vk_create_pipeline(device, device->pipeline_dequant_mul_mat_vec_q8_1_f32[w][GGML_TYPE_Q4_1][i], "mul_mat_vec_q4_1_q8_1_f32", arr_dmmv_q4_1_q8_1_f32_len[reduc], arr_dmmv_q4_1_q8_1_f32_data[reduc], "main", mul_mat_vec_num_bindings, sizeof(vk_mat_vec_push_constants), {1*rm_stdq_int, 1, 1}, {wg_size_subgroup_int, 1*rm_stdq_int, i+1}, 1, true, use_subgroups, subgroup_size_int);
+                 ggml_vk_create_pipeline(device, device->pipeline_dequant_mul_mat_vec_q8_1_f32[w][GGML_TYPE_Q5_0][i], "mul_mat_vec_q5_0_q8_1_f32", arr_dmmv_q5_0_q8_1_f32_len[reduc], arr_dmmv_q5_0_q8_1_f32_data[reduc], "main", mul_mat_vec_num_bindings, sizeof(vk_mat_vec_push_constants), {1*rm_stdq_int, 1, 1}, {wg_size_subgroup_int, 1*rm_stdq_int, i+1}, 1, true, use_subgroups, subgroup_size_int);
+                 ggml_vk_create_pipeline(device, device->pipeline_dequant_mul_mat_vec_q8_1_f32[w][GGML_TYPE_Q5_1][i], "mul_mat_vec_q5_1_q8_1_f32", arr_dmmv_q5_1_q8_1_f32_len[reduc], arr_dmmv_q5_1_q8_1_f32_data[reduc], "main", mul_mat_vec_num_bindings, sizeof(vk_mat_vec_push_constants), {1*rm_stdq_int, 1, 1}, {wg_size_subgroup_int, 1*rm_stdq_int, i+1}, 1, true, use_subgroups, subgroup_size_int);
+-                ggml_vk_create_pipeline(device, device->pipeline_dequant_mul_mat_vec_q8_1_f32[w][GGML_TYPE_Q8_0][i], "mul_mat_vec_q8_0_q8_1_f32", arr_dmmv_q8_0_q8_1_f32_len[reduc], arr_dmmv_q8_0_q8_1_f32_data[reduc], "main", mul_mat_vec_num_bindings, sizeof(vk_mat_vec_push_constants), {1*rm_stdq_int, 1, 1}, {wg_size_subgroup_int, 1*rm_stdq_int, i+1}, 1, true, use_subgroups, subgroup_size_int);
++                ggml_vk_create_pipeline(device, device->pipeline_dequant_mul_mat_vec_q8_1_f32[w][GGML_TYPE_Q8_0][i], "mul_mat_vec_q8_0_q8_1_f32", arr_dmmv_q8_0_q8_1_f32_len[reduc], arr_dmmv_q8_0_q8_1_f32_data[reduc], "main", mul_mat_vec_num_bindings, sizeof(vk_mat_vec_push_constants), {1*rm_stdq_int, 1, 1}, {wg_size_subgroup_int, 1*rm_stdq_int, i+1, getenv("CANARY_VK_REORDER") ? 1u : 0u}, 1, true, use_subgroups, subgroup_size_int);
+ 
+                 ggml_vk_create_pipeline(device, device->pipeline_dequant_mul_mat_vec_q8_1_f32[w][GGML_TYPE_MXFP4][i], "mul_mat_vec_mxfp4_q8_1_f32", arr_dmmv_mxfp4_q8_1_f32_len[reduc], arr_dmmv_mxfp4_q8_1_f32_data[reduc], "main", mul_mat_vec_num_bindings, sizeof(vk_mat_vec_push_constants), {2*rm_stdq_int, 1, 1}, {wg_size_subgroup_int, 2*rm_stdq_int, i+1}, 1, true, use_subgroups, subgroup_size_int);
+ 
+@@ -5347,7 +5399,11 @@
+ 
+ #if defined(GGML_VULKAN_INTEGER_DOT_GLSLC_SUPPORT)
+         if (device->integer_dot_product) {
+-            const uint32_t subgroup_size_int = (device->vendor_id == VK_VENDOR_ID_INTEL && device->subgroup_size_control) ? device->subgroup_min_size : device->subgroup_size;
++            uint32_t subgroup_size_int = (device->vendor_id == VK_VENDOR_ID_INTEL && device->subgroup_size_control) ? device->subgroup_min_size : device->subgroup_size;
++                if (device->vendor_id == VK_VENDOR_ID_INTEL && getenv("CANARY_VK_SUBGROUP")) {
++                    subgroup_size_int = atoi(getenv("CANARY_VK_SUBGROUP"));
++                    GGML_ASSERT(device->subgroup_size_control && subgroup_size_int >= device->subgroup_min_size && subgroup_size_int <= device->subgroup_max_size && (subgroup_size_int & (subgroup_size_int - 1)) == 0);
++                }
+             const uint32_t wg_size_subgroup_int = (w == DMMV_WG_SIZE_SUBGROUP) ? subgroup_size_int : (subgroup_size_int * 4);
+ 
+             ggml_vk_create_pipeline(device, device->pipeline_dequant_mul_mat_vec_id_q8_1_f32[w][GGML_TYPE_Q2_0], "mul_mat_vec_id_q2_0_q8_1_f32", arr_dmmv_id_q2_0_q8_1_f32_len[reduc], arr_dmmv_id_q2_0_q8_1_f32_data[reduc], "main", mul_mat_vec_id_num_bindings, sizeof(vk_mat_vec_id_push_constants), {2*rm_kq_int, 1, 1}, {wg_size_subgroup_int, 2*rm_kq_int}, 1, true, use_subgroups, subgroup_size_int);
+@@ -7832,7 +7888,7 @@
+ 
+     if (b_type == GGML_TYPE_Q8_1) {
+         if (ctx->device->vendor_id == VK_VENDOR_ID_INTEL) {
+-            dmmv_wg = DMMV_WG_SIZE_SUBGROUP;
++            dmmv_wg = getenv("CANARY_VK_LARGE") ? DMMV_WG_SIZE_LARGE : DMMV_WG_SIZE_SUBGROUP;
+         }
+         return ctx->device->pipeline_dequant_mul_mat_vec_q8_1_f32[dmmv_wg][a_type][num_cols-1];
+     }
+@@ -9618,6 +9674,26 @@
+         d_X = d_Qx;
+         GGML_ASSERT(qx_sz == x_sz);
+     }
++    const bool canary_reorder = getenv("CANARY_VK_REORDER") && quantize_y &&
++        ctx->device->vendor_id == VK_VENDOR_ID_INTEL && src0->type == GGML_TYPE_Q8_0 &&
++        ggml_is_contiguous(src0) && ne02 == 1 && ne03 == 1 && ne12 == 1 && ne13 == 1 &&
++        ggml_backend_buffer_get_usage(src0->buffer) == GGML_BACKEND_BUFFER_USAGE_WEIGHTS;
++    if (canary_reorder) {
++        auto & packed = ctx->canary_q8_reordered[src0];
++        if (!packed) {
++            GGML_ASSERT(d_Qx.buffer->ptr && (d_Qx.buffer->memory_property_flags & vk::MemoryPropertyFlagBits::eHostCoherent));
++            packed = ggml_vk_create_buffer(ctx->device, x_sz,
++                {vk::MemoryPropertyFlagBits::eDeviceLocal | vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent});
++            const auto * in = static_cast<const uint8_t *>(d_Qx.buffer->ptr) + d_Qx.offset;
++            auto * out = static_cast<uint8_t *>(packed->ptr);
++            const size_t blocks = x_ne / 32;
++            for (size_t block = 0; block < blocks; ++block) {
++                memcpy(out + block * 32, in + block * 34 + 2, 32);
++                memcpy(out + blocks * 32 + block * 2, in + block * 34, 2);
++            }
++        }
++        d_X = {packed, 0, x_sz};
++    }
+     if (qy_needs_dequant || quantize_y) {
+         d_Y = { ctx->prealloc_y, 0, ctx->prealloc_y->size };
+     } else {
+@@ -9683,7 +9759,7 @@
+         groups_x = CEIL_DIV(groups_x, groups_z);
+     }
+ 
+-    uint32_t fusion_flags = 0;
++    uint32_t fusion_flags = canary_reorder ? 0x100u : 0;
+ 
+     vk_subbuffer d_F0 = d_D;
+     if (ctx->num_additional_fused_ops > 0) {
+--- a/ggml/src/ggml-vulkan/vulkan-shaders/mul_mat_vec_iface.glsl
++++ b/ggml/src/ggml-vulkan/vulkan-shaders/mul_mat_vec_iface.glsl
+@@ -33,3 +33,8 @@
+ layout (binding = 5) readonly buffer IDS {int data_ids[];};
+ #endif
+ 
++
++#if defined(DATA_A_Q8_0)
++layout (binding = 0) readonly buffer CANARY_Q8_RAW32 {int canary_q8_raw32[];};
++layout (binding = 0) readonly buffer CANARY_Q8_SCALE16 {float16_t canary_q8_scale16[];};
++#endif
+--- a/ggml/src/ggml-vulkan/vulkan-shaders/mul_mat_vecq_funcs.glsl
++++ b/ggml/src/ggml-vulkan/vulkan-shaders/mul_mat_vecq_funcs.glsl
+@@ -126,8 +126,12 @@
+ #endif
+ 
+ #if defined(DATA_A_Q8_0)
++layout(constant_id = 3) const bool CANARY_REORDER = false;
+ // 2-byte loads for Q8_0 blocks (34 bytes)
+ int32_t repack(uint ib, uint iqs) {
++    if (CANARY_REORDER) {
++        return canary_q8_raw32[ib * 8 + iqs];
++    }
+     return pack32(i16vec2(data_a_packed16[ib].qs[iqs * 2    ],
+                           data_a_packed16[ib].qs[iqs * 2 + 1]));
+ }
+@@ -188,7 +192,12 @@
+ #endif
+ 
+     // 2 quants per call => divide sums by 8/2 = 4
++#if defined(DATA_A_Q8_0)
++    const float scale = CANARY_REORDER ? float(canary_q8_scale16[p.ncols * p.stride_d / 2 + ib_a]) : get_dm(ib_a);
++    return mul_q8_1(q_sum, scale, cache_b_ds, 4);
++#else
+     return mul_q8_1(q_sum, get_dm(ib_a), cache_b_ds, 4);
++#endif
+ }
+ #endif
+ 
+--- a/src/arch/canary/canary.h
++++ b/src/arch/canary/canary.h
+@@ -98,6 +98,8 @@
+                            ggml_type       kv_type);
+ 
+ struct CanaryModel final : public transcribe_model {
++    ggml_backend_t research_decoder_cpu = nullptr;
++    std::vector<ggml_backend_buffer_t> research_decoder_buffers;
+     Tokenizer      tok;
+     CanaryHParams  hparams;
+     CanaryWeights  weights;
+--- a/src/arch/canary/encoder.cpp
++++ b/src/arch/canary/encoder.cpp
+@@ -1,3 +1,4 @@
++#include <cstdlib>
+ // arch/canary/encoder.cpp - Canary FastConformer encoder graph builder.
+ //
+ // Glue over transcribe::conformer: threads each BlockView bias slot through
+@@ -105,7 +106,7 @@
+     policy.direct_pw               = conf::detect_direct_pw(backend_name);
+     const bool direct_dw           = detect_direct_dw_in_block(backend_name);
+     policy.direct_dw_in_block      = direct_dw;
+-    policy.direct_dw_in_pre_encode = false;  // parakeet-style: im2col here
++    policy.direct_dw_in_pre_encode = std::getenv("CANARY_DIRECT_PRE_DW") != nullptr;
+ 
+     EncoderBuild eb{};
+ 
+--- a/src/arch/canary/model.cpp
++++ b/src/arch/canary/model.cpp
+@@ -174,6 +174,8 @@
+ }
+ 
+ CanaryModel::~CanaryModel() {
++    for (auto buffer : research_decoder_buffers) safe_buffer_free(buffer);
++    research_decoder_buffers.clear();
+     if (bn_fused_ctx != nullptr) {
+         ggml_free(bn_fused_ctx);
+         bn_fused_ctx = nullptr;
+@@ -509,6 +511,40 @@
+         return st;
+     }
+ 
++    if (std::getenv("CANARY_HYBRID")) {
++        GGML_ASSERT(m->plan.primary_kind == transcribe::BackendKind::Vulkan);
++        m->research_decoder_cpu = m->plan.scheduler_list.back();
++        GGML_ASSERT(transcribe::classify_device(ggml_backend_get_device(m->research_decoder_cpu)) == transcribe::BackendKind::Cpu);
++        for (auto * tensor = ggml_get_first_tensor(m->ctx_meta); tensor; tensor = ggml_get_next_tensor(m->ctx_meta, tensor)) {
++            if (std::strncmp(tensor->name, "dec.", 4) != 0) continue;
++            std::vector<uint8_t> data(ggml_nbytes(tensor));
++            ggml_backend_tensor_get(tensor, data.data(), 0, data.size());
++            const bool pack = std::getenv("CANARY_CPU_PACK") && tensor->type == GGML_TYPE_Q8_0 && ggml_is_contiguous(tensor) && tensor->ne[1] % 4 == 0 && tensor->ne[2] == 1 && tensor->ne[3] == 1;
++            const size_t packed_bytes = pack ? ggml_nelements(tensor) * 17 / 16 : 0;
++            auto buffer = ggml_backend_alloc_buffer(m->research_decoder_cpu, data.size() + packed_bytes + 128);
++            if (!buffer) return TRANSCRIBE_ERR_OOM;
++            m->research_decoder_buffers.push_back(buffer);
++            tensor->buffer = nullptr;
++            tensor->data = nullptr;
++            tensor->extra = nullptr;
++            if (ggml_backend_tensor_alloc(buffer, tensor, ggml_backend_buffer_get_base(buffer)) != GGML_STATUS_SUCCESS) return TRANSCRIBE_ERR_OOM;
++            ggml_backend_buffer_set_usage(buffer, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
++            ggml_backend_tensor_set(tensor, data.data(), 0, data.size());
++            if (pack) {
++                auto address = reinterpret_cast<uintptr_t>(tensor->data) + data.size();
++                auto * packed = reinterpret_cast<uint8_t *>((address + 63) & ~uintptr_t(63));
++                auto * scales = reinterpret_cast<ggml_fp16_t *>(packed + ggml_nelements(tensor));
++                const int64_t nb = tensor->ne[0] / 32;
++                for (int64_t row = 0; row < tensor->ne[1]; row += 4) for (int64_t b = 0; b < nb; ++b) for (int j = 0; j < 4; ++j) {
++                    const auto * source = data.data() + ((row+j)*nb+b)*34;
++                    ggml_fp16_t d; std::memcpy(&d, source, 2);
++                    scales[(row/4)*nb*4+b*4+j] = d;
++                    for (int k = 0; k < 32; ++k) packed[(row/4)*nb*128+b*128+j*32+k] = source[2+k] ^ 0x80;
++                }
++                tensor->extra = packed;
++            }
++        }
++    }
+     m->t_load_us = ggml_time_us() - t_load_start;
+     *out_model   = m.release();
+     return TRANSCRIBE_OK;
+@@ -729,6 +765,9 @@
+         }
+     }
+ 
++    if (cm->research_decoder_cpu) {
++        transcribe::release_compute_scratch(cc->sched, cc->compute_ctx);
++    }
+     // Reset compute state.
+     if (cc->compute_ctx != nullptr) {
+         ggml_free(cc->compute_ctx);
+@@ -922,6 +961,12 @@
+     }
+     const int prompt_len = static_cast<int>(prompt_ids.size());
+ 
++    if (cm->research_decoder_cpu) {
++        transcribe::release_compute_scratch(cc->sched, cc->compute_ctx);
++        cc->encoder_out = nullptr;
++        cc->sched = ggml_backend_sched_new(&cm->research_decoder_cpu, nullptr, 1, 16384, false, true);
++        if (!cc->sched) return TRANSCRIBE_ERR_OOM;
++    }
+     // Init KV cache.
+     {
+         if (cc->kv_cache.buffer != nullptr && cc->kv_cache.T_enc != T_enc) {
+@@ -937,7 +982,7 @@
+             if (cache_type == GGML_TYPE_COUNT) {
+                 cache_type = GGML_TYPE_F16;
+             }
+-            if (!kv_cache_init(cc->kv_cache, cm->plan.primary, n_ctx, T_enc, cm->hparams.dec_d_model,
++            if (!kv_cache_init(cc->kv_cache, cm->research_decoder_cpu ? cm->research_decoder_cpu : cm->plan.primary, n_ctx, T_enc, cm->hparams.dec_d_model,
+                                cm->hparams.dec_n_layers, cache_type)) {
+                 transcribe::log_msg(TRANSCRIBE_LOG_LEVEL_ERROR,
+                                     "canary run: KV cache allocation failed (n_ctx=%d, T_enc=%d, "
+@@ -1179,7 +1224,7 @@
+         //     dispatch overhead.
+         //   CPU: build_decoder_graph_kv per step — n_kv grows with n_past, so
+         //     no dispatch overhead to amortize and no static-graph bandwidth tax.
+-        const bool primary_is_gpu = cm->plan.primary_kind != transcribe::BackendKind::Cpu &&
++        const bool primary_is_gpu = !cm->research_decoder_cpu && cm->plan.primary_kind != transcribe::BackendKind::Cpu &&
+                                     cm->plan.primary_kind != transcribe::BackendKind::Accel &&
+                                     cm->plan.primary_kind != transcribe::BackendKind::Unknown;
+ 
+@@ -1495,7 +1540,7 @@
+         return TRANSCRIBE_ERR_INVALID_ARG;
+     }
+ 
+-    const bool primary_is_gpu = cm->plan.primary_kind != transcribe::BackendKind::Cpu &&
++    const bool primary_is_gpu = !cm->research_decoder_cpu && cm->plan.primary_kind != transcribe::BackendKind::Cpu &&
+                                 cm->plan.primary_kind != transcribe::BackendKind::Accel &&
+                                 cm->plan.primary_kind != transcribe::BackendKind::Unknown;
+     if (n == 1 || !cc->decoder_use_flash || !primary_is_gpu || transcribe::debug::enabled()) {

@@ -1,0 +1,18 @@
+ggml_vulkan: Found 1 Vulkan devices:
+ggml_vulkan: 0 = Intel(R) Iris(R) Xe Graphics (ADL GT2) (Intel open-source Mesa driver) | uma: 1 | fp16: 0 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 65536 | int dot: 1 | matrix cores: none
+canary: using vulkan backend: Vulkan0
+canary kv_cache: allocated 20.9 MB (f16) (self: 1024 session x 4 layers, cross: 315 T_enc x 4 layers)
+STAGE {"decode_ms":630.0989990234375,"encode_ms":349.7409973144531,"mel_ms":43.04100036621094}
+STAGE {"decode_ms":496.489013671875,"encode_ms":274.99200439453125,"mel_ms":69.00499725341797}
+canary kv_cache: allocated 17.9 MB (f16) (self: 1024 session x 4 layers, cross: 122 T_enc x 4 layers)
+STAGE {"decode_ms":257.4389953613281,"encode_ms":147.04100036621094,"mel_ms":28.312000274658203}
+canary kv_cache: allocated 20.9 MB (f16) (self: 1024 session x 4 layers, cross: 315 T_enc x 4 layers)
+STAGE {"decode_ms":532.3790283203125,"encode_ms":400.64300537109375,"mel_ms":60.40599822998047}
+STAGE {"decode_ms":634.6610107421875,"encode_ms":273.9280090332031,"mel_ms":67.25900268554688}
+canary kv_cache: allocated 17.9 MB (f16) (self: 1024 session x 4 layers, cross: 122 T_enc x 4 layers)
+STAGE {"decode_ms":253.47300720214844,"encode_ms":172.3820037841797,"mel_ms":32.18000030517578}
+canary kv_cache: allocated 20.9 MB (f16) (self: 1024 session x 4 layers, cross: 315 T_enc x 4 layers)
+STAGE {"decode_ms":534.1799926757812,"encode_ms":276.6029968261719,"mel_ms":62.53799819946289}
+STAGE {"decode_ms":684.7119750976562,"encode_ms":382.6109924316406,"mel_ms":69.04499816894531}
+canary kv_cache: allocated 17.9 MB (f16) (self: 1024 session x 4 layers, cross: 122 T_enc x 4 layers)
+STAGE {"decode_ms":179.93499755859375,"encode_ms":103.89700317382812,"mel_ms":33.17300033569336}

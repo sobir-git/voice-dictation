@@ -1,0 +1,7 @@
+ggml_vulkan: Found 1 Vulkan devices:
+ggml_vulkan: 0 = Intel(R) Iris(R) Xe Graphics (ADL GT2) (Intel open-source Mesa driver) | uma: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 65536 | int dot: 1 | matrix cores: none
+canary: using vulkan backend: Vulkan0
+canary kv_cache: allocated 17.0 MB (f16) (self: 1024 session x 4 layers, cross: 63 T_enc x 4 layers)
+STAGE {"decode_ms":103.3499984741211,"encode_ms":68.58699798583984,"mel_ms":7.15500020980835}
+STAGE {"decode_ms":117.52400207519531,"encode_ms":59.11399841308594,"mel_ms":7.388999938964844}
+STAGE {"decode_ms":109.47100067138672,"encode_ms":60.167999267578125,"mel_ms":8.267000198364258}

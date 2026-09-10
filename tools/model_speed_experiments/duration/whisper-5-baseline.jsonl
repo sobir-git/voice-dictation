@@ -1,0 +1,5 @@
+{"event":"loaded","peak_rss_kib":287748,"seconds":0.26996859,"threads":4}
+{"audio":"/tmp/model-duration-bench/5s.f32","cpu_seconds":2.257053,"event":"transcribed","peak_rss_kib":287748,"round":0,"seconds":0.909216252,"text":"The library opens early on Monday morning. Students can borrow books and read newspapers in"}
+{"audio":"/tmp/model-duration-bench/5s.f32","cpu_seconds":1.722302,"event":"transcribed","peak_rss_kib":287748,"round":1,"seconds":0.62513409,"text":"The library opens early on Monday morning. Students can borrow books and read newspapers in"}
+{"audio":"/tmp/model-duration-bench/5s.f32","cpu_seconds":2.3527240000000003,"event":"transcribed","peak_rss_kib":287748,"round":2,"seconds":0.900062516,"text":"The library opens early on Monday morning. Students can borrow books and read newspapers in"}
+{"cpu_seconds_over_half_second":0.000023999999999801958,"event":"idle"}

@@ -1,0 +1,25 @@
+{
+  "variants": {
+    "baseline": {},
+    "dw": {
+      "CANARY_DIRECT_PRE_DW": "1"
+    },
+    "combined": {
+      "CANARY_GEMV_BIAS": "1",
+      "CANARY_FUSE_LN": "1",
+      "CANARY_DIRECT_PRE_DW": "1"
+    }
+  },
+  "rounds": 3,
+  "orders": 2,
+  "audio": [
+    "/tmp/voice-canary-benchmark/run2/short.f32",
+    "/tmp/voice-canary-benchmark/run2/medium.f32",
+    "/tmp/voice-canary-benchmark/run2/long.f32",
+    "/tmp/voice-canary-benchmark/run2/technical.f32",
+    "/tmp/voice-canary-benchmark/run2/silence.f32"
+  ],
+  "gguf": "/home/fire/.cache/huggingface/hub/models--handy-computer--canary-180m-flash-gguf/snapshots/b147f9dc52b59f0998e410540a84727bd86457fd/canary-180m-flash-Q8_0.gguf",
+  "profile": false,
+  "timing": "median of rounds after round zero"
+}

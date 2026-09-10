@@ -1,0 +1,29 @@
+--- a/mul_mat_vecq.comp
++++ b/mul_mat_vecq.comp
+@@ -13,6 +13,8 @@
+ 
+ #if defined(DATA_A_Q2_0) || defined(DATA_A_QUANT_K)
+ #define K_PER_ITER 16
++#elif defined(DATA_A_Q8_0)
++#define K_PER_ITER 32
+ #elif defined(DATA_A_QUANT_LEGACY) || defined(DATA_A_MXFP4)
+ #define K_PER_ITER 8
+ #elif defined(DATA_A_IQ1_S) || defined(DATA_A_IQ1_M)
+--- a/mul_mat_vecq_funcs.glsl
++++ b/mul_mat_vecq_funcs.glsl
+@@ -172,6 +172,15 @@
+ 
+     // 16 quants per call => divide sums by 32/16 = 2
+     return mul_q8_1(q_sum, get_dm(ib_a), cache_b_ds, 2);
++}
++#elif defined(DATA_A_Q8_0)
++FLOAT_TYPE mmvq_dot_product(const uint ib_a, const uint iqs) {
++    int32_t q_sum = 0;
++    [[unroll]] for (uint j = 0; j < 8; ++j) {
++        q_sum += dotPacked4x8EXT(repack(ib_a, j), cache_b_qs[j]);
++    }
++    const float scale = CANARY_REORDER ? float(canary_q8_scale16[p.ncols * p.stride_d / 2 + ib_a]) : get_dm(ib_a);
++    return mul_q8_1(q_sum, scale, cache_b_ds, 1);
+ }
+ #elif defined(DATA_A_QUANT_LEGACY) || defined(DATA_A_MXFP4)
+ FLOAT_TYPE mmvq_dot_product(const uint ib_a, const uint iqs) {

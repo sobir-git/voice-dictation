@@ -1,0 +1,19 @@
+[package]
+name = "whisper-speed-bench"
+version = "0.1.0"
+edition = "2021"
+[workspace]
+[dependencies]
+voice-dictation = { path = "/home/fire/projects/voice-dictation" }
+ct2rs = { version = "0.10.1", default-features = false, features = ["ruy", "dnnl", "openmp-runtime-comp"] }
+anyhow = "1"
+serde_json = "1"
+tokenizers = { version = "0.22", default-features = false, features = ["fancy-regex"] }
+libc = "0.2"
+rustfft = "6"
+tempfile = "3"
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
