@@ -73,6 +73,19 @@ dbus-run-session -- ./venv/bin/python3 tools/tray_probe.py
 python3 tools/service_ui_probe.py
 ```
 
+For proportional task checks, use the CPU-first verifier. It keeps the full
+integration gate available while avoiding unrelated Vulkan builds and installs
+for layout-only work:
+
+```sh
+python3 tools/verify.py ui-layout
+python3 tools/verify.py ui-behavior
+python3 tools/verify.py full
+```
+
+See [verification workflow](docs/verification.md) for risk tiers, artifact
+reuse and explicit Vulkan checks.
+
 Install the current working tree and restart the local service with one command:
 
 ```sh

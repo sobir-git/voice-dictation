@@ -21,6 +21,7 @@ fn setup(size: Size) -> Ui<Desktop> {
         &mut ui,
         Command::Backend(Arc::new(json!({"type":"config","config":{
         "audio":{"preprocess":true,"pipewire_node":""},"transcription":{"model":"base.en","language":"en"},
+        "performance":{"profile":"standard","threads":0,"by_model":{"canary-180m-flash":{"profile":"hybrid","threads":8}}},
         "logging":{"level":"INFO"}
     },"microphones":[]}))),
     );
@@ -82,7 +83,7 @@ fn settings_remain_reachable_in_a_minimum_window() {
     send(&mut ui, Command::Page(2));
     ui.dispatch(
         Input::Scroll {
-            position: Point::new(340., 270.),
+            position: Point::new(340., 400.),
             delta: Point::new(0., -2000.),
         },
         &mut TestText,
@@ -215,6 +216,10 @@ fn settings_describe_the_actual_inference_backend() {
         "Backend: transcribe.cpp · Vulkan"
     );
     assert_eq!(
+        preferences::format_backend("parakeet-unified-en-0.6b", "vulkan-full"),
+        "Backend: transcribe.cpp · Vulkan · Full-sequence experimental"
+    );
+    assert_eq!(
         preferences::format_backend("canary-180m-flash", "hybrid"),
         "Backend: transcribe.cpp · Vulkan encoder + CPU decoder"
     );
@@ -225,4 +230,48 @@ fn settings_describe_the_actual_inference_backend() {
         ),
         "Backend: transcribe.cpp · CPU fallback"
     );
+}
+
+#[test]
+fn performance_settings_follow_the_selected_model_and_keep_drafts() {
+    let mut ui = setup(Size::new(1000., 860.));
+    send(
+        &mut ui,
+        Command::Setting(1, json!("parakeet-unified-en-0.6b")),
+    );
+    send(&mut ui, Command::Setting(12, json!(4)));
+    send(&mut ui, Command::Setting(1, json!("canary-180m-flash")));
+    assert_eq!(ui.root().config["performance"]["profile"], "hybrid");
+    assert_eq!(ui.root().config["performance"]["threads"], 8);
+    send(
+        &mut ui,
+        Command::Setting(1, json!("parakeet-unified-en-0.6b")),
+    );
+    assert_eq!(ui.root().config["performance"]["threads"], 4);
+}
+
+#[test]
+fn performance_profile_choices_match_model_family() {
+    let whisper: Vec<Value> = preferences::profile_options("base.en")
+        .into_iter()
+        .map(|(_, value)| value)
+        .collect();
+    assert!(whisper.contains(&json!("standard")));
+    assert!(whisper.contains(&json!("fast")));
+    assert!(whisper.contains(&json!("adaptive")));
+    assert!(!whisper.contains(&json!("hybrid")));
+
+    let canary: Vec<Value> = preferences::profile_options("canary-180m-flash")
+        .into_iter()
+        .map(|(_, value)| value)
+        .collect();
+    assert!(canary.contains(&json!("standard")));
+    assert!(!canary.contains(&json!("adaptive")));
+    if cfg!(feature = "vulkan") {
+        assert!(canary.contains(&json!("vulkan")));
+        assert!(canary.contains(&json!("hybrid")));
+        assert!(canary.contains(&json!("vulkan-full")));
+    } else {
+        assert!(!canary.contains(&json!("vulkan")));
+    }
 }

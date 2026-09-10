@@ -17,6 +17,11 @@ use std::{
 
 pub const PARAKEET_MODEL: &str = "parakeet-unified-en-0.6b";
 pub const CANARY_MODEL: &str = "canary-180m-flash";
+const CANARY_FULL_MAX_SAMPLES: usize = 40 * 16_000;
+
+fn canary_full_input_allowed(sample_count: usize) -> bool {
+    sample_count < CANARY_FULL_MAX_SAMPLES
+}
 
 #[cfg(target_os = "linux")]
 unsafe extern "C" {
@@ -118,7 +123,10 @@ fn load_transcribe_model(path: PathBuf, config: &Config) -> Result<transcribe_cp
     Ok(transcribe_cpp::Model::load_with(
         path,
         &transcribe_cpp::ModelOptions {
-            backend: if matches!(optimization::profile(config), "vulkan" | "hybrid") {
+            backend: if matches!(
+                optimization::profile(config),
+                "vulkan" | "vulkan-full" | "hybrid"
+            ) {
                 transcribe_cpp::Backend::Vulkan
             } else {
                 transcribe_cpp::Backend::Cpu
@@ -242,9 +250,13 @@ impl Engine {
                     language: Some("en".into()),
                     ..Default::default()
                 };
-                let mut stream = session.stream(&run, &parakeet_stream_options())?;
-                stream.feed(&vec![0.; 33_280])?;
-                stream.finalize()?;
+                if optimization::profile(config) == "vulkan-full" {
+                    let _ = session.run(&vec![0.; 33_280], &run)?;
+                } else {
+                    let mut stream = session.stream(&run, &parakeet_stream_options())?;
+                    stream.feed(&vec![0.; 33_280])?;
+                    stream.finalize()?;
+                }
             }
             return Ok(Self::Parakeet {
                 session,
@@ -318,14 +330,16 @@ impl Engine {
         let _performance_cores =
             CpuAffinity::performance_cores(optimization::profile(config) == "hybrid");
         if let Self::Parakeet { session, .. } = self {
+            let language = config.string("transcription", "language");
+            let run = transcribe_cpp::RunOptions {
+                language: Some(if language.is_empty() { "en" } else { language }.into()),
+                ..Default::default()
+            };
+            if optimization::profile(config) == "vulkan-full" {
+                return Ok(session.run(samples, &run)?.text);
+            }
             // Use the same buffered stream for history retries and benchmarks as live dictation.
-            let mut stream = session.stream(
-                &transcribe_cpp::RunOptions {
-                    language: Some("en".into()),
-                    ..Default::default()
-                },
-                &parakeet_stream_options(),
-            )?;
+            let mut stream = session.stream(&run, &parakeet_stream_options())?;
             for chunk in samples.chunks(1600) {
                 stream.feed(chunk)?;
             }
@@ -338,9 +352,19 @@ impl Engine {
                 language: Some(if language.is_empty() { "en" } else { language }.into()),
                 ..Default::default()
             };
+            if samples.is_empty() {
+                return Ok(String::new());
+            }
+            if optimization::profile(config) == "vulkan-full" {
+                anyhow::ensure!(
+                    canary_full_input_allowed(samples.len()),
+                    "Experimental Canary vulkan-full requires audio shorter than 40 seconds"
+                );
+                return Ok(session.run(samples, &options)?.text.trim().to_owned());
+            }
             let mut text = Vec::new();
-            // Canary is designed for <40 s inputs. Bound decoder output and
-            // prefer quiet boundaries so long dictations do not cut words.
+            // Ordinary Canary profiles retain <=30 s chunks with quiet boundaries.
+            // Full-sequence inference is the explicit experimental path above.
             let mut remaining = samples;
             while !remaining.is_empty() {
                 let end = canary_chunk_end(remaining);
@@ -588,6 +612,13 @@ pub fn speech_samples(samples: &[f32]) -> Result<Vec<f32>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn canary_full_limit_is_exclusive() {
+        let under_limit = std::hint::black_box(39 * 16000);
+        let at_limit = std::hint::black_box(40 * 16000);
+        assert!(canary_full_input_allowed(under_limit));
+        assert!(!canary_full_input_allowed(at_limit));
+    }
     #[test]
     fn canary_chunks_preserve_audio_and_choose_quiet_boundaries() {
         let mut samples = vec![0.5; 95 * 16000 + 123];

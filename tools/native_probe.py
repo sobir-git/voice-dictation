@@ -102,6 +102,9 @@ def main():
                     shot('03a-history-search')
                     click_control('Settings')
                     shot('04-settings')
+                    backend = [n for n in inspect(env['FIRE_UI_INSPECT'])['nodes']
+                               if n['label'] == 'Backend: CTranslate2 · CPU']
+                    assert len(backend) == 1 and backend[0]['bounds']['height'] > 0
                     click_control('Model')
                     shot('05-model-menu')
                     key('Escape')
@@ -132,9 +135,6 @@ def main():
                     x('mousemove','--window',window,330,280,'click','--repeat',24,'--delay',20,4)
                     time.sleep(.2)
                     shot('07-narrow-settings')
-                    backend = [n for n in inspect(env['FIRE_UI_INSPECT'])['nodes']
-                               if n['label'] == 'Backend: CTranslate2 · CPU']
-                    assert len(backend) == 1 and backend[0]['bounds']['height'] > 0
                     x('windowsize',window,520,600)
                     time.sleep(.4)
                     shot('08-minimum-settings')

@@ -1,6 +1,6 @@
 # Performance experiments
 
-Benchmarks and profile selection are terminal-only. There are no new desktop screens, controls or polling tasks. Users choose their own configurations; the app does not choose a winner automatically.
+Benchmarking remains terminal-only. Profile selection is also available in the Settings page, where users choose a compatible model-specific configuration manually. The app does not choose a winner automatically.
 
 ```sh
 # Show what this build supports.
@@ -15,6 +15,14 @@ target/release/speech-service --benchmark --model base.en --profile adaptive --t
 
 # GPU-enabled builds can test the selected GGUF model.
 target/release/speech-service --benchmark --profile vulkan --threads 4 --seconds 5,15
+
+# Experimental: full-sequence Vulkan for Parakeet. This changes its buffered-
+# window semantics and does not provide live previews.
+target/release/speech-service --benchmark --profile vulkan-full --threads 1 --seconds 5,15
+
+# Experimental: the same one-call path for non-streaming Canary. Test inputs
+# must be shorter than 40 seconds; inputs at or above 40 seconds are rejected.
+target/release/speech-service --benchmark --model canary-180m-flash --profile vulkan-full --threads 8 --seconds 5,15,30
 
 # Canary can split its encoder and decoder across the best backend for each.
 target/release/speech-service --benchmark --model canary-180m-flash --profile hybrid --threads 8 --seconds 2,5,15,30,60
@@ -35,8 +43,9 @@ Benchmarks use the selected or explicitly overridden model, language, beam size,
 
 | Profile | Models | Behavior |
 |---|---|---|
-| standard | All | Existing full-context CPU inference. Thread count remains adjustable. |
+| standard | All | Existing CPU inference. Thread count remains adjustable. |
 | vulkan | GGUF models | Existing transcribe.cpp GPU backend. Requires a GPU-enabled build and compatible driver. Benchmark failures are reported, not silently measured on CPU. |
+| vulkan-full | GGUF models | Experimental one-call inference for the complete recording. Parakeet loses buffered streaming previews. Canary bypasses its quiet-boundary chunks, remains non-streaming and currently rejects recordings of 40 seconds or longer. Validate recognition quality and memory before applying it. |
 | hybrid | Canary 180M Flash | Runs the parallel encoder and pre-encoder depthwise convolution on Vulkan, then moves the autoregressive decoder and KV cache to CPU. Requires a Vulkan build. |
 | fast | Whisper | Skips FFT work for zero padding and precomputes window coefficients. Features are numerically identical to the reference implementation. |
 | adaptive | Whisper base.en | Faster preprocessing plus ten-second encoder context for post-VAD segments up to five seconds. Longer segments retain the original thirty-second context. One loaded model serves both paths, so there is no second model allocation or switching load. Accuracy can change. |
@@ -45,11 +54,13 @@ Zero threads means the engine's existing default. Other values are explicit coun
 
 The Settings page displays the engine and backend that the daemon actually loaded, such as `CTranslate2 · CPU` or `transcribe.cpp · Vulkan`. If Vulkan loading fails, it displays `CPU fallback`; diagnostics and the service log retain the detailed reason.
 
+Settings exposes `Performance profile` immediately after `Model`. The list is filtered for the selected model: Standard CPU is always available, Fast and Adaptive are Whisper options, Vulkan and Vulkan-full are GGUF options in a Vulkan build, and Hybrid is limited to Canary 180M Flash. Vulkan-full is labeled experimental and keeps its under-40-second Canary limit. `Inference threads` accepts Automatic, which is `0` and leaves the engine default, or an explicit count. Changing models restores that model's remembered profile and thread count; a model without one starts on Standard CPU. Save changes records the selected model's current performance choice in `performance.by_model`.
+
 The Canary hybrid path uses a small pinned transcribe.cpp fork. It is a separate profile because plain Vulkan remains useful for comparison and other GGUF models. The rejected architecture-specific kernel prototypes remain isolated in the research folder.
 
 ## Reading results
 
-Warm time excludes model loading and audio capture. Loading time is reported separately and includes downloading an uncached model on first use. Parakeet is fed as a continuous buffered stream without real-time delays; its measured compute time is not the delay after releasing the dictation key. Two warm repetitions provide a quick comparison, not a statistical guarantee; rerun close results under similar machine load.
+Warm time excludes model loading and audio capture. Loading time is reported separately and includes downloading an uncached model on first use. Ordinary Parakeet is fed as a continuous buffered stream without real-time delays; its measured compute time is not the delay after releasing the dictation key. Canary normally runs quiet-boundary chunks, while `vulkan-full` gives it one complete accepted recording. Canary recordings of 30 seconds or less already use one native call in the ordinary path, so those lengths do not measure chunk removal. Two warm repetitions provide a quick comparison, not a statistical guarantee; rerun close results under similar machine load.
 
 RAM is peak process RSS, including loading and warmup. GPU buffers are sampled separately every 100 ms from DRM clients, deduplicated by client ID. Integrated GPUs use system RAM. GPU counters can be unavailable; unknown values are null rather than zero. Do not blindly add peaks, since they can overlap and occur at different times. These measurements exclude GUI overhead.
 

@@ -19,8 +19,15 @@ pub fn profile(c: &Config) -> &str {
 }
 fn valid_setting(setting: &Value) -> bool {
     setting.is_object()
-        && ["standard", "fast", "adaptive", "vulkan", "hybrid"]
-            .contains(&setting["profile"].as_str().unwrap_or(""))
+        && [
+            "standard",
+            "fast",
+            "adaptive",
+            "vulkan",
+            "vulkan-full",
+            "hybrid",
+        ]
+        .contains(&setting["profile"].as_str().unwrap_or(""))
         && setting["threads"].as_u64().is_some_and(|n| n <= 256)
 }
 fn compatible(model: &str, setting: &Value) -> bool {
@@ -28,7 +35,7 @@ fn compatible(model: &str, setting: &Value) -> bool {
         || model == crate::engine::CANARY_MODEL
         || model.ends_with(".gguf");
     match setting["profile"].as_str().unwrap_or("") {
-        "vulkan" => gguf,
+        "vulkan" | "vulkan-full" => gguf,
         "hybrid" => model == crate::engine::CANARY_MODEL,
         "fast" => !gguf,
         "adaptive" => model == "base.en",
@@ -88,10 +95,10 @@ pub fn is_gguf(c: &Config) -> bool {
 }
 pub fn check_profile(c: &Config) -> Result<()> {
     match profile(c) {
-        "vulkan" | "hybrid" if !cfg!(feature = "vulkan") => {
+        "vulkan" | "vulkan-full" | "hybrid" if !cfg!(feature = "vulkan") => {
             bail!("This CPU-only build does not include Vulkan")
         }
-        "vulkan" if !is_gguf(c) => {
+        "vulkan" | "vulkan-full" if !is_gguf(c) => {
             bail!("Vulkan is available for GGUF models, not this Whisper engine")
         }
         "hybrid" if c.string("transcription", "model") != crate::engine::CANARY_MODEL => {
@@ -260,7 +267,7 @@ pub fn child(request: &Path, output: &Path) -> Result<()> {
         "warm_seconds":(times[1]+times[2])/2.,"samples_seconds":&times[1..],
         "text":texts[2],"stable_words":normalized(&texts[0])==normalized(&texts[1]) && normalized(&texts[1])==normalized(&texts[2]),
         "process_peak_mib":memory.0,"gpu_resident_mib":memory.1,
-        "devices": if profile(&config)=="vulkan" { crate::optimization::device_info() } else {json!([])} });
+        "devices": if matches!(profile(&config), "vulkan" | "vulkan-full") { crate::optimization::device_info() } else {json!([])} });
     fs::write(output, serde_json::to_vec(&result)?)?;
     Ok(())
 }
@@ -361,7 +368,7 @@ pub fn run(
     let report = json!({"schema_version":1,"created":SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),"host":host(),
         "transcription":config.data["transcription"],"performance":config.data["performance"],"rows":rows,
         "memory_note":"Process peak RSS and sampled resident GPU buffers in MiB, measured separately. Integrated GPUs use system RAM; peaks may overlap. Unavailable counters are null.",
-        "method":"Synthetic English speech, one warmup and two warm measurements per fresh process. Same words compares against the standard CPU path, not a reference transcript. Parakeet uses streaming compute without real-time audio delays."});
+        "method":"Synthetic English speech, one warmup and two warm measurements per fresh process. Same words compares against the standard CPU path, not a reference transcript. Ordinary Parakeet uses buffered streaming compute without real-time audio delays; ordinary Canary uses quiet-boundary chunks."});
     fs::create_dir_all(config.data_dir.join("benchmarks"))?;
     let path = config.data_dir.join("benchmarks").join(format!(
         "{}-{}.json",
@@ -451,6 +458,7 @@ pub fn cli(args: &[String], config: &Config) -> Result<bool> {
                     {"id":"fast","models":"whisper","experimental":false,"compiled":true,"numerically_exact":true},
                     {"id":"adaptive","models":["base.en"],"experimental":true,"compiled":true,"short_context_max_seconds":5},
                     {"id":"vulkan","models":"gguf","experimental":false,"compiled":cfg!(feature="vulkan"),"runtime_check":"benchmark"},
+                    {"id":"vulkan-full","models":"gguf","experimental":true,"compiled":cfg!(feature="vulkan"),"runtime_check":"benchmark","semantic_change":"one full-recording session.run; Parakeet loses buffered streaming previews, Canary bypasses quiet-boundary chunking and remains non-streaming","canary_max_seconds_exclusive":40},
                     {"id":"hybrid","models":[crate::engine::CANARY_MODEL],"experimental":false,"compiled":cfg!(feature="vulkan"),"runtime_check":"benchmark","encoder":"vulkan","decoder":"cpu"}
                 ]})
             )?
@@ -649,6 +657,26 @@ mod tests {
         assert!(!compatible(
             crate::engine::PARAKEET_MODEL,
             &json!({"profile":"hybrid","threads":8})
+        ));
+
+        let full = Config::at(root.path())
+            .unwrap()
+            .changed(&json!({
+                "performance":{"profile":"vulkan-full","threads":1}
+            }))
+            .unwrap();
+        if cfg!(feature = "vulkan") {
+            assert!(check_profile(&full).is_ok());
+        } else {
+            assert!(check_profile(&full).is_err());
+        }
+        assert!(compatible(
+            crate::engine::PARAKEET_MODEL,
+            &json!({"profile":"vulkan-full","threads":1})
+        ));
+        assert!(!compatible(
+            "base.en",
+            &json!({"profile":"vulkan-full","threads":1})
         ));
     }
     #[test]

@@ -163,7 +163,10 @@ impl Daemon {
                     engine = None;
                     runtime_profile = optimization::profile(config).into();
                     let loaded = Engine::load(config).or_else(|error| {
-                        if !matches!(optimization::profile(config), "vulkan" | "hybrid") {
+                        if !matches!(
+                            optimization::profile(config),
+                            "vulkan" | "vulkan-full" | "hybrid"
+                        ) {
                             return Err(error);
                         }
                         runtime_profile = format!("CPU fallback: {error}");
@@ -597,6 +600,7 @@ impl Daemon {
         let send = self.server.send.clone();
         let model = config.string("transcription", "model");
         let streaming = (model == PARAKEET_MODEL || model.ends_with(".gguf"))
+            && optimization::profile(&config) != "vulkan-full"
             && config.number("audio", "sample_rate") == 16000
             && config.number("audio", "channels") == 1
             && config.string("audio", "format") == "S16_LE";
@@ -982,7 +986,12 @@ impl Daemon {
                 };
                 let selected_model = candidate.string("transcription", "model").to_owned();
                 if selected_model != old_model {
-                    optimization::remember(&mut candidate, &old_model, old_setting);
+                    let submitted_old_setting = message["config"]["performance"]["by_model"]
+                        .get(&old_model)
+                        .is_some_and(Value::is_object);
+                    if !submitted_old_setting {
+                        optimization::remember(&mut candidate, &old_model, old_setting);
+                    }
                     if message["remember_performance"] == true {
                         optimization::remember_current(&mut candidate);
                     } else {
@@ -1357,6 +1366,34 @@ mod tests {
         assert_eq!(
             selected.data["performance"]["by_model"]["base.en"],
             json!({"profile":"adaptive","threads":8})
+        );
+    }
+    #[test]
+    fn ui_model_switch_preserves_an_unsaved_outgoing_performance_draft() {
+        let (_root, mut daemon) = isolated();
+        let (worker, receive) = mpsc::sync_channel(5);
+        daemon.worker = worker;
+        daemon
+            .command(
+                1,
+                &json!({"cmd":"save_config","remember_performance":true,"config":{
+                    "transcription":{"model":"canary-180m-flash"},
+                    "performance":{"profile":"standard","threads":8,"by_model":{
+                        PARAKEET_MODEL:{"profile":"standard","threads":4}
+                    }}
+                }}),
+            )
+            .unwrap();
+        let Work::Load(selected) = receive.try_recv().unwrap() else {
+            panic!("Expected the selected model to load");
+        };
+        assert_eq!(
+            selected.data["performance"]["by_model"][PARAKEET_MODEL],
+            json!({"profile":"standard","threads":4})
+        );
+        assert_eq!(
+            optimization::current_setting(&selected),
+            json!({"profile":"standard","threads":8})
         );
     }
     #[test]

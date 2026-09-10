@@ -75,7 +75,7 @@ speedup, and multipliers from separate experiments must not be multiplied.
 |---|---|---|
 | Parakeet | Existing transcribe.cpp Vulkan path is available as an optional app profile; earlier host measurements improved across tested lengths | Repeat on other Intel generations and discrete GPUs; investigate dispatch overhead, streaming shapes and thread counts |
 | Whisper | `fast` skips zero-padding FFT work with bit-identical feature tests; `adaptive` is experimental and restricted to base.en | Broaden recognition tests around the five-second post-VAD boundary, then test context selection per supported model; reject short-context hallucinations |
-| Canary | The integrated `hybrid` profile runs the encoder on Vulkan and decoder on CPU using a pinned transcribe.cpp fork | Reduce scheduler recreation and duplicated decoder storage; repeat duration and memory checks on other Intel GPU generations |
+| Canary | The integrated `hybrid` profile runs the encoder on Vulkan and decoder on CPU using a pinned transcribe.cpp fork. The opt-in `vulkan-full` profile sends one accepted recording to Vulkan and bypasses the ordinary quiet-boundary chunks | Measure `vulkan-full` against `vulkan` above 30 seconds, then check complete transcripts, the provisional under-40-second limit, cancellation and memory before considering wider use |
 | CPU kernels | Same-model CPU path is the reference | Profile operator time, weight packing and shape-specific matrix kernels; evaluate ISA dispatch without assuming every host has the same instructions |
 | GPU kernels | Existing Vulkan backend supplies a working baseline | Profile attention, fusion and dispatch costs before implementing tiled or fused attention; validate masking and numerical behavior against the reference |
 | Multi-token prediction | Initial research and a host-only proxy exist; no measured ASR acceleration | Investigate actual model drafting or trained heads, verification and cache rollback, then measure acceptance and complete inference separately from the base 2× goal |
@@ -88,7 +88,7 @@ Those reports describe completed research sessions. Their historical session
 limits do not prevent a newly authorized experiment.
 
 Keep benchmark orchestration terminal-only. Users or their agents choose profiles
-for their own hosts. Avoid automatic profile promotion, duplicate resident models,
+for their own hosts, either in Settings or through the CLI. Avoid automatic profile promotion, duplicate resident models,
 hard-coded CPU affinity and dependencies needed only by an experiment. If a
 specialized inference engine becomes justified, prove it as an isolated backend
 against the same measurements before replacing a working engine.

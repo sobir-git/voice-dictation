@@ -28,7 +28,7 @@ const ACTIONS: [&str; 13] = [
     "Debug: off",
     "Open recordings folder",
 ];
-const FIELDS: [(&str, &str, &str); 11] = [
+const FIELDS: [(&str, &str, &str); 13] = [
     ("Microphone", "audio", "pipewire_node"),
     ("Model", "transcription", "model"),
     ("Compute type", "transcription", "compute_type"),
@@ -40,6 +40,8 @@ const FIELDS: [(&str, &str, &str); 11] = [
     ("Notifications", "notifications", "enabled"),
     ("Audio feedback", "notifications", "audio_feedback"),
     ("Floating indicator", "ui", "cursor_indicator"),
+    ("Performance profile", "performance", "profile"),
+    ("Inference threads", "performance", "threads"),
 ];
 type Control = Button<Label>;
 
@@ -140,12 +142,10 @@ struct Desktop {
     title: Child<Label>,
     subtitle: Child<Label>,
     section: Child<Label>,
-    hotkey: Child<Label>,
     feedback: Child<Label>,
     spacer: Child<Spacer>,
     preferences: Child<Scroll<Preferences>>,
     recording: Child<Surface<Recording>>,
-    meter: Child<Progress>,
     actions: Vec<Child<Control>>,
     rows: Vec<Child<Surface<HistoryRow>>>,
     search: Child<Editor>,
@@ -196,16 +196,12 @@ impl Desktop {
                 "Latest transcript",
                 TextRole::Heading,
             ))),
-            hotkey: c.add(Element::leaf(
-                Label::toned("", TextRole::Small, ColorRole::Muted).wrap(),
-            )),
             feedback: c.add(Element::leaf(
                 Label::toned("", TextRole::Small, ColorRole::Muted).wrap(),
             )),
             spacer: c.add(Spacer::flexible()),
             preferences: c.connect(Scroll::new(Preferences::new()), |command| command.clone()),
             recording: c.add(Surface::new(Recording::new())),
-            meter: c.discard(Progress::new("Microphone level", 0.)),
             actions: ACTIONS
                 .iter()
                 .enumerate()
@@ -328,30 +324,6 @@ impl Desktop {
             }
             .into(),
         );
-        Self::button_text(
-            cx,
-            self.actions[4],
-            if self.test_active {
-                "Stop test"
-            } else if cx.bounds().width < 760. {
-                "Test mic"
-            } else {
-                "Test microphone"
-            }
-            .into(),
-        );
-        Self::button_text(
-            cx,
-            self.actions[5],
-            if self.hotkey_waiting {
-                "Press a key…"
-            } else if cx.bounds().width < 760. {
-                "Capture key"
-            } else {
-                "Capture hotkey"
-            }
-            .into(),
-        );
         let _ = cx.send(
             self.actions[3],
             ButtonCommand::Disabled(!self.dirty || self.saving || !self.connected),
@@ -364,6 +336,14 @@ impl Desktop {
                 !self.loaded || self.saving,
                 Arc::from(self.state["runtime_profile"].as_str().unwrap_or("")),
                 Arc::from(self.state["model"].as_str().unwrap_or("")),
+                Arc::from(
+                    self.state["hotkey"]
+                        .as_str()
+                        .or(self.config["input"]["trigger_key"].as_str())
+                        .unwrap_or("your hotkey"),
+                ),
+                self.test_active,
+                self.hotkey_waiting,
             ),
         );
         self.history_page = self
@@ -393,7 +373,8 @@ impl Desktop {
                         && (self.state["recording"].as_bool() == Some(true)
                             || self.state["processing"].as_bool() == Some(true))
                 }
-                3..=5 => self.page == 2,
+                3 => self.page == 2,
+                4..=5 => false,
                 6..=7 => self.page == 3,
                 8 => !self.notice.is_empty(),
                 9..=10 => self.page == 1,
@@ -418,9 +399,7 @@ impl Desktop {
         let _ = cx.show(self.preferences, self.page == 2);
         let _ = cx.show(self.transcript, self.page == 0 || self.page == 3);
         let _ = cx.show(self.recording, self.page == 0);
-        let _ = cx.show(self.meter, self.page == 2 && self.test_active);
         let _ = cx.show(self.section, self.page == 0);
-        let _ = cx.show(self.hotkey, self.page == 2);
         let key = key_name(
             self.state["hotkey"]
                 .as_str()
@@ -431,7 +410,6 @@ impl Desktop {
             self.recording,
             RecordingCommand::Status(self.status.clone(), key.clone()),
         );
-        let _ = cx.send(self.hotkey, format!("Dictation hotkey: {key}"));
         let _ = cx.send(
             self.title,
             ["Dictation", "History", "Settings", "Service status"][self.page].into(),
@@ -590,7 +568,10 @@ impl Desktop {
             }
             "microphone_test" => {
                 self.test_active = v["done"].as_bool() != Some(true);
-                let _ = cx.send(self.meter, v["level"].as_f64().unwrap_or(0.) as f32);
+                let _ = cx.send(
+                    self.preferences,
+                    PreferenceCommand::Level(v["level"].as_f64().unwrap_or(0.) as f32),
+                );
                 self.notice = v["message"].as_str().unwrap_or("").into();
                 let _ = cx.send(
                     self.recording,
@@ -679,7 +660,7 @@ impl Widget for Desktop {
                 2 => self.request(cx, json!({"cmd":"cancel"})),
                 3 => {
                     self.saving = true;
-                    self.request(cx, json!({"cmd":"save_config","config":self.config}));
+                    self.request(cx, json!({"cmd":"save_config","config":self.config,"remember_performance":true}));
                     self.refresh(cx);
                 }
                 4 => {
@@ -736,6 +717,28 @@ impl Widget for Desktop {
                 if self.loaded && !self.saving {
                     let (_, section, key) = FIELDS[i];
                     self.config[section][key] = value.clone();
+                    if i == 1 {
+                        let model = value.as_str().unwrap_or("");
+                        let saved = self.config["performance"]["by_model"][model]
+                            .as_object()
+                            .map(|_| self.config["performance"]["by_model"][model].clone())
+                            .unwrap_or_else(|| json!({"profile":"standard","threads":0}));
+                        self.config["performance"]["profile"] = saved["profile"].clone();
+                        self.config["performance"]["threads"] = saved["threads"].clone();
+                    }
+                    if matches!(i, 11 | 12) {
+                        let model = self.config["transcription"]["model"]
+                            .as_str()
+                            .unwrap_or("")
+                            .to_owned();
+                        if !self.config["performance"]["by_model"].is_object() {
+                            self.config["performance"]["by_model"] = json!({});
+                        }
+                        self.config["performance"]["by_model"][model.clone()]["profile"] =
+                            self.config["performance"]["profile"].clone();
+                        self.config["performance"]["by_model"][model]["threads"] =
+                            self.config["performance"]["threads"].clone();
+                    }
                     if i == 0 {
                         self.config["audio"]["device"] = json!(if value.as_str() == Some("") {
                             "default"
