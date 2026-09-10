@@ -104,6 +104,6 @@ The socket remains private to the local user; no HTTP control endpoint is added.
 
 ## Performance experiments
 
-The service includes a terminal-only benchmark runner and selectable inference profiles. Benchmarking does not change settings. See [the guide](docs/performance-lab.md) for commands, RAM comparisons and experimental short-context inference. The default build stays CPU-only. For GPU support, build with `--features vulkan` or install with `VOICE_DICTATION_FEATURES=vulkan ./install.sh`; builders need Vulkan development headers, loader and a recent glslc compiler. The SDK is not shipped with the app.
+The service includes a terminal-only benchmark runner and selectable inference profiles. Benchmarking does not change settings. Applying a result saves it per model, and switching models restores that model's backend automatically. See [the guide](docs/performance-lab.md) for commands, RAM comparisons and experimental short-context inference. The default build stays CPU-only. For GPU support, build with `--features vulkan` or install with `VOICE_DICTATION_FEATURES=vulkan ./install.sh`; builders need Vulkan development headers, loader and a recent glslc compiler. The SDK is not shipped with the app.
 
 Settings shows the active inference engine and CPU or Vulkan backend, including CPU fallback. History shows each attempt's model and end-to-end transcription time, including queueing and model loading after recording stops or a retry is requested. Audio duration remains separate. Existing rows without recorded metadata show unknown values.

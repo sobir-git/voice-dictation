@@ -207,22 +207,16 @@ fn history_displays_recorded_model_and_transcription_time() {
 #[test]
 fn settings_describe_the_actual_inference_backend() {
     assert_eq!(
-        preferences::format_backend(
-            &json!({"transcription":{"model":"base.en"}}),
-            "adaptive"
-        ),
+        preferences::format_backend("base.en", "adaptive"),
         "Backend: CTranslate2 · CPU · Adaptive short context"
     );
     assert_eq!(
-        preferences::format_backend(
-            &json!({"transcription":{"model":"parakeet-unified-en-0.6b"}}),
-            "vulkan"
-        ),
+        preferences::format_backend("parakeet-unified-en-0.6b", "vulkan"),
         "Backend: transcribe.cpp · Vulkan"
     );
     assert_eq!(
         preferences::format_backend(
-            &json!({"transcription":{"model":"canary-180m-flash"}}),
+            "canary-180m-flash",
             "CPU fallback: GPU initialization failed"
         ),
         "Backend: transcribe.cpp · CPU fallback"

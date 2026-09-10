@@ -19,6 +19,7 @@ transcription:
 performance:
   profile: standard  # standard, vulkan (GGUF), fast (Whisper), adaptive (base.en only)
   threads: 0         # 0 keeps the engine default; no host-specific core pinning
+  by_model: {}       # --apply-optimization records each model's host-specific choice here
 
 input:
   trigger_key: KEY_F16

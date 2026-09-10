@@ -17,18 +17,67 @@ pub fn profile(c: &Config) -> &str {
         .as_str()
         .unwrap_or("standard")
 }
+fn valid_setting(setting: &Value) -> bool {
+    setting.is_object()
+        && ["standard", "fast", "adaptive", "vulkan"]
+            .contains(&setting["profile"].as_str().unwrap_or(""))
+        && setting["threads"].as_u64().is_some_and(|n| n <= 256)
+}
+fn compatible(model: &str, setting: &Value) -> bool {
+    let gguf = model == crate::engine::PARAKEET_MODEL
+        || model == crate::engine::CANARY_MODEL
+        || model.ends_with(".gguf");
+    match setting["profile"].as_str().unwrap_or("") {
+        "vulkan" => gguf,
+        "fast" => !gguf,
+        "adaptive" => model == "base.en",
+        "standard" => true,
+        _ => false,
+    }
+}
 pub fn validate(d: &Value) -> Result<()> {
     if d["performance"].is_null() {
         return Ok(());
     }
-    if !d["performance"].is_object()
-        || !["standard", "fast", "adaptive", "vulkan"]
-            .contains(&d["performance"]["profile"].as_str().unwrap_or(""))
-        || d["performance"]["threads"].as_u64().is_none_or(|n| n > 256)
-    {
+    if !d["performance"].is_object() || !valid_setting(&d["performance"]) {
         bail!("Performance requires a known profile and a thread count between 0 and 256");
     }
+    let saved = &d["performance"]["by_model"];
+    if !saved.is_null() && !saved.is_object() {
+        bail!("performance.by_model must be a mapping");
+    }
+    if let Some(saved) = saved.as_object() {
+        for (model, setting) in saved {
+            if model.is_empty() || !valid_setting(setting) || !compatible(model, setting) {
+                bail!("Invalid saved performance setting for model {model}");
+            }
+        }
+    }
     Ok(())
+}
+pub fn current_setting(c: &Config) -> Value {
+    json!({"profile":profile(c),"threads":c.number("performance", "threads")})
+}
+pub fn remember_current(c: &mut Config) {
+    let model = c.string("transcription", "model").to_owned();
+    let setting = current_setting(c);
+    c.data["performance"]["by_model"][model] = setting;
+}
+pub fn remember(c: &mut Config, model: &str, setting: Value) {
+    c.data["performance"]["by_model"][model] = setting;
+}
+pub fn activate_saved(c: &mut Config) {
+    let model = c.string("transcription", "model").to_owned();
+    let setting = c.data["performance"]["by_model"]
+        .get(&model)
+        .cloned()
+        .unwrap_or_else(|| json!({"profile":"standard","threads":0}));
+    c.data["performance"]["profile"] = setting["profile"].clone();
+    c.data["performance"]["threads"] = setting["threads"].clone();
+    if check_profile(c).is_err() {
+        c.data["performance"]["profile"] = json!("standard");
+        c.data["performance"]["threads"] = json!(0);
+    }
 }
 pub fn is_gguf(c: &Config) -> bool {
     let name = c.string("transcription", "model");
@@ -462,7 +511,7 @@ pub fn cli(args: &[String], config: &Config) -> Result<bool> {
         durations(&json!(ds))?;
         json!({"cmd":"benchmark","transcription":candidate.data["transcription"],"performance":candidate.data["performance"],"durations":ds})
     } else {
-        json!({"cmd":"save_config","config":changes})
+        json!({"cmd":"save_config","config":changes,"remember_performance":true})
     };
     crate::ipc::ensure_daemon()?;
     use std::io::{Read, Write};
@@ -582,6 +631,41 @@ mod tests {
         assert!(c.changed(&json!({"performance":{"threads":257}})).is_err());
         assert!(durations(&json!([5, 5])).is_err());
         assert!(durations(&json!([2, 5, 15, 30, 60])).is_ok());
+    }
+    #[test]
+    fn model_settings_are_remembered_and_restored_independently() {
+        let root = tempfile::tempdir().unwrap();
+        let mut c = Config::at(root.path())
+            .unwrap()
+            .changed(&json!({
+                "transcription":{"model":"base.en"},
+                "performance":{"profile":"adaptive","threads":8}
+            }))
+            .unwrap();
+        remember_current(&mut c);
+        c.data["transcription"]["model"] = json!(crate::engine::CANARY_MODEL);
+        activate_saved(&mut c);
+        assert_eq!(
+            current_setting(&c),
+            json!({"profile":"standard","threads":0})
+        );
+        c.data["performance"]["threads"] = json!(4);
+        remember_current(&mut c);
+        c.data["transcription"]["model"] = json!("base.en");
+        activate_saved(&mut c);
+        assert_eq!(
+            current_setting(&c),
+            json!({"profile":"adaptive","threads":8})
+        );
+        assert_eq!(
+            c.data["performance"]["by_model"][crate::engine::CANARY_MODEL],
+            json!({"profile":"standard","threads":4})
+        );
+        assert!(c
+            .changed(&json!({"performance":{"by_model":{
+                "parakeet-unified-en-0.6b":{"profile":"adaptive","threads":8}
+            }}}))
+            .is_err());
     }
     #[test]
     fn cancellation_kills_and_reaps_child() {

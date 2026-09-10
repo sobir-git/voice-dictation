@@ -362,11 +362,8 @@ impl Desktop {
                 Arc::new(self.config.clone()),
                 Arc::new(self.microphones.clone()),
                 !self.loaded || self.saving,
-                Arc::from(
-                    self.state["runtime_profile"]
-                        .as_str()
-                        .unwrap_or(""),
-                ),
+                Arc::from(self.state["runtime_profile"].as_str().unwrap_or("")),
+                Arc::from(self.state["model"].as_str().unwrap_or("")),
             ),
         );
         self.history_page = self

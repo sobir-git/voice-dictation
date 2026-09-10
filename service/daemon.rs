@@ -970,6 +970,8 @@ impl Daemon {
                 if self.flow.busy() || self.key_capture.is_some() || self.test.is_some() {
                     bail!("Wait for dictation or microphone/hotkey testing to finish, then save settings again.")
                 }
+                let old_model = self.config.string("transcription", "model").to_owned();
+                let old_setting = optimization::current_setting(&self.config);
                 let mut candidate = if message["cmd"] == "reload_config" {
                     Config::load()?
                 } else if message["cmd"] == "set_log_level" {
@@ -978,13 +980,18 @@ impl Daemon {
                 } else {
                     self.config.changed(&message["config"])?
                 };
-                if candidate.string("transcription", "model")
-                    != self.config.string("transcription", "model")
-                    && candidate.data["performance"] == self.config.data["performance"]
-                    && optimization::check_profile(&candidate).is_err()
-                {
-                    candidate =
-                        candidate.changed(&json!({"performance":{"profile":"standard"}}))?;
+                let selected_model = candidate.string("transcription", "model").to_owned();
+                if selected_model != old_model {
+                    optimization::remember(&mut candidate, &old_model, old_setting);
+                    if message["remember_performance"] == true {
+                        optimization::remember_current(&mut candidate);
+                    } else {
+                        optimization::activate_saved(&mut candidate);
+                    }
+                } else if message["remember_performance"] == true {
+                    optimization::remember_current(&mut candidate);
+                } else if message["cmd"] == "reload_config" {
+                    optimization::activate_saved(&mut candidate);
                 }
                 optimization::check_profile(&candidate)?;
                 let model_changed =
@@ -1309,6 +1316,47 @@ mod tests {
         assert_ne!(
             optimization::identity(&saved),
             optimization::identity(&selected)
+        );
+    }
+    #[test]
+    fn switching_models_restores_each_saved_performance_setting() {
+        let (_root, mut daemon) = isolated();
+        let (worker, receive) = mpsc::sync_channel(5);
+        daemon.worker = worker;
+        daemon
+            .command(
+                1,
+                &json!({"cmd":"save_config","remember_performance":true,
+                    "config":{"performance":{"profile":"standard","threads":4}}}),
+            )
+            .unwrap();
+        assert!(matches!(receive.try_recv().unwrap(), Work::Load(_)));
+        daemon
+            .command(
+                1,
+                &json!({"cmd":"save_config","remember_performance":true,"config":{
+                    "transcription":{"model":"base.en"},
+                    "performance":{"profile":"adaptive","threads":8}}}),
+            )
+            .unwrap();
+        assert!(matches!(receive.try_recv().unwrap(), Work::Load(_)));
+        daemon
+            .command(
+                1,
+                &json!({"cmd":"save_config","config":{
+                    "transcription":{"model":crate::engine::PARAKEET_MODEL}}}),
+            )
+            .unwrap();
+        let Work::Load(selected) = receive.try_recv().unwrap() else {
+            panic!("Expected the restored model to load");
+        };
+        assert_eq!(
+            optimization::current_setting(&selected),
+            json!({"profile":"standard","threads":4})
+        );
+        assert_eq!(
+            selected.data["performance"]["by_model"]["base.en"],
+            json!({"profile":"adaptive","threads":8})
         );
     }
     #[test]

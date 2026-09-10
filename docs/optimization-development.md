@@ -20,6 +20,12 @@ boost from multi-token prediction is a separate target, not an established resul
 | Integration checks | `tools/optimization_probe.py` | Temporary daemon, synthetic audio, benchmark cancellation and explicit apply |
 | User wait time | `service/history.rs`, `service/daemon.rs` | Persist the attempted model and stop/request-to-inference completion time |
 
+Host winners live under `performance.by_model`, keyed by exact model ID. The
+top-level profile and thread count are the active model's resolved setting.
+`--apply-optimization` updates both. Model switches preserve the outgoing choice
+and activate the incoming choice, or Standard CPU if that model has no result.
+Keep this behavior in the daemon so desktop and terminal clients agree.
+
 To add a profile, update `validate`, `check_profile`, CLI capabilities and engine
 dispatch together. Add every load-affecting setting to `identity`, or a cached
 engine can silently retain an earlier configuration. Expose restrictions and

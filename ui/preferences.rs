@@ -34,7 +34,7 @@ impl<W: Widget> Widget for Field<W> {
 }
 
 pub(super) enum PreferenceCommand {
-    Sync(Arc<Value>, Arc<Vec<Value>>, bool, Arc<str>),
+    Sync(Arc<Value>, Arc<Vec<Value>>, bool, Arc<str>, Arc<str>),
     Select(usize, usize),
     Toggle(usize, bool),
     Language(EditorOutput),
@@ -42,13 +42,14 @@ pub(super) enum PreferenceCommand {
 impl Data for PreferenceCommand {
     fn bytes(&self) -> usize {
         match self {
-            Self::Sync(config, microphones, _, runtime) => {
+            Self::Sync(config, microphones, _, runtime, model) => {
                 config.to_string().len()
                     + microphones
                         .iter()
                         .map(|v| v.to_string().len())
                         .sum::<usize>()
                     + runtime.len()
+                    + model.len()
             }
             Self::Language(value) => value.bytes(),
             _ => 32,
@@ -179,8 +180,8 @@ impl Widget for Preferences {
     type Output = Command;
     fn update(&mut self, cx: &mut Update<'_, Self>, command: Self::Command) {
         match command {
-            PreferenceCommand::Sync(config, microphones, disabled, runtime) => {
-                let _ = cx.send(self.backend, format_backend(&config, &runtime));
+            PreferenceCommand::Sync(config, microphones, disabled, runtime, model) => {
+                let _ = cx.send(self.backend, format_backend(&model, &runtime));
                 for &(i, child) in &self.choices {
                     let (_, section, key) = FIELDS[i];
                     let current = &config[section][key];
@@ -305,13 +306,9 @@ impl Widget for Preferences {
     }
 }
 
-pub(super) fn format_backend(config: &Value, runtime: &str) -> String {
-    let model = config["transcription"]["model"].as_str().unwrap_or("");
+pub(super) fn format_backend(model: &str, runtime: &str) -> String {
     let engine = if model.ends_with(".en")
-        || matches!(
-            model,
-            "tiny" | "base" | "small" | "medium" | "large-v3"
-        )
+        || matches!(model, "tiny" | "base" | "small" | "medium" | "large-v3")
     {
         "CTranslate2"
     } else {

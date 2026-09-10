@@ -102,6 +102,7 @@ pub fn demo(output: Output, wake: &WakeHandle<Desktop>, state: &mut Value) {
             },"microphones":[{"name":"desk-mic","description":"Desk microphone"}]}))));
             let _ = wake.post(Command::Backend(Arc::new(json!({"type":"transcription","text":"A thought worth keeping.\n\nLet's make the next version simpler, faster, and a pleasure to use.","duration":3.2}))));
             state["runtime_profile"] = json!("standard");
+            state["model"] = json!("base.en");
             state.clone()
         }
         Output::Request(value) => {

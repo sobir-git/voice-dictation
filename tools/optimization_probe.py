@@ -56,7 +56,8 @@ def main():
                 capabilities = command('--list-optimizations')
                 assert capabilities['schema_version'] == 1
                 report = command('--benchmark', '--profile', profile, '--threads', '2', '--seconds', '2')
-                assert report['performance'] == {'profile': profile, 'threads': 2}
+                assert report['performance']['profile'] == profile
+                assert report['performance']['threads'] == 2
                 row = report['rows'][0]
                 assert row['reference']['warm_seconds'] > 0 and row['candidate']['process_peak_mib'] > 0
                 assert path.read_bytes() == original, 'Benchmark changed user configuration'
@@ -64,7 +65,9 @@ def main():
                 saved = command('--apply-optimization', profile, '--threads', '2')
                 assert saved['saved']
                 state = ready()
-                assert state['performance'] == {'profile': profile, 'threads': 2}, state
+                assert state['performance']['profile'] == profile, state
+                assert state['performance']['threads'] == 2, state
+                assert state['performance']['by_model'][model] == {'profile': profile, 'threads': 2}, state
                 assert state['runtime_profile'] == profile, state
                 assert len(command('--benchmark-results')) == 1
                 # Cancel a long suite without waiting for long inference.
