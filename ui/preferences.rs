@@ -319,6 +319,7 @@ pub(super) fn format_backend(model: &str, runtime: &str) -> String {
         "fast" => "CPU · Fast preprocessing",
         "adaptive" => "CPU · Adaptive short context",
         "vulkan" => "Vulkan",
+        "hybrid" => "Vulkan encoder + CPU decoder",
         value if value.starts_with("CPU fallback:") => "CPU fallback",
         _ => "loading",
     };

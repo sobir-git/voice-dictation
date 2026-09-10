@@ -18,6 +18,81 @@ use std::{
 pub const PARAKEET_MODEL: &str = "parakeet-unified-en-0.6b";
 pub const CANARY_MODEL: &str = "canary-180m-flash";
 
+#[cfg(target_os = "linux")]
+unsafe extern "C" {
+    fn omp_pause_resource_all(kind: i32) -> i32;
+}
+
+struct OpenMpPause;
+
+#[cfg(target_os = "linux")]
+struct CpuAffinity(libc::cpu_set_t);
+
+#[cfg(target_os = "linux")]
+impl CpuAffinity {
+    fn performance_cores(enabled: bool) -> Option<Self> {
+        if !enabled {
+            return None;
+        }
+        unsafe {
+            let mut old: libc::cpu_set_t = std::mem::zeroed();
+            if libc::sched_getaffinity(0, std::mem::size_of_val(&old), &mut old) != 0 {
+                return None;
+            }
+            let mut frequencies = Vec::new();
+            for cpu in 0..libc::CPU_SETSIZE as usize {
+                if !libc::CPU_ISSET(cpu, &old) {
+                    continue;
+                }
+                let path = format!("/sys/devices/system/cpu/cpu{cpu}/cpufreq/cpuinfo_max_freq");
+                if let Ok(value) = std::fs::read_to_string(path) {
+                    if let Ok(value) = value.trim().parse::<u64>() {
+                        frequencies.push((cpu, value));
+                    }
+                }
+            }
+            let maximum = frequencies.iter().map(|(_, value)| *value).max()?;
+            let selected: Vec<_> = frequencies
+                .iter()
+                .filter(|(_, value)| *value * 10 >= maximum * 9)
+                .map(|(cpu, _)| *cpu)
+                .collect();
+            if selected.len() < 2 || selected.len() == frequencies.len() {
+                return None;
+            }
+            let mut fast: libc::cpu_set_t = std::mem::zeroed();
+            libc::CPU_ZERO(&mut fast);
+            for cpu in selected {
+                libc::CPU_SET(cpu, &mut fast);
+            }
+            if libc::sched_setaffinity(0, std::mem::size_of_val(&fast), &fast) != 0 {
+                return None;
+            }
+            Some(Self(old))
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for CpuAffinity {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = libc::sched_setaffinity(0, std::mem::size_of_val(&self.0), &self.0);
+        }
+    }
+}
+
+impl Drop for OpenMpPause {
+    fn drop(&mut self) {
+        #[cfg(target_os = "linux")]
+        unsafe {
+            // libgomp's omp_pause_soft releases active-wait workers after a
+            // transcription, keeping the daemon quiet between dictations.
+            let _ = omp_pause_resource_all(1);
+        }
+    }
+}
+
 fn parakeet_stream_options() -> transcribe_cpp::StreamOptions {
     transcribe_cpp::StreamOptions {
         family: Some(transcribe_cpp::StreamExtension::ParakeetBuffered(
@@ -32,10 +107,19 @@ fn parakeet_stream_options() -> transcribe_cpp::StreamOptions {
 }
 
 fn load_transcribe_model(path: PathBuf, config: &Config) -> Result<transcribe_cpp::Model> {
+    let hybrid = optimization::profile(config) == "hybrid";
+    if hybrid {
+        std::env::set_var("TRANSCRIBE_CANARY_HYBRID", "1");
+        std::env::set_var("GGML_VK_DISABLE_F16", "1");
+        std::env::set_var("OMP_WAIT_POLICY", "ACTIVE");
+    } else {
+        std::env::remove_var("TRANSCRIBE_CANARY_HYBRID");
+        std::env::remove_var("GGML_VK_DISABLE_F16");
+    }
     Ok(transcribe_cpp::Model::load_with(
         path,
         &transcribe_cpp::ModelOptions {
-            backend: if optimization::profile(config) == "vulkan" {
+            backend: if matches!(optimization::profile(config), "vulkan" | "hybrid") {
                 transcribe_cpp::Backend::Vulkan
             } else {
                 transcribe_cpp::Backend::Cpu
@@ -124,7 +208,11 @@ pub enum Engine {
 }
 impl Engine {
     pub fn load(config: &Config) -> Result<Self> {
+        let _pause_openmp_workers = OpenMpPause;
         optimization::check_profile(config)?;
+        #[cfg(target_os = "linux")]
+        let _performance_cores =
+            CpuAffinity::performance_cores(optimization::profile(config) == "hybrid");
         let name = config.string("transcription", "model");
         let compute = config.string("transcription", "compute_type");
         if name == PARAKEET_MODEL || name.ends_with(".gguf") {
@@ -226,6 +314,10 @@ impl Engine {
         matches!(self, Self::Parakeet { .. })
     }
     pub fn transcribe(&mut self, samples: &[f32], config: &Config) -> Result<String> {
+        let _pause_openmp_workers = OpenMpPause;
+        #[cfg(target_os = "linux")]
+        let _performance_cores =
+            CpuAffinity::performance_cores(optimization::profile(config) == "hybrid");
         if let Self::Parakeet { session, .. } = self {
             // Use the same buffered stream for history retries and benchmarks as live dictation.
             let mut stream = session.stream(

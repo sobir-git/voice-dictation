@@ -1,6 +1,6 @@
 [package]
 name = "voice-dictation"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
 [features]
 default = []
@@ -67,3 +67,6 @@ debug = 0
 [profile.dev.package.ort-sys]
 opt-level = 3
 debug = 0
+
+[patch.crates-io]
+transcribe-cpp-sys = { git = "https://github.com/sobir-git/transcribe.cpp", rev = "740a9775cf178f412807d5b7bc2de3e714bb9423" }

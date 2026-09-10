@@ -3446,7 +3446,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.61.2",
@@ -3668,8 +3668,7 @@ dependencies = [
 [[package]]
 name = "transcribe-cpp-sys"
 version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "00e81030804f0ce2dd83761ba18e90e0c0c0c2794d68ca008e24245ed6d2702e"
+source = "git+https://github.com/sobir-git/transcribe.cpp?rev=740a9775cf178f412807d5b7bc2de3e714bb9423#740a9775cf178f412807d5b7bc2de3e714bb9423"
 dependencies = [
  "cmake",
  "serde_json",
@@ -3910,7 +3909,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "voice-dictation"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "ct2rs",

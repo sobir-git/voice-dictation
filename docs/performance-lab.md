@@ -16,6 +16,9 @@ target/release/speech-service --benchmark --model base.en --profile adaptive --t
 # GPU-enabled builds can test the selected GGUF model.
 target/release/speech-service --benchmark --profile vulkan --threads 4 --seconds 5,15
 
+# Canary can split its encoder and decoder across the best backend for each.
+target/release/speech-service --benchmark --model canary-180m-flash --profile hybrid --threads 8 --seconds 2,5,15,30,60
+
 # Only this separate command applies a choice to the daemon and config.yaml.
 target/release/speech-service --apply-optimization fast --model base.en --threads 4
 
@@ -34,14 +37,15 @@ Benchmarks use the selected or explicitly overridden model, language, beam size,
 |---|---|---|
 | standard | All | Existing full-context CPU inference. Thread count remains adjustable. |
 | vulkan | GGUF models | Existing transcribe.cpp GPU backend. Requires a GPU-enabled build and compatible driver. Benchmark failures are reported, not silently measured on CPU. |
+| hybrid | Canary 180M Flash | Runs the parallel encoder and pre-encoder depthwise convolution on Vulkan, then moves the autoregressive decoder and KV cache to CPU. Requires a Vulkan build. |
 | fast | Whisper | Skips FFT work for zero padding and precomputes window coefficients. Features are numerically identical to the reference implementation. |
 | adaptive | Whisper base.en | Faster preprocessing plus ten-second encoder context for post-VAD segments up to five seconds. Longer segments retain the original thirty-second context. One loaded model serves both paths, so there is no second model allocation or switching load. Accuracy can change. |
 
-Zero threads means the engine's existing default. Other values are explicit counts, without hardcoded CPU affinity or assumptions about Intel P/E cores. Benchmarks do not change settings. Applying a result records the profile and thread count under the exact model ID. Switching models automatically restores that model's saved setting; a model without one starts on Standard CPU. A saved backend unavailable in the current build falls back to Standard CPU without deleting the saved choice. History retries use the active saved performance settings, or explicit performance overrides supplied over IPC.
+Zero threads means the engine's existing default. Other values are explicit counts. The Canary hybrid profile detects mixed-core Linux hosts from per-CPU maximum frequencies and limits inference to the faster class when there is a clear split. It makes no affinity change on homogeneous or unreported topologies. Its OpenMP workers use active waiting during inference and are explicitly released afterward, so the daemon returns to idle. Benchmarks do not change settings. Applying a result records the profile and thread count under the exact model ID. Switching models automatically restores that model's saved setting; a model without one starts on Standard CPU. A saved backend unavailable in the current build falls back to Standard CPU without deleting the saved choice. History retries use the active saved performance settings, or explicit performance overrides supplied over IPC.
 
 The Settings page displays the engine and backend that the daemon actually loaded, such as `CTranslate2 · CPU` or `transcribe.cpp · Vulkan`. If Vulkan loading fails, it displays `CPU fallback`; diagnostics and the service log retain the detailed reason.
 
-The Canary hybrid encoder/decoder and architecture-specific kernel prototypes remain in the research folder. They are not disguised as the plain Vulkan profile. Further tested native changes can become additional profiles without adding another inference runtime.
+The Canary hybrid path uses a small pinned transcribe.cpp fork. It is a separate profile because plain Vulkan remains useful for comparison and other GGUF models. The rejected architecture-specific kernel prototypes remain isolated in the research folder.
 
 ## Reading results
 

@@ -163,7 +163,7 @@ impl Daemon {
                     engine = None;
                     runtime_profile = optimization::profile(config).into();
                     let loaded = Engine::load(config).or_else(|error| {
-                        if optimization::profile(config) != "vulkan" {
+                        if !matches!(optimization::profile(config), "vulkan" | "hybrid") {
                             return Err(error);
                         }
                         runtime_profile = format!("CPU fallback: {error}");

@@ -215,6 +215,10 @@ fn settings_describe_the_actual_inference_backend() {
         "Backend: transcribe.cpp · Vulkan"
     );
     assert_eq!(
+        preferences::format_backend("canary-180m-flash", "hybrid"),
+        "Backend: transcribe.cpp · Vulkan encoder + CPU decoder"
+    );
+    assert_eq!(
         preferences::format_backend(
             "canary-180m-flash",
             "CPU fallback: GPU initialization failed"

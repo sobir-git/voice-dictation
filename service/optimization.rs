@@ -19,7 +19,7 @@ pub fn profile(c: &Config) -> &str {
 }
 fn valid_setting(setting: &Value) -> bool {
     setting.is_object()
-        && ["standard", "fast", "adaptive", "vulkan"]
+        && ["standard", "fast", "adaptive", "vulkan", "hybrid"]
             .contains(&setting["profile"].as_str().unwrap_or(""))
         && setting["threads"].as_u64().is_some_and(|n| n <= 256)
 }
@@ -29,6 +29,7 @@ fn compatible(model: &str, setting: &Value) -> bool {
         || model.ends_with(".gguf");
     match setting["profile"].as_str().unwrap_or("") {
         "vulkan" => gguf,
+        "hybrid" => model == crate::engine::CANARY_MODEL,
         "fast" => !gguf,
         "adaptive" => model == "base.en",
         "standard" => true,
@@ -87,11 +88,14 @@ pub fn is_gguf(c: &Config) -> bool {
 }
 pub fn check_profile(c: &Config) -> Result<()> {
     match profile(c) {
-        "vulkan" if !cfg!(feature = "vulkan") => {
+        "vulkan" | "hybrid" if !cfg!(feature = "vulkan") => {
             bail!("This CPU-only build does not include Vulkan")
         }
         "vulkan" if !is_gguf(c) => {
             bail!("Vulkan is available for GGUF models, not this Whisper engine")
+        }
+        "hybrid" if c.string("transcription", "model") != crate::engine::CANARY_MODEL => {
+            bail!("The hybrid Vulkan encoder and CPU decoder is limited to Canary 180M Flash")
         }
         "fast" | "adaptive" if is_gguf(c) => bail!("Choose Standard CPU or Vulkan for this model"),
         "adaptive" if c.string("transcription", "model") != "base.en" => {
@@ -160,7 +164,7 @@ fn host() -> Value {
         .unwrap_or_default();
     json!({"os":std::env::consts::OS,"arch":std::env::consts::ARCH,"cpu":cpu,
         "logical_cpus":thread::available_parallelism().map(|n|n.get()).unwrap_or(1),
-        "version":env!("CARGO_PKG_VERSION"),"kernel":fs::read_to_string("/proc/sys/kernel/osrelease").unwrap_or_default().trim(),"native_engine":"transcribe.cpp 0.2.3 / CTranslate2 via ct2rs 0.10.1","protocol":1,"fixture":"synthetic-english-v1","vulkan_build":cfg!(feature="vulkan")})
+        "version":env!("CARGO_PKG_VERSION"),"kernel":fs::read_to_string("/proc/sys/kernel/osrelease").unwrap_or_default().trim(),"native_engine":"transcribe.cpp 0.2.3+canary-hybrid / CTranslate2 via ct2rs 0.10.1","protocol":1,"fixture":"synthetic-english-v1","vulkan_build":cfg!(feature="vulkan")})
 }
 fn ram(pid: u32) -> (Option<f64>, Option<f64>) {
     let rss = fs::read_to_string(format!("/proc/{pid}/status"))
@@ -278,6 +282,9 @@ fn measure(executable: &Path, config: &Config, seconds: u64, cancel: &AtomicBool
     )?;
     let mut command = Command::new(executable);
     crate::process::kill_with_parent(&mut command);
+    if profile(config) == "hybrid" {
+        command.env("OMP_WAIT_POLICY", "ACTIVE");
+    }
     let mut child = command
         .arg("--benchmark-case")
         .arg(&request)
@@ -446,7 +453,8 @@ pub fn cli(args: &[String], config: &Config) -> Result<bool> {
                     {"id":"standard","models":"all","experimental":false,"compiled":true},
                     {"id":"fast","models":"whisper","experimental":false,"compiled":true,"numerically_exact":true},
                     {"id":"adaptive","models":["base.en"],"experimental":true,"compiled":true,"short_context_max_seconds":5},
-                    {"id":"vulkan","models":"gguf","experimental":false,"compiled":cfg!(feature="vulkan"),"runtime_check":"benchmark"}
+                    {"id":"vulkan","models":"gguf","experimental":false,"compiled":cfg!(feature="vulkan"),"runtime_check":"benchmark"},
+                    {"id":"hybrid","models":[crate::engine::CANARY_MODEL],"experimental":false,"compiled":cfg!(feature="vulkan"),"runtime_check":"benchmark","encoder":"vulkan","decoder":"cpu"}
                 ]})
             )?
         );
@@ -631,6 +639,20 @@ mod tests {
         assert!(c.changed(&json!({"performance":{"threads":257}})).is_err());
         assert!(durations(&json!([5, 5])).is_err());
         assert!(durations(&json!([2, 5, 15, 30, 60])).is_ok());
+
+        let canary = Config::at(root.path())
+            .unwrap()
+            .changed(&json!({"transcription":{"model":crate::engine::CANARY_MODEL},"performance":{"profile":"hybrid","threads":8}}))
+            .unwrap();
+        if cfg!(feature = "vulkan") {
+            assert!(check_profile(&canary).is_ok());
+        } else {
+            assert!(check_profile(&canary).is_err());
+        }
+        assert!(!compatible(
+            crate::engine::PARAKEET_MODEL,
+            &json!({"profile":"hybrid","threads":8})
+        ));
     }
     #[test]
     fn model_settings_are_remembered_and_restored_independently() {
