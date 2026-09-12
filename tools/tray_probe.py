@@ -47,6 +47,7 @@ async def main():
             xml = await host.introspect(name, '/StatusNotifierItem')
             item = host.get_proxy_object(name, '/StatusNotifierItem', xml).get_interface('org.kde.StatusNotifierItem')
             assert await item.get_id() == 'voice-dictation'
+            assert await item.get_icon_name() == 'voice-dictation-ready'
             await item.call_activate(0, 0)
             for _ in range(50):
                 if (root/'opened').exists():
@@ -64,6 +65,7 @@ async def main():
                     break
                 await asyncio.sleep(.05)
             assert 'Paused' in await item.get_title()
+            assert await item.get_icon_name() == 'voice-dictation-paused'
             await host.release_name(WATCHER)
             watcher.registered.clear()
             await host.request_name(WATCHER)

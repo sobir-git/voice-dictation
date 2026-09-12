@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="320" viewBox="0 0 1000 320">
+  <rect width="1000" height="320" rx="24" fill="#090B11"/>
+  <text x="50" y="54" fill="#F8FAFC" font-family="Inter, sans-serif" font-size="25" font-weight="700">Voice Dictation · state icon proposal</text>
+  <text x="50" y="82" fill="#7E899D" font-family="Inter, sans-serif" font-size="14">Heavy, edge-to-edge silhouettes designed to remain legible in a small system tray.</text>
+  <g font-family="Inter, sans-serif" text-anchor="middle">
+    <g transform="translate(68 112)"><image href="voice-dictation-ready.svg" width="120" height="120"/><text x="60" y="150" fill="#E2E8F0" font-size="16" font-weight="600">Ready</text><text x="60" y="173" fill="#64748B" font-size="12">listening</text></g>
+    <g transform="translate(254 112)"><image href="voice-dictation-recording.svg" width="120" height="120"/><text x="60" y="150" fill="#E2E8F0" font-size="16" font-weight="600">Recording</text><text x="60" y="173" fill="#64748B" font-size="12">live audio</text></g>
+    <g transform="translate(440 112)"><image href="voice-dictation-transcribing.svg" width="120" height="120"/><text x="60" y="150" fill="#E2E8F0" font-size="16" font-weight="600">Transcribing</text><text x="60" y="173" fill="#64748B" font-size="12">processing</text></g>
+    <g transform="translate(626 112)"><image href="voice-dictation-paused.svg" width="120" height="120"/><text x="60" y="150" fill="#E2E8F0" font-size="16" font-weight="600">Paused</text><text x="60" y="173" fill="#64748B" font-size="12">not listening</text></g>
+    <g transform="translate(812 112)"><image href="voice-dictation-error.svg" width="120" height="120"/><text x="60" y="150" fill="#E2E8F0" font-size="16" font-weight="600">Error</text><text x="60" y="173" fill="#64748B" font-size="12">needs attention</text></g>
+  </g>
+</svg>

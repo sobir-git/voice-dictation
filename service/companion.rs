@@ -38,16 +38,10 @@ impl ksni::Tray for Tray {
         format!("Voice Dictation: {}", status(&self.state))
     }
     fn icon_name(&self) -> String {
-        if self.state["recording"] == true {
-            "media-record"
-        } else if self.state["processing"] == true {
-            "view-refresh"
-        } else if self.state["listening"] == true {
-            "audio-input-microphone"
-        } else {
-            "microphone-sensitivity-muted"
-        }
-        .into()
+        icon_name(&self.state).into()
+    }
+    fn icon_theme_path(&self) -> String {
+        project().join("icons/proposal").display().to_string()
     }
     fn activate(&mut self, _x: i32, _y: i32) {
         desktop()
@@ -112,6 +106,22 @@ fn status(s: &Value) -> &str {
         "Paused"
     }
 }
+fn icon_name(s: &Value) -> &'static str {
+    if s["recording"] == true {
+        "voice-dictation-recording"
+    } else if s["processing"] == true {
+        "voice-dictation-transcribing"
+    } else if s["last_error"]
+        .as_str()
+        .is_some_and(|error| !error.is_empty())
+    {
+        "voice-dictation-error"
+    } else if s["listening"] == true {
+        "voice-dictation-ready"
+    } else {
+        "voice-dictation-paused"
+    }
+}
 #[derive(Default)]
 struct Hud {
     child: Option<Child>,
@@ -154,8 +164,8 @@ impl Hud {
                 let mut x = value("X=").saturating_add(20);
                 let mut y = value("Y=").saturating_add(24);
                 if let [width, height] = geometry.as_slice() {
-                    x = x.clamp(0, (width - 280).max(0));
-                    y = y.clamp(0, (height - 58).max(0));
+                    x = x.clamp(0, (width - 168).max(0));
+                    y = y.clamp(0, (height - 60).max(0));
                 }
                 format!("{x},{y}")
             })
@@ -241,7 +251,7 @@ impl Companion {
             let mut hud = Hud::default();
             let mut previous = Value::Null;
             while let Ok((state, enabled)) = receive.recv() {
-                let flags = json!({"recording":state["recording"],"processing":state["processing"],"listening":state["listening"]});
+                let flags = json!({"recording":state["recording"],"processing":state["processing"],"listening":state["listening"],"last_error":state["last_error"]});
                 if flags != previous {
                     if let Some(handle) = &tray {
                         handle.update(|t| t.state = flags.clone());
@@ -271,5 +281,35 @@ impl Drop for Companion {
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::icon_name;
+    use serde_json::json;
+
+    #[test]
+    fn tray_icons_follow_state_priority() {
+        assert_eq!(
+            icon_name(&json!({"listening":true})),
+            "voice-dictation-ready"
+        );
+        assert_eq!(
+            icon_name(&json!({"listening":false})),
+            "voice-dictation-paused"
+        );
+        assert_eq!(
+            icon_name(&json!({"listening":true,"last_error":"Microphone unavailable"})),
+            "voice-dictation-error"
+        );
+        assert_eq!(
+            icon_name(&json!({"listening":true,"processing":true,"last_error":"Earlier error"})),
+            "voice-dictation-transcribing"
+        );
+        assert_eq!(
+            icon_name(&json!({"listening":true,"recording":true,"processing":true})),
+            "voice-dictation-recording"
+        );
     }
 }

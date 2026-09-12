@@ -29,6 +29,7 @@ cargo build "${BUILD_ARGS[@]}"
 echo "Installing desktop entry..."
 DESKTOP_DIR="$HOME/.local/share/applications"
 mkdir -p "$DESKTOP_DIR"
+"$SCRIPT_DIR/install_icons.sh"
 
 cat > "$DESKTOP_DIR/speech-to-text.desktop" << EOF
 [Desktop Entry]
@@ -36,7 +37,7 @@ Type=Application
 Name=Voice Dictation
 Comment=Fast, local streaming voice dictation
 Exec="$SCRIPT_DIR/run.sh"
-Icon=audio-input-microphone
+Icon=voice-dictation
 Terminal=false
 Categories=Utility;AudioVideo;
 StartupNotify=false
