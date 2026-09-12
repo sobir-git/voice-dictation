@@ -191,7 +191,11 @@ def main() -> int:
     mode = "full" if args.full else args.mode
     root = Path(__file__).resolve().parents[1]
     configured_target = os.environ.get("CARGO_TARGET_DIR")
-    target_dir = Path(configured_target) if configured_target else root / "target"
+    target_dir = (
+        Path(configured_target)
+        if configured_target
+        else root / "artifacts" / "verification" / "target" / args.backend
+    )
     if not target_dir.is_absolute():
         target_dir = root / target_dir
     artifact_dir = root / "artifacts" / "verification" / "bin" / args.backend
@@ -214,6 +218,7 @@ def main() -> int:
         "steps": [],
     }
     env = os.environ.copy()
+    env["CARGO_TARGET_DIR"] = str(target_dir)
     steps = mode_steps(mode, args.backend, binary)
     print(f"Verification mode: {mode} (backend: {args.backend})", flush=True)
     print(f"Target directory: {target_dir}", flush=True)

@@ -96,13 +96,15 @@ pub fn demo(output: Output, wake: &WakeHandle<Desktop>, state: &mut Value) {
         Output::Start => {
             let _ = wake.post(Command::Backend(Arc::new(json!({"type":"config","config":{
                 "audio":{"pipewire_node":"","device":"default","preprocess":true},
-                "transcription":{"model":"base.en","compute_type":"int8","language":"en","beam_size":1,"vad_filter":true},
+                "transcription":{"model":"parakeet-unified-en-0.6b","compute_type":"int8","language":"en","beam_size":1,"vad_filter":true},
+                "performance":{"profile":"vulkan","threads":0,"by_model":{}},
                 "ui":{"cursor_indicator":false},"input":{"trigger_key":"KEY_RIGHTCTRL"},"output":{"method":"auto","add_space":true},
                 "notifications":{"enabled":true,"audio_feedback":true},"logging":{"level":"INFO"}
             },"microphones":[{"name":"desk-mic","description":"Desk microphone"}]}))));
             let _ = wake.post(Command::Backend(Arc::new(json!({"type":"transcription","text":"A thought worth keeping.\n\nLet's make the next version simpler, faster, and a pleasure to use.","duration":3.2}))));
-            state["runtime_profile"] = json!("standard");
-            state["model"] = json!("base.en");
+            state["runtime_profile"] = json!("CPU fallback: synthetic GPU initialization failure");
+            state["performance"] = json!({"profile":"vulkan","threads":0});
+            state["model"] = json!("parakeet-unified-en-0.6b");
             state.clone()
         }
         Output::Request(value) => {

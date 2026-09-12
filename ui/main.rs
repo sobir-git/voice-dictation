@@ -336,6 +336,7 @@ impl Desktop {
                 !self.loaded || self.saving,
                 Arc::from(self.state["runtime_profile"].as_str().unwrap_or("")),
                 Arc::from(self.state["model"].as_str().unwrap_or("")),
+                Arc::from(self.state["performance"]["profile"].as_str().unwrap_or("")),
                 Arc::from(
                     self.state["hotkey"]
                         .as_str()

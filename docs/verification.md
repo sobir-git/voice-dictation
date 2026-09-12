@@ -45,8 +45,10 @@ python3 tools/verify.py ui-layout --full
 
 `--full` is an explicit escalation to the integration gate. `--backend vulkan`
 selects a separate provenance-checked artifact directory and is never implied by
-a UI task. Both backends reuse the normal Cargo target cache unless
-`CARGO_TARGET_DIR` is explicitly set.
+a UI task. By default, each backend builds in its own directory under
+`artifacts/verification/target/`, so verification cannot replace the locally
+installed binaries in `target/release`. Set `CARGO_TARGET_DIR` explicitly when a
+different isolated build directory is required.
 The runner does not call `update_local.sh`, start a daemon, run benchmarks, or
 send notifications.
 

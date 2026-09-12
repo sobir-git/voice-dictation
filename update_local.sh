@@ -9,6 +9,14 @@ if pgrep -x voice-dictation >/dev/null; then
   DESKTOP_WAS_OPEN=true
 fi
 
+if [[ -z "${VOICE_DICTATION_FEATURES+x}" ]] \
+  && [[ -x "$SCRIPT_DIR/target/release/speech-service" ]] \
+  && "$SCRIPT_DIR/target/release/speech-service" --list-optimizations 2>/dev/null \
+    | grep -q '"vulkan_build": true'; then
+  export VOICE_DICTATION_FEATURES=vulkan
+  echo "Preserving the installed Vulkan backend."
+fi
+
 "$SCRIPT_DIR/install.sh"
 
 if [[ "$DESKTOP_WAS_OPEN" == true ]]; then

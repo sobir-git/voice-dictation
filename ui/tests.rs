@@ -209,27 +209,56 @@ fn history_displays_recorded_model_and_transcription_time() {
 fn settings_describe_the_actual_inference_backend() {
     assert_eq!(
         preferences::format_backend("base.en", "adaptive"),
-        "Backend: CTranslate2 · CPU · Adaptive short context"
+        "Active backend: CTranslate2 · CPU · Adaptive short context"
     );
     assert_eq!(
         preferences::format_backend("parakeet-unified-en-0.6b", "vulkan"),
-        "Backend: transcribe.cpp · Vulkan"
+        "Active backend: transcribe.cpp · Vulkan"
     );
     assert_eq!(
         preferences::format_backend("parakeet-unified-en-0.6b", "vulkan-full"),
-        "Backend: transcribe.cpp · Vulkan · Full-sequence experimental"
+        "Active backend: transcribe.cpp · Vulkan · Full-sequence experimental"
     );
     assert_eq!(
         preferences::format_backend("canary-180m-flash", "hybrid"),
-        "Backend: transcribe.cpp · Vulkan encoder + CPU decoder"
+        "Active backend: transcribe.cpp · Vulkan encoder + CPU decoder"
     );
     assert_eq!(
         preferences::format_backend(
             "canary-180m-flash",
             "CPU fallback: GPU initialization failed"
         ),
-        "Backend: transcribe.cpp · CPU fallback"
+        "Active backend: transcribe.cpp · CPU fallback"
     );
+}
+
+#[test]
+fn settings_explain_unavailable_acceleration() {
+    assert_eq!(
+        preferences::acceleration_warning(
+            "parakeet-unified-en-0.6b",
+            "vulkan",
+            "CPU fallback: GPU initialization failed"
+        )
+        .as_deref(),
+        Some(
+            "Acceleration unavailable: Vulkan GPU was requested, but inference fell back to CPU. GPU initialization failed"
+        )
+    );
+    assert!(preferences::acceleration_warning("base.en", "adaptive", "adaptive").is_none());
+    if cfg!(feature = "vulkan") {
+        assert!(
+            preferences::acceleration_warning("parakeet-unified-en-0.6b", "vulkan", "vulkan")
+                .is_none()
+        );
+    } else {
+        assert!(preferences::acceleration_warning(
+            "parakeet-unified-en-0.6b",
+            "standard",
+            "standard"
+        )
+        .is_some());
+    }
 }
 
 #[test]

@@ -41,6 +41,7 @@ pub(super) enum PreferenceCommand {
         Arc<str>,
         Arc<str>,
         Arc<str>,
+        Arc<str>,
         bool,
         bool,
     ),
@@ -53,7 +54,7 @@ pub(super) enum PreferenceCommand {
 impl Data for PreferenceCommand {
     fn bytes(&self) -> usize {
         match self {
-            Self::Sync(config, microphones, _, runtime, model, hotkey, _, _) => {
+            Self::Sync(config, microphones, _, runtime, model, profile, hotkey, _, _) => {
                 config.to_string().len()
                     + microphones
                         .iter()
@@ -61,6 +62,7 @@ impl Data for PreferenceCommand {
                         .sum::<usize>()
                     + runtime.len()
                     + model.len()
+                    + profile.len()
                     + hotkey.len()
             }
             Self::Language(value) => value.bytes(),
@@ -73,6 +75,7 @@ pub(super) struct Preferences {
     switches: Vec<(usize, Child<Switch>)>,
     language: Child<Field<Editor>>,
     backend: Child<Label>,
+    acceleration_warning: Child<Label>,
     hotkey: Child<Label>,
     capture: Child<Control>,
     microphone: Child<Control>,
@@ -83,6 +86,7 @@ pub(super) struct Preferences {
     language_text: String,
     test_active: bool,
     test_level: f32,
+    acceleration_warning_visible: bool,
 }
 impl Preferences {
     pub(super) fn new() -> Element<Self> {
@@ -124,6 +128,9 @@ impl Preferences {
             backend: c.add(Element::leaf(
                 Label::toned("Backend: loading", TextRole::Small, ColorRole::Muted).wrap(),
             )),
+            acceleration_warning: c.add(Element::leaf(
+                Label::toned("", TextRole::Small, ColorRole::Danger).wrap(),
+            )),
             hotkey: c.add(Element::leaf(
                 Label::toned(
                     "Dictation hotkey: loading",
@@ -144,6 +151,7 @@ impl Preferences {
             language_text: String::new(),
             test_active: false,
             test_level: 0.,
+            acceleration_warning_visible: false,
         })
     }
     fn options(index: usize, microphones: &[Value], model: &str) -> Vec<(String, Value)> {
@@ -236,11 +244,16 @@ impl Widget for Preferences {
                 disabled,
                 runtime,
                 model,
+                profile,
                 hotkey,
                 test_active,
                 hotkey_waiting,
             ) => {
                 let _ = cx.send(self.backend, format_backend(&model, &runtime));
+                let warning = acceleration_warning(&model, &profile, &runtime);
+                self.acceleration_warning_visible = warning.is_some();
+                let _ = cx.send(self.acceleration_warning, warning.unwrap_or_default());
+                let _ = cx.show(self.acceleration_warning, self.acceleration_warning_visible);
                 self.test_active = test_active;
                 let _ = cx.send(
                     self.hotkey,
@@ -360,6 +373,16 @@ impl Widget for Preferences {
                     &[Entry::natural(self.backend)],
                 );
                 y += backend.size.height + unit * 2.;
+                if self.acceleration_warning_visible {
+                    let warning = column_at(
+                        cx,
+                        Point::new(0., y),
+                        limits,
+                        Flow::default(),
+                        &[Entry::natural(self.acceleration_warning)],
+                    );
+                    y += warning.size.height + unit * 2.;
+                }
             }
             let ids: &[usize] = match group {
                 0 => &[0, 1, 11, 12, 2, 3],
@@ -450,7 +473,38 @@ pub(super) fn format_backend(model: &str, runtime: &str) -> String {
         value if value.starts_with("CPU fallback:") => "CPU fallback",
         _ => "loading",
     };
-    format!("Backend: {engine} · {mode}")
+    format!("Active backend: {engine} · {mode}")
+}
+
+pub(super) fn acceleration_warning(model: &str, requested: &str, runtime: &str) -> Option<String> {
+    let gguf = matches!(model, "parakeet-unified-en-0.6b" | "canary-180m-flash")
+        || model.ends_with(".gguf");
+    if !gguf {
+        return None;
+    }
+    if let Some(reason) = runtime.strip_prefix("CPU fallback:") {
+        let requested = profile_name(requested);
+        return Some(format!(
+            "Acceleration unavailable: {requested} was requested, but inference fell back to CPU. {}",
+            reason.trim()
+        ));
+    }
+    if !cfg!(feature = "vulkan") {
+        return Some(
+            "Acceleration unavailable: this installation was built without Vulkan, so this model can only run on CPU. Reinstall the Vulkan build to restore GPU profiles."
+                .into(),
+        );
+    }
+    None
+}
+
+fn profile_name(profile: &str) -> &'static str {
+    match profile {
+        "vulkan" => "Vulkan GPU",
+        "vulkan-full" => "Vulkan GPU full recording",
+        "hybrid" => "Vulkan encoder + CPU decoder",
+        _ => "GPU acceleration",
+    }
 }
 
 pub(super) fn profile_options(model: &str) -> Vec<(String, Value)> {

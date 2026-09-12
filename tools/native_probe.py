@@ -103,8 +103,11 @@ def main():
                     click_control('Settings')
                     shot('04-settings')
                     backend = [n for n in inspect(env['FIRE_UI_INSPECT'])['nodes']
-                               if n['label'] == 'Backend: CTranslate2 · CPU']
+                               if n['label'] == 'Active backend: transcribe.cpp · CPU fallback']
                     assert len(backend) == 1 and backend[0]['bounds']['height'] > 0
+                    warning = [n for n in inspect(env['FIRE_UI_INSPECT'])['nodes']
+                               if n['label'].startswith('Acceleration unavailable: Vulkan GPU was requested')]
+                    assert len(warning) == 1 and warning[0]['bounds']['height'] > 0
                     click_control('Model')
                     shot('05-model-menu')
                     key('Escape')
