@@ -375,6 +375,7 @@ impl Daemon {
                 self.stop_recording();
             }
         }
+        self.finish_shutdown();
         self.flow.cancel();
         self.generation
             .store(self.flow.generation, Ordering::Release);
@@ -383,6 +384,32 @@ impl Daemon {
         self.end_key_capture();
         self.clients.clear();
         Ok(())
+    }
+    fn finish_shutdown(&mut self) {
+        if self.flow.recording {
+            self.stop_recording();
+        }
+        // The installed systemd unit allows ten seconds before forcing shutdown.
+        // Keep two seconds in reserve while giving an already-streaming dictation
+        // time to commit its transcript to history.
+        let deadline = Instant::now() + Duration::from_secs(8);
+        while self.flow.pending > 0 && Instant::now() < deadline {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            match self
+                .server
+                .receive
+                .recv_timeout(remaining.min(Duration::from_millis(200)))
+            {
+                Ok(event @ (Event::Transcribed(..) | Event::Delivered(..))) => self.event(event),
+                Ok(_) | Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+        }
+        if self.flow.pending > 0 {
+            log::warn!(
+                "Shutdown interrupted pending transcription; saved recordings remain in history"
+            );
+        }
     }
     fn state(&self) -> Value {
         json!({"type":"state","protocol":2,"engine":"Rust speech engines","listening":self.flow.listening,"recording":self.flow.recording,"processing":self.flow.pending>0,"pending":self.flow.pending,"capture_ready":self.capture_ready,"model_ready":self.ready,"benchmarking":self.benchmarking,"runtime_profile":self.runtime_profile,"performance":self.config.data["performance"],"model":self.config.string("transcription","model"),"output_method":self.resolved,"last_error":self.last_error,"log_level":self.config.string("logging","level"),"hotkey":self.config.string("input","trigger_key"),"microphone":if self.config.string("audio","pipewire_node").is_empty(){self.config.string("audio","device")}else{self.config.string("audio","pipewire_node")}})
@@ -650,7 +677,7 @@ impl Daemon {
         }
         if let Some(capture) = self.capture.take() {
             match capture.finish() {
-                Ok(file) => {
+                Ok((file, interruption)) => {
                     let recordings = self.config.data_dir.join("recordings");
                     if let Err(error) = std::fs::create_dir_all(&recordings) {
                         self.error(format!("Could not save recording: {error}"));
@@ -673,6 +700,11 @@ impl Daemon {
                         .history
                         .add_recording("", &destination, duration, true)
                         .ok();
+                    if let Some(message) = interruption {
+                        self.error(format!(
+                            "{message} Recovering and transcribing the audio captured so far."
+                        ));
+                    }
                     if let Some(stream) = self.live_stream.take() {
                         self.stream_history_id = history_id;
                         self.flow.pending += 1;
@@ -1504,6 +1536,26 @@ mod tests {
         assert!(daemon.last_error.contains("History"));
         assert_eq!(daemon.flow.pending, 0);
         assert!(daemon.flow.can_record());
+    }
+    #[test]
+    fn shutdown_drains_inflight_transcription_into_history() {
+        let (_root, mut daemon) = isolated();
+        daemon.flow.pending = 1;
+        daemon
+            .server
+            .send
+            .send(Event::Transcribed(
+                daemon.flow.generation,
+                Ok("Synthetic shutdown recovery".into()),
+                0.1,
+                None,
+                "test-model".into(),
+            ))
+            .unwrap();
+        daemon.finish_shutdown();
+        let history = daemon.history.recent(1, "").unwrap();
+        assert_eq!(history[0]["text"], "Synthetic shutdown recovery");
+        assert_eq!(daemon.flow.pending, 0);
     }
     #[test]
     fn busy_settings_never_write_and_reload_keeps_pause() {

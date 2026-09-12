@@ -136,31 +136,33 @@ impl Capture {
             monitor: Some(monitor),
         })
     }
-    pub fn finish(mut self) -> Result<NamedTempFile> {
-        if self.child.try_wait()?.is_some() {
-            self.stop.store(true, Ordering::Relaxed);
-            if let Some(thread) = self.monitor.take() {
-                let _ = thread.join();
-            }
+    pub fn finish(mut self) -> Result<(NamedTempFile, Option<String>)> {
+        let interruption = if self.child.try_wait()?.is_some() {
             self.error.rewind()?;
             let mut message = String::new();
             self.error
                 .by_ref()
                 .take(4096)
                 .read_to_string(&mut message)?;
-            bail!("Audio capture failed: {message}")
-        }
-        // SAFETY: this is the live child PID, SIGINT lets arecord finalize its WAV header.
-        unsafe {
-            libc::kill(self.child.id() as i32, libc::SIGINT);
-        }
-        let deadline = Instant::now() + Duration::from_secs(2);
-        while self.child.try_wait()?.is_none() {
-            if Instant::now() > deadline {
-                bail!("Audio capture did not stop cleanly")
+            Some(if message.trim().is_empty() {
+                "The microphone stopped unexpectedly.".to_owned()
+            } else {
+                format!("The microphone stopped unexpectedly: {}", message.trim())
+            })
+        } else {
+            // SAFETY: this is the live child PID, SIGINT lets arecord finalize its WAV header.
+            unsafe {
+                libc::kill(self.child.id() as i32, libc::SIGINT);
             }
-            thread::sleep(Duration::from_millis(10));
-        }
+            let deadline = Instant::now() + Duration::from_secs(2);
+            while self.child.try_wait()?.is_none() {
+                if Instant::now() > deadline {
+                    bail!("Audio capture did not stop cleanly")
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+            None
+        };
         // Let the monitor consume the recorder's final buffered samples before
         // closing the live stream. Its current iteration reads once after this
         // flag changes, so the finalized WAV tail is forwarded exactly once.
@@ -178,7 +180,7 @@ impl Capture {
         {
             bail!("Microphone returned silence. Check the microphone and mute setting.")
         }
-        Ok(file)
+        Ok((file, interruption))
     }
 }
 impl Drop for Capture {
@@ -311,7 +313,8 @@ mod tests {
                 & 0o777,
             0o600
         );
-        let file = first.finish().unwrap();
+        let (file, interruption) = first.finish().unwrap();
+        assert!(interruption.is_none());
         assert!(file.path().exists());
         drop(file);
         drop(second);
@@ -337,5 +340,44 @@ mod tests {
                 .count(),
             0
         );
+    }
+    #[test]
+    fn unexpected_recorder_exit_preserves_valid_audio() {
+        let root = tempfile::tempdir().unwrap();
+        let c = config(root.path());
+        let fixture = root.path().join("fixture.wav");
+        let mut wav = hound::WavWriter::create(
+            &fixture,
+            hound::WavSpec {
+                channels: 1,
+                sample_rate: 16000,
+                bits_per_sample: 16,
+                sample_format: hound::SampleFormat::Int,
+            },
+        )
+        .unwrap();
+        for _ in 0..4000 {
+            wav.write_sample(100_i16).unwrap();
+        }
+        wav.finalize().unwrap();
+        let mut command = Command::new("sh");
+        command
+            .args([
+                "-c",
+                "for destination do :; done; cp \"$STT_FIXTURE\" \"$destination\"; echo 'device disconnected' >&2; exit 1",
+                "capture",
+            ])
+            .env("STT_FIXTURE", fixture);
+        let mut capture = Capture::start_command(&c, |_, _, _| {}, command).unwrap();
+        for _ in 0..100 {
+            if capture.exited() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(capture.exited());
+        let (file, interruption) = capture.finish().unwrap();
+        assert!(file.path().exists());
+        assert!(interruption.unwrap().contains("device disconnected"));
     }
 }
