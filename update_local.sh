@@ -28,6 +28,14 @@ if [[ "$DESKTOP_WAS_OPEN" == true ]]; then
 fi
 
 if systemctl --user cat speech-to-text-daemon.service >/dev/null 2>&1; then
+  # Let the coordinator drain capture/history before systemd kills remaining children.
+  UNIT_DROPIN_DIR="$HOME/.config/systemd/user/speech-to-text-daemon.service.d"
+  mkdir -p "$UNIT_DROPIN_DIR"
+  cat > "$UNIT_DROPIN_DIR/worker-lifecycle.conf" <<'EOF'
+[Service]
+KillMode=mixed
+EOF
+  systemctl --user daemon-reload
   systemctl --user restart speech-to-text-daemon.service
 else
   "$SCRIPT_DIR/setup_autostart.sh"

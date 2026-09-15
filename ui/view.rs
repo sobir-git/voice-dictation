@@ -185,6 +185,7 @@ impl Desktop {
                         Entry::natural(self.actions[6]),
                         Entry::natural(self.actions[7]),
                         Entry::natural(self.actions[11]),
+                        Entry::natural(self.actions[13]),
                     ],
                 );
                 let y = top + toolbar.size.height + unit;

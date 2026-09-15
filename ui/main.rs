@@ -13,7 +13,7 @@ use recording::{Recording, RecordingCommand};
 use serde_json::{json, Value};
 use std::{collections::VecDeque, sync::Arc, time::Duration};
 
-const ACTIONS: [&str; 13] = [
+const ACTIONS: [&str; 14] = [
     "Pause dictation",
     "Copy text",
     "Cancel dictation",
@@ -27,6 +27,7 @@ const ACTIONS: [&str; 13] = [
     "Next",
     "Debug: off",
     "Open recordings folder",
+    "Export report",
 ];
 const FIELDS: [(&str, &str, &str); 13] = [
     ("Microphone", "audio", "pipewire_node"),
@@ -151,6 +152,8 @@ struct Desktop {
     search: Child<Editor>,
     transcript: Child<Editor>,
     page: usize,
+    paint_sequence: u64,
+    painted: std::cell::Cell<u64>,
     state: Value,
     config: Value,
     microphones: Vec<Value>,
@@ -168,6 +171,7 @@ struct Desktop {
     loaded: bool,
     test_active: bool,
     hotkey_waiting: bool,
+    retrying: Option<i64>,
     search_timer: Timer,
     log_timer: Timer,
     fit_timer: Timer,
@@ -232,6 +236,8 @@ impl Desktop {
                 |e| Command::Transcript(e.clone()),
             ),
             page: 0,
+            paint_sequence: 0,
+            painted: std::cell::Cell::new(0),
             state: json!({}),
             config: json!({}),
             microphones: vec![],
@@ -249,6 +255,7 @@ impl Desktop {
             loaded: false,
             test_active: false,
             hotkey_waiting: false,
+            retrying: None,
             search_timer: Timer::new(),
             log_timer: Timer::new(),
             fit_timer: Timer::new(),
@@ -381,6 +388,7 @@ impl Desktop {
                 9..=10 => self.page == 1,
                 11 => self.page == 3,
                 12 => self.page == 1,
+                13 => self.page == 3,
                 _ => false,
             };
             let _ = cx.show(*b, visible);
@@ -441,6 +449,13 @@ impl Desktop {
         cx.repaint();
     }
     fn backend(&mut self, cx: &mut Update<'_, Self>, v: &Value) {
+        if !matches!(
+            v["type"].as_str(),
+            Some("audio_level" | "transcription_preview")
+        ) {
+            self.paint_sequence += 1;
+            log::info!("Desktop state applied: sequence={} type={} request_id={} daemon_session={} recording={} processing={}",self.paint_sequence,v["type"],v["request_id"],v["daemon_session"],v["recording"],v["processing"]);
+        }
         match v["type"].as_str().unwrap_or("") {
             "connected" => {
                 self.connected = true;
@@ -452,6 +467,7 @@ impl Desktop {
             }
             "disconnected" => {
                 self.closing = false;
+                self.retrying = None;
                 if self.saving {
                     self.notice =
                         "Connection lost while saving. Reconnect and check your settings.".into();
@@ -474,7 +490,11 @@ impl Desktop {
                 } else if v["listening"].as_bool() != Some(true) {
                     "Dictation is paused"
                 } else if v["model_ready"].as_bool() != Some(true) {
-                    "Loading your speech model"
+                    if v["model_loading"].as_bool().unwrap_or(true) {
+                        "Loading your speech model"
+                    } else {
+                        "Ready to retry dictation"
+                    }
                 } else {
                     "Ready when you are"
                 }
@@ -494,6 +514,7 @@ impl Desktop {
                 return;
             }
             "transcription" => {
+                self.retrying = None;
                 self.transcript_text = v["text"].as_str().unwrap_or("").into();
                 if self.page == 0 {
                     let _ = cx.send(self.transcript, Edit::Set(self.transcript_text.clone()));
@@ -556,6 +577,9 @@ impl Desktop {
             "history_changed" => {
                 self.request(cx, json!({"cmd":"history","search":self.search_text}));
             }
+            "diagnostics_exported" => {
+                self.notice = format!("Report saved: {}", v["path"].as_str().unwrap_or(""));
+            }
             "diagnostics" => {
                 self.diagnostics = format!(
                     "{}\n\nRecent logs\n{}",
@@ -595,6 +619,7 @@ impl Desktop {
             }
             "error" => {
                 self.closing = false;
+                self.retrying = None;
                 self.notice = v["message"]
                     .as_str()
                     .unwrap_or("An operation failed.")
@@ -681,6 +706,11 @@ impl Widget for Desktop {
                         self.request(cx, json!({"cmd":"get_config"}));
                     }
                 }
+                13 => {
+                    self.notice = "Exporting diagnostic report...".into();
+                    self.request(cx, json!({"cmd":"export_diagnostics"}));
+                    self.refresh(cx);
+                }
                 7 => {
                     let _ = cx.copy(self.diagnostics.clone());
                     self.notice = "Report copied.".into();
@@ -761,8 +791,13 @@ impl Widget for Desktop {
                         }
                         1 => self.request(cx, json!({"cmd":"favorite_history","id":id,"favorite":!item["favorite"].as_bool().unwrap_or(false)})),
                         2 => {
-                            self.request(cx, json!({"cmd":"retry_history","id":id,"transcription":self.config["transcription"]}));
-                            self.notice = format!("Retrying with {}{}.", self.config["transcription"]["model"].as_str().unwrap_or("selected model"), if self.dirty { " using unsaved transcription settings" } else { "" });
+                            if self.retrying == Some(id) {
+                                self.notice = "Already retrying this dictation.".into();
+                            } else {
+                                self.retrying = Some(id);
+                                self.request(cx, json!({"cmd":"retry_history","id":id,"transcription":self.config["transcription"]}));
+                                self.notice = format!("Retrying with {}{}.", self.config["transcription"]["model"].as_str().unwrap_or("selected model"), if self.dirty { " using unsaved transcription settings" } else { "" });
+                            }
                         },
                         3 => self.request(cx, json!({"cmd":"delete_history","id":id})),
                         4 => self.request(cx, json!({"cmd":"play_history","id":id})),
@@ -824,9 +859,24 @@ impl Widget for Desktop {
     fn paint(&self, cx: &mut Paint<'_>) {
         cx.painter
             .rect(cx.bounds, 0., theme().color.background.into());
+        if self.painted.replace(self.paint_sequence) != self.paint_sequence {
+            log::info!(
+                "Desktop paint callback: sequence={} width={} height={}",
+                self.paint_sequence,
+                cx.bounds.width,
+                cx.bounds.height
+            );
+        }
     }
 }
 fn main() -> Result<(), String> {
+    let role = if std::env::args().any(|a| a == "--hud") {
+        "hud"
+    } else {
+        "desktop"
+    };
+    let config = voice_dictation::config::Config::load().map_err(|e| e.to_string())?;
+    let _logging = voice_dictation::logging::init_role(&config, role).map_err(|e| e.to_string())?;
     if std::env::args().any(|a| a == "--hud") {
         return hud::run();
     }

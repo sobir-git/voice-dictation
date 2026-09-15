@@ -2,7 +2,12 @@ use fire_ui::*;
 use fire_ui_native::{run_with, WindowOptions};
 use fire_ui_widgets::*;
 use serde_json::Value;
-use std::{collections::VecDeque, io::BufRead, sync::Arc};
+use std::{
+    cell::Cell,
+    collections::VecDeque,
+    io::{BufRead, Write},
+    sync::{mpsc, Arc},
+};
 
 #[derive(Clone)]
 enum Command {
@@ -16,6 +21,9 @@ impl Data for Command {
 }
 struct Hud {
     recording: bool,
+    sequence: u64,
+    painted: Cell<u64>,
+    acknowledgements: mpsc::SyncSender<u64>,
     label: Child<Label>,
     wave: Child<HudWave>,
 }
@@ -98,9 +106,16 @@ impl Widget for Hud {
     fn update(&mut self, cx: &mut Update<'_, Self>, command: Command) {
         match command {
             Command::Close => {
+                log::info!("Floating indicator close received");
                 let _ = cx.close_window();
             }
             Command::State(state) => {
+                let sequence = state["sequence"].as_u64().unwrap_or(self.sequence);
+                if sequence != self.sequence {
+                    self.sequence = sequence;
+                    log::info!("Floating indicator state applied: sequence={sequence} recording={} daemon_session={}",state["recording"],state["daemon_session"]);
+                    cx.repaint();
+                }
                 if let Some(recording) = state["recording"].as_bool() {
                     if self.recording != recording {
                         self.recording = recording;
@@ -155,6 +170,19 @@ impl Widget for Hud {
             7.,
             super::theme().color.surface.alpha(0.72).into(),
         );
+        if self.painted.replace(self.sequence) != self.sequence {
+            log::info!(
+                "Floating indicator paint callback: sequence={} recording={}",
+                self.sequence,
+                self.recording
+            );
+            if self.acknowledgements.try_send(self.sequence).is_err() {
+                log::warn!(
+                    "Floating indicator acknowledgement queue full: sequence={}",
+                    self.sequence
+                );
+            }
+        }
     }
 }
 
@@ -166,9 +194,25 @@ pub fn run() -> Result<(), String> {
             Some((x.parse().ok()?, y.parse().ok()?))
         });
     let fonts = super::fonts()?;
+    let (acknowledgements, receive) = mpsc::sync_channel::<u64>(16);
+    std::thread::spawn(move || {
+        let stdout = std::io::stdout();
+        let mut out = stdout.lock();
+        while let Ok(sequence) = receive.recv() {
+            if writeln!(out, "{sequence}")
+                .and_then(|_| out.flush())
+                .is_err()
+            {
+                break;
+            }
+        }
+    });
     run_with(
-        Element::build(|c| Hud {
+        Element::build(move |c| Hud {
             recording: true,
+            sequence: 0,
+            painted: Cell::new(0),
+            acknowledgements,
             label: c.add(Element::leaf(Label::styled("Recording", TextRole::Small))),
             wave: c.add(Element::leaf(HudWave {
                 levels: VecDeque::new(),

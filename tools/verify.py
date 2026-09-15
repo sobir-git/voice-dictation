@@ -150,6 +150,9 @@ def mode_steps(mode: str, backend: str, binary: Path) -> list[tuple[str, list[st
                     300,
                 )
             )
+    if mode in {"full", "ui-behavior"}:
+        index = next(i for i, step in enumerate(steps) if step[0] == "python-tests")
+        steps.insert(index, ("service-test-build", cargo_command(["build", "--locked", "--bin", "speech-service"], backend), 900))
     steps.extend(
         [
             ("release-build", cargo_command(["build", "--release", "--locked"], backend), 1800),
@@ -214,11 +217,13 @@ def main() -> int:
         "target_dir": str(target_dir),
         "artifact_dir": str(artifact_dir),
         "binary": str(binary),
+        "service_test_binary": str(target_dir / "debug" / "speech-service"),
         "provenance": provenance,
         "steps": [],
     }
     env = os.environ.copy()
     env["CARGO_TARGET_DIR"] = str(target_dir)
+    env["STT_TEST_BINARY"] = str(target_dir / "debug" / "speech-service")
     steps = mode_steps(mode, args.backend, binary)
     print(f"Verification mode: {mode} (backend: {args.backend})", flush=True)
     print(f"Target directory: {target_dir}", flush=True)

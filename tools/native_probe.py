@@ -32,7 +32,7 @@ def main():
                     time.sleep(.05)
                 else:
                     raise RuntimeError('Xvfb did not start')
-                env = {**os.environ, 'DISPLAY': ':'+number, 'LIBGL_ALWAYS_SOFTWARE': '1', 'FIRE_UI_PROFILE': '1', 'FIRE_UI_INSPECT': str(Path(temporary)/'ui.sock')}
+                env = {**os.environ, 'HOME': temporary, 'DISPLAY': ':'+number, 'LIBGL_ALWAYS_SOFTWARE': '1', 'FIRE_UI_PROFILE': '1', 'FIRE_UI_INSPECT': str(Path(temporary)/'ui.sock')}
                 env.pop('WAYLAND_DISPLAY', None)
                 def x(*args):
                     return subprocess.check_output(['xdotool', *map(str,args)], env=env, stderr=subprocess.DEVNULL, timeout=5).decode().strip()
@@ -149,9 +149,9 @@ def main():
                     x('windowfocus', window)
                     hud_env = {**env, 'VOICE_DICTATION_HUD_POSITION': '260,180'}
                     hud_env.pop('FIRE_UI_INSPECT', None)
-                    hud = subprocess.Popen([str(binary), '--hud'], env=hud_env, stdin=subprocess.PIPE, stdout=log, stderr=log)
+                    hud = subprocess.Popen([str(binary), '--hud'], env=hud_env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log)
                     try:
-                        hud.stdin.write(b'{"recording":true,"level":0.7}\n')
+                        hud.stdin.write(b'{"recording":true,"level":0.7,"sequence":1}\n')
                         hud.stdin.flush()
                         for _ in range(100):
                             try:
@@ -166,7 +166,7 @@ def main():
                         time.sleep(.3)
                         assert x('getwindowfocus') == window, 'HUD stole keyboard focus'
                         geometry = dict(line.split('=') for line in x('getwindowgeometry', '--shell', hud_window).splitlines() if '=' in line)
-                        assert (geometry['WIDTH'], geometry['HEIGHT']) == ('280', '58'), geometry
+                        assert (geometry['WIDTH'], geometry['HEIGHT']) == ('168', '60'), geometry
                         import ctypes
                         xlib = ctypes.CDLL('libX11.so.6')
                         shape = ctypes.CDLL('libXext.so.6')
@@ -177,7 +177,7 @@ def main():
                         shape.XShapeGetRectangles.restype = ctypes.c_void_p
                         count, ordering = ctypes.c_int(), ctypes.c_int()
                         rectangles = shape.XShapeGetRectangles(connection, int(hud_window), 2, ctypes.byref(count), ctypes.byref(ordering))
-                        assert count.value == 0, 'HUD intercepts mouse clicks'
+                        assert count.value > 0, 'HUD does not accept mouse input for dragging'
                         xlib.XFree.argtypes = [ctypes.c_void_p]
                         xlib.XFree(rectangles)
                         xlib.XCloseDisplay.argtypes = [ctypes.c_void_p]
@@ -187,10 +187,19 @@ def main():
                             hud.stdin.flush()
                             time.sleep(.025)
                         shot('10-floating-recording')
-                        hud.stdin.write(b'{"recording":false}\n')
+                        hud.stdin.write(b'{"recording":false,"sequence":2}\n')
                         hud.stdin.flush()
                         time.sleep(.2)
                         shot('11-floating-transcribing')
+                        import select
+                        acknowledgements = []
+                        deadline = time.monotonic()+3
+                        os.set_blocking(hud.stdout.fileno(), False)
+                        received = b''
+                        while time.monotonic()<deadline and b'2\n' not in received:
+                            if select.select([hud.stdout], [], [], .1)[0]:
+                                received += os.read(hud.stdout.fileno(), 4096)
+                        assert b'1\n' in received and b'2\n' in received, received
                         hud.stdin.close()
                         hud.wait(timeout=5)
                         assert hud.returncode == 0

@@ -99,6 +99,38 @@ impl History {
         Ok(())
     }
 
+    pub fn recording_id(&self, path: &Path) -> Result<Option<i64>> {
+        use rusqlite::OptionalExtension;
+        Ok(self
+            .0
+            .query_row(
+                "SELECT id FROM history WHERE audio_path=? LIMIT 1",
+                [path.to_string_lossy()],
+                |row| row.get(0),
+            )
+            .optional()?)
+    }
+
+    pub fn prunable_recordings(&self) -> Result<Vec<String>> {
+        let mut query = self.0.prepare(
+            "SELECT audio_path FROM history WHERE favorite=0 AND failed=0 AND text != '' AND audio_path IS NOT NULL AND audio_path != ''",
+        )?;
+        let rows = query
+            .query_map([], |row| row.get(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn recordings(&self) -> Result<Vec<(i64, String, bool)>> {
+        let mut query = self.0.prepare(
+            "SELECT id,audio_path,favorite FROM history WHERE audio_path IS NOT NULL AND audio_path != ''",
+        )?;
+        let rows = query
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     pub fn remove(&self, id: i64) -> Result<Option<String>> {
         let path = self
             .0
@@ -116,7 +148,9 @@ impl History {
             "SELECT id,timestamp,text,audio_path,duration,favorite,failed,model,transcription_seconds FROM history WHERE id=?",
         )?;
         let mut rows = query.query([id])?;
-        Ok(rows.next()?.map(|r| json!({"id":r.get::<_,i64>(0).unwrap(),"timestamp":r.get::<_,String>(1).unwrap(),"text":r.get::<_,String>(2).unwrap(),"audio_path":r.get::<_,Option<String>>(3).unwrap(),"duration":r.get::<_,f64>(4).unwrap(),"favorite":r.get::<_,bool>(5).unwrap(),"failed":r.get::<_,bool>(6).unwrap(),"model":r.get::<_,Option<String>>(7).unwrap(),"transcription_seconds":r.get::<_,Option<f64>>(8).unwrap()})))
+        rows.next()?.map(|r| -> rusqlite::Result<Value> {
+            Ok(json!({"id":r.get::<_,i64>(0)?,"timestamp":r.get::<_,String>(1)?,"text":r.get::<_,String>(2)?,"audio_path":r.get::<_,Option<String>>(3)?,"duration":r.get::<_,f64>(4)?,"favorite":r.get::<_,bool>(5)?,"failed":r.get::<_,bool>(6)?,"model":r.get::<_,Option<String>>(7)?,"transcription_seconds":r.get::<_,Option<f64>>(8)?}))
+        }).transpose().map_err(Into::into)
     }
 }
 #[cfg(test)]

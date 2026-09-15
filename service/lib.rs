@@ -16,3 +16,8 @@ pub mod daemon;
 pub mod logging;
 
 pub mod adapter;
+
+pub mod inference;
+pub mod jobs;
+pub mod protocol;
+pub mod storage;

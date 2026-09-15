@@ -20,7 +20,7 @@ class ServiceTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.config = self.root/'.config/speech-to-text/config.yaml'
         self.config.parent.mkdir(parents=True)
-        self.config.write_text(json.dumps({'output': {'method': 'none'}, 'custom': {'preserve': 17}, 'notifications': {'enabled': False, 'audio_feedback': False}}))
+        self.config.write_text(json.dumps({'transcription': {'model': 'base.en'}, 'output': {'method': 'none'}, 'custom': {'preserve': 17}, 'notifications': {'enabled': False, 'audio_feedback': False}}))
         self.env = {**os.environ, 'HOME': str(self.root), 'STT_SOCKET_PATH': str(self.root/'run/daemon.sock')}
         fake_bin = self.root/'bin'
         fake_bin.mkdir()

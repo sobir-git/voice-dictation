@@ -18,6 +18,7 @@ ExecStart="$UNIT_DIR/run.sh" --daemon
 Restart=on-failure
 RestartSec=2
 TimeoutStopSec=10
+KillMode=mixed
 
 [Install]
 WantedBy=graphical-session.target

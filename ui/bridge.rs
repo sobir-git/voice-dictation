@@ -11,6 +11,7 @@ use std::{
 pub struct Bridge {
     process: Child,
     send: Option<mpsc::SyncSender<Arc<Value>>>,
+    request_id: std::sync::atomic::AtomicU64,
 }
 impl Bridge {
     pub fn start(wake: WakeHandle<Desktop>) -> Result<Self, String> {
@@ -22,6 +23,10 @@ impl Bridge {
             .with_file_name("speech-service");
         let mut process = Process::new(service)
             .arg("--adapter")
+            .env(
+                "VOICE_DICTATION_SESSION",
+                voice_dictation::logging::session(),
+            )
             .current_dir(&project)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -55,7 +60,13 @@ impl Bridge {
                     Ok(0) | Err(_) => break,
                     Ok(n) if n > 1_048_576 => break,
                     Ok(_) => {
-                        if let Ok(message) = serde_json::from_slice(&bytes) {
+                        if let Ok(message) = serde_json::from_slice::<Value>(&bytes) {
+                            if !matches!(
+                                message["type"].as_str(),
+                                Some("audio_level" | "transcription_preview")
+                            ) {
+                                log::info!("Desktop response received: type={} request_id={} daemon_session={}",message["type"],message["request_id"],message["daemon_session"]);
+                            }
                             let _ = wake.post(Command::Backend(Arc::new(message)));
                         }
                     }
@@ -66,9 +77,23 @@ impl Bridge {
         Ok(Self {
             process,
             send: Some(send),
+            request_id: std::sync::atomic::AtomicU64::new(0),
         })
     }
     pub fn send(&self, value: Arc<Value>) -> Result<(), String> {
+        let mut value = (*value).clone();
+        value["client_session"] = json!(voice_dictation::logging::session());
+        value["request_id"] = json!(
+            self.request_id
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                + 1
+        );
+        log::info!(
+            "Desktop request queued: request_id={} command={}",
+            value["request_id"],
+            value["cmd"]
+        );
+        let value = Arc::new(value);
         self.send
             .as_ref()
             .ok_or("Desktop adapter is closed.")?

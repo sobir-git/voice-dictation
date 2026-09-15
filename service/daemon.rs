@@ -1,17 +1,25 @@
+#[path = "commands.rs"]
+mod commands;
+#[path = "events.rs"]
+mod events;
+#[path = "worker.rs"]
+mod worker;
 use crate::{
     audio::{self, Capture},
     companion::Companion,
     config::{key_code, Config},
-    engine::{Engine, StreamInput, PARAKEET_MODEL},
+    engine::{StreamInput, PARAKEET_MODEL},
     history::History,
     hotkey::{Hotkeys, KeyEvent},
     ipc::Server,
+    jobs::{JobId, Jobs, Stage, Transcript},
     optimization, output,
+    storage::{SavedRecording, Storage},
 };
 use anyhow::{bail, Result};
 use serde_json::{json, Value};
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::HashMap,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc, Arc, OnceLock,
@@ -19,17 +27,28 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-
 pub enum Event {
     Connect(u64, mpsc::SyncSender<Value>),
     Disconnect(u64),
     Command(u64, Value),
     Key(KeyEvent),
-    Level(u64, f32, f32),
-    Preview(u64, String, String),
+    Level(JobId, f32, f32),
+    Preview(JobId, String, String),
     Model((String, String), Result<String>),
-    Transcribed(u64, Result<String>, f64, Option<i64>, String),
-    Delivered(u64, Result<()>),
+    WorkerUnavailable((String, String)),
+    ModelLoading((String, String)),
+    CaptureStarted(JobId, Result<Capture>),
+    CaptureFault(JobId, String),
+    Finalized(JobId, Result<(std::path::PathBuf, Option<String>)>),
+    Saved(JobId, Result<SavedRecording>),
+    Transcribed(JobId, Transcript),
+    Persisted(JobId, Result<()>),
+    Delivered(JobId, Result<()>),
+    Storage(Option<u64>, Box<Event>),
+    Reply(u64, Result<Value>),
+    Exported(u64, Option<u64>, Result<Value>),
+    RetryReady(JobId, Result<std::path::PathBuf>),
+    ConfigSaved(u64, Result<(Config, String)>),
     Test(u64, Value),
     Benchmark(Value),
     BenchmarkDone(Result<Value>),
@@ -38,33 +57,22 @@ pub enum Event {
 enum Work {
     Benchmark(Config, Vec<u64>, Arc<AtomicBool>),
     Load(Config),
-    Transcribe(std::path::PathBuf, Config, u64, Option<i64>, Instant),
-    Stream(
-        Config,
-        u64,
-        mpsc::Receiver<StreamInput>,
-        Arc<OnceLock<Instant>>,
-    ),
-}
-#[derive(Default)]
-struct Flow {
-    generation: u64,
-    pending: usize,
-    recording: bool,
-    outputting: bool,
-    listening: bool,
-}
-impl Flow {
-    fn busy(&self) -> bool {
-        self.recording || self.pending > 0
-    }
-    fn can_record(&self) -> bool {
-        self.listening && !self.recording && !self.outputting && self.pending < 4
-    }
-    fn cancel(&mut self) {
-        self.generation += 1;
-        self.recording = false;
-    }
+    Transcribe {
+        id: JobId,
+        generation: u64,
+        cancelled: Arc<AtomicBool>,
+        path: std::path::PathBuf,
+        config: Config,
+        requested: Instant,
+    },
+    Stream {
+        id: JobId,
+        generation: u64,
+        cancelled: Arc<AtomicBool>,
+        config: Config,
+        receive: mpsc::Receiver<StreamInput>,
+        finished: Arc<OnceLock<Instant>>,
+    },
 }
 struct KeyCapture {
     client: u64,
@@ -77,28 +85,32 @@ struct MicTest {
     stop: Arc<AtomicBool>,
     thread: Option<thread::JoinHandle<()>>,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ModelState {
+    Unavailable,
+    Loading,
+    Ready,
+}
 pub struct Daemon {
     server: Server,
     config: Config,
+    storage: Storage,
+    io_pending: usize,
+    configuring: bool,
+    exporting: bool,
+    request_id: Option<u64>,
+    #[cfg(test)]
     history: History,
     clients: HashMap<u64, mpsc::SyncSender<Value>>,
-    flow: Flow,
-    capture: Option<Capture>,
-    capture_id: u64,
-    recording_client: Option<u64>,
-    capture_ready: bool,
-    recording_started: Instant,
+    jobs: Jobs,
     worker: mpsc::SyncSender<Work>,
-    live_stream: Option<mpsc::Sender<StreamInput>>,
-    stream_history_id: Option<i64>,
-    stream_finished: Option<Arc<OnceLock<Instant>>>,
     generation: Arc<AtomicU64>,
+    worker_shutdown: Arc<AtomicBool>,
     hotkeys: Option<Hotkeys>,
     companion: Option<Companion>,
-    ready: bool,
+    model_state: ModelState,
     last_error: String,
     resolved: String,
-    completed: VecDeque<(u64, String)>,
     key_capture: Option<KeyCapture>,
     test: Option<MicTest>,
     test_serial: u64,
@@ -112,169 +124,34 @@ pub struct Daemon {
 impl Daemon {
     pub fn new(config: Config, probe: bool, probe_tray: bool) -> Result<Self> {
         if probe && std::env::var_os("STT_SOCKET_PATH").is_none() {
-            bail!("Probe mode requires an isolated STT_SOCKET_PATH")
+            bail!("Probe mode requires an isolated STT_SOCKET_PATH");
         }
-        let server = Server::bind(crate::ipc::socket_path())?;
-        Self::with_server(config, probe, probe_tray, server)
+        Self::with_server(
+            config,
+            probe,
+            probe_tray,
+            Server::bind(crate::ipc::socket_path())?,
+        )
     }
     fn with_server(config: Config, probe: bool, probe_tray: bool, server: Server) -> Result<Self> {
+        let history_owner = History::open(&config.data_dir)?;
+        // Startup only, before capture admission. All later storage runs on its worker.
+        if let Err(error) = crate::storage::recover_recordings(&history_owner, &config.data_dir.join("recordings")) {
+            log::error!("Recording recovery scan failed; retained files remain on disk: {error:#}");
+        }
+        let storage = Storage::start(history_owner, server.send.clone());
+        #[cfg(test)]
         let history = History::open(&config.data_dir)?;
         let resolved = output::resolve(config.string("output", "method"));
-        let (worker, receive) = mpsc::sync_channel::<Work>(5);
-        let events = server.send.clone();
+        let (worker, receive) = mpsc::sync_channel(5);
         let generation = Arc::new(AtomicU64::new(0));
-        let current = generation.clone();
-        thread::spawn(move || {
-            let mut engine: Option<Engine> = None;
-            let mut runtime_profile = String::new();
-            while let Ok(work) = receive.recv() {
-                if let Work::Benchmark(config, durations, cancel) = work {
-                    // Benchmark children own the only resident model during measurement.
-                    engine = None;
-                    let result = optimization::run(&config, &durations, &cancel, |value| {
-                        let _ = events.send(Event::Benchmark(value));
-                    });
-                    let _ = events.send(Event::BenchmarkDone(result));
-                    continue;
-                }
-                if let Work::Transcribe(_, _, generation, _, _)
-                | Work::Stream(_, generation, _, _) = &work
-                {
-                    if *generation != current.load(Ordering::Acquire) {
-                        let _ = events.send(Event::Transcribed(
-                            *generation,
-                            Ok(String::new()),
-                            0.,
-                            None,
-                            String::new(),
-                        ));
-                        continue;
-                    }
-                }
-                let config = match &work {
-                    Work::Load(c) | Work::Transcribe(_, c, _, _, _) | Work::Stream(c, _, _, _) => c,
-                    Work::Benchmark(..) => unreachable!(),
-                };
-                let identity = optimization::identity(config);
-                let model_name = identity.0.clone();
-                if !engine.as_ref().is_some_and(|e| e.matches(config)) {
-                    let started = Instant::now();
-                    log::info!("Loading speech model: {} / {}", identity.0, identity.1);
-                    engine = None;
-                    runtime_profile = optimization::profile(config).into();
-                    let loaded = Engine::load(config).or_else(|error| {
-                        if !matches!(
-                            optimization::profile(config),
-                            "vulkan" | "vulkan-full" | "hybrid"
-                        ) {
-                            return Err(error);
-                        }
-                        runtime_profile = format!("CPU fallback: {error}");
-                        log::warn!("{runtime_profile}");
-                        let cpu = config.changed(&json!({"performance":{"profile":"standard"}}))?;
-                        let mut fallback = Engine::load(&cpu)?;
-                        fallback.set_identity(identity.clone());
-                        Ok(fallback)
-                    });
-                    match loaded {
-                        Ok(loaded) => {
-                            engine = Some(loaded);
-                            log::info!(
-                                "Speech model ready in {:.2}s",
-                                started.elapsed().as_secs_f64()
-                            );
-                        }
-                        Err(e) => {
-                            match work {
-                                Work::Benchmark(..) => unreachable!(),
-                                Work::Load(_) => {
-                                    let _ = events.send(Event::Model(identity, Err(e)));
-                                }
-                                Work::Transcribe(_, _, generation, history_id, queued) => {
-                                    let _ = events.send(Event::Transcribed(
-                                        generation,
-                                        Err(e),
-                                        queued.elapsed().as_secs_f64(),
-                                        history_id,
-                                        model_name,
-                                    ));
-                                }
-                                Work::Stream(_, generation, receive, finished) => {
-                                    while !matches!(
-                                        receive.recv(),
-                                        Ok(StreamInput::Finish | StreamInput::Cancel) | Err(_)
-                                    ) {}
-                                    let _ = events.send(Event::Transcribed(
-                                        generation,
-                                        Err(e),
-                                        finished
-                                            .get()
-                                            .map(|s| s.elapsed().as_secs_f64())
-                                            .unwrap_or(0.),
-                                        None,
-                                        model_name,
-                                    ));
-                                }
-                            }
-                            continue;
-                        }
-                    }
-                }
-                let _ = events.send(Event::Model(identity, Ok(runtime_profile.clone())));
-                if let Work::Transcribe(file, config, generation, history_id, started) = work {
-                    let result =
-                        crate::engine::read_audio(&file, config.flag("audio", "preprocess"))
-                            .and_then(|samples| {
-                                engine.as_mut().unwrap().transcribe(&samples, &config)
-                            });
-                    let _ = events.send(Event::Transcribed(
-                        generation,
-                        result,
-                        started.elapsed().as_secs_f64(),
-                        history_id,
-                        model_name,
-                    ));
-                } else if let Work::Stream(_, generation, receive, finished) = work {
-                    let preview_events = events.clone();
-                    let result =
-                        engine
-                            .as_mut()
-                            .unwrap()
-                            .stream(&receive, |committed, tentative| {
-                                let _ = preview_events
-                                    .send(Event::Preview(generation, committed, tentative));
-                            });
-                    if result.is_err() {
-                        while !matches!(
-                            receive.recv(),
-                            Ok(StreamInput::Finish | StreamInput::Cancel) | Err(_)
-                        ) {}
-                    }
-                    if let Ok(None) = result {
-                        let _ = events.send(Event::Transcribed(
-                            generation,
-                            Ok(String::new()),
-                            0.,
-                            None,
-                            model_name,
-                        ));
-                    } else {
-                        let _ = events.send(Event::Transcribed(
-                            generation,
-                            result.and_then(|text| {
-                                text.ok_or_else(|| anyhow::anyhow!("Streaming was cancelled"))
-                            }),
-                            finished
-                                .get()
-                                .map(|s| s.elapsed().as_secs_f64())
-                                .unwrap_or(0.),
-                            None,
-                            model_name,
-                        ));
-                    }
-                }
-            }
-        });
+        let worker_shutdown = Arc::new(AtomicBool::new(false));
+        worker::start_worker(
+            receive,
+            server.send.clone(),
+            generation.clone(),
+            worker_shutdown.clone(),
+        );
         let hotkeys = if probe {
             None
         } else {
@@ -302,48 +179,61 @@ impl Daemon {
             });
             Some(Companion::start(send))
         };
-        let daemon = Self {
+        let mut daemon = Self {
             server,
             config,
+            storage,
+            io_pending: 0,
+            configuring: false,
+            exporting: false,
+            request_id: None,
+            #[cfg(test)]
             history,
             clients: HashMap::new(),
-            flow: Flow {
-                listening: true,
-                ..Default::default()
-            },
-            capture: None,
-            capture_id: 0,
-            recording_client: None,
-            capture_ready: false,
-            recording_started: Instant::now(),
+            jobs: Jobs::listening(),
             worker,
-            live_stream: None,
-            stream_history_id: None,
-            stream_finished: None,
             generation,
+            worker_shutdown,
             hotkeys,
             companion,
-            ready: false,
+            model_state: if probe {
+                ModelState::Unavailable
+            } else {
+                ModelState::Loading
+            },
             last_error: String::new(),
             resolved,
-            completed: VecDeque::new(),
             key_capture: None,
             test: None,
             test_serial: 0,
             quitting: false,
             benchmarking: false,
             benchmark_cancel: Arc::new(AtomicBool::new(false)),
-            runtime_profile: String::new(),
             benchmark_client: None,
-            benchmark_status: json!({"type":"benchmark","running":false,"message":"Choose a configuration and run a local benchmark."}),
+            runtime_profile: String::new(),
+            benchmark_status: json!({
+            "type":"benchmark","running":false,"message":"Choose a configuration and run a local benchmark."}
+            ),
         };
         if !probe {
+            let config = daemon.config.clone();
+            daemon.effect(move |history| {
+                if let Err(error) = crate::storage::prune_recordings(history, &config, None) {
+                    log::warn!("Recording retention failed: {error:#}");
+                }
+                Event::Reply(0, Ok(json!({"type":"maintenance_finished"})))
+            })?;
             daemon
                 .worker
-                .send(Work::Load(daemon.config.clone()))
-                .map_err(|_| anyhow::anyhow!("Speech model worker stopped"))?;
+                .try_send(Work::Load(daemon.config.clone()))
+                .map_err(|_| anyhow::anyhow!("Speech worker unavailable"))?;
         }
         Ok(daemon)
+    }
+    fn effect(&mut self, task: impl FnOnce(&History) -> Event + Send + 'static) -> Result<()> {
+        self.storage.submit(self.request_id, task)?;
+        self.io_pending += 1;
+        Ok(())
     }
     pub fn run(mut self) -> Result<()> {
         let stop = Arc::new(AtomicBool::new(false));
@@ -351,7 +241,7 @@ impl Daemon {
         signal_hook::flag::register(signal_hook::consts::SIGINT, stop.clone())?;
         self.broadcast_state();
         while !stop.load(Ordering::Relaxed) && !self.quitting {
-            match self.server.receive.recv_timeout(Duration::from_millis(200)) {
+            match self.server.receive.recv_timeout(Duration::from_millis(100)) {
                 Ok(Event::Stop) => break,
                 Ok(event) => self.event(event),
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
@@ -363,72 +253,136 @@ impl Daemon {
                 .is_some_and(|k| Instant::now() > k.deadline)
             {
                 if let Some(k) = &self.key_capture {
-                    self.reply(k.client, json!({"type":"hotkey_timeout"}));
+                    self.reply(
+                        k.client,
+                        json!({
+                        "type":"hotkey_timeout"}
+                        ),
+                    );
                 }
                 self.end_key_capture();
             }
-            if self.flow.recording && self.recording_started.elapsed() > Duration::from_secs(600) {
-                self.stop_recording();
-                self.error("Recording stopped after ten minutes".into());
-            }
-            if self.capture.as_mut().is_some_and(Capture::exited) {
-                self.stop_recording();
+            if let Some(id) = self.jobs.recording() {
+                let job = self.jobs.active.get_mut(&id).unwrap();
+                if job.started.elapsed() > Duration::from_secs(600) {
+                    self.stop_recording();
+                    self.error("Recording stopped after ten minutes".into());
+                } else if job.capture.as_mut().is_some_and(Capture::exited) {
+                    self.stop_recording();
+                }
             }
         }
         self.finish_shutdown();
-        self.flow.cancel();
-        self.generation
-            .store(self.flow.generation, Ordering::Release);
-        self.capture.take();
+        self.cancel();
         self.stop_test();
         self.end_key_capture();
         self.clients.clear();
         Ok(())
     }
     fn finish_shutdown(&mut self) {
-        if self.flow.recording {
-            self.stop_recording();
-        }
-        // The installed systemd unit allows ten seconds before forcing shutdown.
-        // Keep two seconds in reserve while giving an already-streaming dictation
-        // time to commit its transcript to history.
+        self.stop_recording();
         let deadline = Instant::now() + Duration::from_secs(8);
-        while self.flow.pending > 0 && Instant::now() < deadline {
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            match self
-                .server
-                .receive
-                .recv_timeout(remaining.min(Duration::from_millis(200)))
-            {
-                Ok(event @ (Event::Transcribed(..) | Event::Delivered(..))) => self.event(event),
-                Ok(_) | Err(mpsc::RecvTimeoutError::Timeout) => {}
-                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        while (self.jobs.busy() || self.io_pending > 0) && Instant::now() < deadline {
+            match self.server.receive.recv_timeout(Duration::from_millis(50)) {
+                // Shutdown drains admitted effects, never admits more user work.
+                Ok(Event::Command(..) | Event::Key(..) | Event::Connect(..)) => {}
+                Ok(event) => self.event(event),
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(_) => break,
             }
         }
-        if self.flow.pending > 0 {
+        if self.jobs.busy() {
             log::warn!(
-                "Shutdown interrupted pending transcription; saved recordings remain in history"
+                "Shutdown deadline: unfinished_jobs={}",
+                self.jobs.active.len()
             );
         }
     }
     fn state(&self) -> Value {
-        json!({"type":"state","protocol":2,"engine":"Rust speech engines","listening":self.flow.listening,"recording":self.flow.recording,"processing":self.flow.pending>0,"pending":self.flow.pending,"capture_ready":self.capture_ready,"model_ready":self.ready,"benchmarking":self.benchmarking,"runtime_profile":self.runtime_profile,"performance":self.config.data["performance"],"model":self.config.string("transcription","model"),"output_method":self.resolved,"last_error":self.last_error,"log_level":self.config.string("logging","level"),"hotkey":self.config.string("input","trigger_key"),"microphone":if self.config.string("audio","pipewire_node").is_empty(){self.config.string("audio","device")}else{self.config.string("audio","pipewire_node")}})
+        let recording = self
+            .jobs
+            .recording()
+            .and_then(|id| self.jobs.active.get(&id));
+        let jobs: Vec<_> = self
+            .jobs
+            .active
+            .values()
+            .map(|j| {
+                json!({
+                "id":j.id,"stage":j.stage,"history_id":j.history_id}
+                )
+            })
+            .collect();
+        json!({
+        "type":"state","protocol":2,"daemon_session":crate::logging::session(),"daemon_pid":std::process::id(),"engine":"Rust speech engines","listening":self.jobs.listening,"recording":recording.is_some(),"processing":self.jobs.pending()>0,"pending":self.jobs.pending(),"capture_ready":recording.is_some_and(|j|j.capture_ready),"model_ready":self.model_state==ModelState::Ready,"model_loading":self.model_state==ModelState::Loading,"benchmarking":self.benchmarking,"configuring":self.configuring,"runtime_profile":self.runtime_profile,"performance":self.config.data["performance"],"model":self.config.string("transcription","model"),"output_method":self.resolved,"last_error":self.last_error,"log_level":self.config.string("logging","level"),"hotkey":self.config.string("input","trigger_key"),"jobs":jobs,"microphone":if self.config.string("audio","pipewire_node").is_empty(){
+        self.config.string("audio","device")}
+        else{
+        self.config.string("audio","pipewire_node")}
+        }
+        )
     }
-    fn reply(&mut self, id: u64, value: Value) {
+    fn reply(&mut self, id: u64, mut value: Value) {
+        if let Some(request_id) = self.request_id {
+            value["request_id"] = json!(request_id);
+        }
+        let _context =
+            crate::logging::context(json!({"client_id":id,"request_id":value["request_id"]}));
+        log::info!(
+            "Reply: client={id} request_id={} type={}",
+            value["request_id"],
+            value["type"]
+        );
         if self
             .clients
             .get(&id)
             .is_some_and(|s| s.try_send(value).is_err())
         {
-            self.clients.remove(&id);
+            log::warn!("Client disconnected: client={id} reason=reply_queue_full");
+            self.disconnect(id);
         }
     }
     fn broadcast(&mut self, value: Value) {
-        self.clients
-            .retain(|_, client| client.try_send(value.clone()).is_ok());
+        let gone: Vec<_> = self
+            .clients
+            .iter()
+            .filter_map(|(id, c)| c.try_send(value.clone()).is_err().then_some(*id))
+            .collect();
+        for id in gone {
+            log::warn!("Client disconnected: client={id} reason=broadcast_queue_full");
+            self.disconnect(id);
+        }
+    }
+    fn disconnect(&mut self, id: u64) {
+        log::info!("Client disconnected: client={id}");
+        self.clients.remove(&id);
+        if self.benchmark_client == Some(id) {
+            self.benchmark_cancel.store(true, Ordering::Relaxed);
+        }
+        if let Some(job) = self
+            .jobs
+            .recording()
+            .filter(|job| self.jobs.active[job].owner == Some(id))
+        {
+            log::warn!("Recording owner disconnected: job={job}; saving and transcribing captured audio");
+            self.stop_recording();
+        }
+        if self.key_capture.as_ref().is_some_and(|k| k.client == id) {
+            self.end_key_capture();
+        }
+        if self.test.as_ref().is_some_and(|t| t.client == id) {
+            self.stop_test();
+        }
     }
     fn broadcast_state(&mut self) {
         let state = self.state();
+        log::info!(
+            "State: generation={} listening={} recording={} pending={} outputting={}",
+            self.jobs.generation,
+            self.jobs.listening,
+            self.jobs.recording().is_some(),
+            self.jobs.pending(),
+            self.jobs.outputting()
+        );
         self.broadcast(state.clone());
         if let Some(c) = &self.companion {
             c.update(state, &self.config);
@@ -437,7 +391,9 @@ impl Daemon {
     fn error(&mut self, message: String) {
         log::error!("{message}");
         self.last_error = message.clone();
-        self.broadcast(json!({"type":"error","message":message}));
+        self.broadcast(json!({
+        "type":"error","message":message}
+        ));
         if self.config.flag("notifications", "audio_feedback") {
             thread::spawn(|| {
                 let _ = crate::process::run(
@@ -465,658 +421,220 @@ impl Daemon {
             });
         }
     }
-    fn event(&mut self, event: Event) {
-        match event {
-            Event::Connect(id, client) => {
-                if self.clients.len() < 8 { self.clients.insert(id, client); self.reply(id, self.state()); }
-            }
-            Event::Disconnect(id) => {
-                self.clients.remove(&id);
-                if self.benchmark_client == Some(id) { self.benchmark_cancel.store(true, Ordering::Relaxed); }
-                if self.recording_client == Some(id) { self.discard_remote_recording(); }
-                if self.key_capture.as_ref().is_some_and(|k| k.client == id) { self.end_key_capture(); }
-                if self.test.as_ref().is_some_and(|t| t.client == id) { self.stop_test(); }
-            }
-            Event::Command(id, message) => {
-                if let Err(error) = self.command(id, &message) {
-                    self.reply(id, json!({"type":"error","message":error.to_string()}));
-                    if id == 0 { self.error(error.to_string()); }
-                }
-            }
-            Event::Key(KeyEvent::Down) => self.start_recording(),
-            Event::Key(KeyEvent::Up) => {
-                if self.recording_client.is_none() { self.stop_recording(); }
-            },
-            Event::Key(KeyEvent::Missing) => self.error("No readable keyboard supports the hotkey. Check the input group; waiting for a keyboard.".into()),
-            Event::Key(KeyEvent::Captured(key)) => {
-                if let Some(capture) = &self.key_capture {
-                    self.reply(capture.client, json!({"type":"hotkey","key":key}));
-                    self.end_key_capture();
-                }
-            }
-            Event::Level(id, level, db) => {
-                if self.flow.recording && id == self.capture_id {
-                    self.capture_ready = true;
-                    self.broadcast(json!({"type":"audio_level","level":level,"db":db,"capture_ready":true}));
-                    let mut state = self.state(); state["level"] = json!(level);
-                    if let Some(companion) = &self.companion { companion.update(state, &self.config); }
-                }
-            }
-            Event::Preview(generation, committed, tentative) => {
-                if generation == self.flow.generation && self.flow.recording {
-                    self.broadcast(json!({"type":"transcription_preview","committed":committed,"tentative":tentative}));
-                }
-            }
-            Event::Benchmark(value) => {
-                self.benchmark_status = value.clone();
-                self.broadcast(value);
-            }
-            Event::BenchmarkDone(result) => {
-                self.benchmarking = false;
-                self.benchmark_client = None;
-                self.benchmark_status = match result {
-                    Ok(report) => json!({"type":"benchmark","running":false,"message":"Finished. Results saved locally; settings were not changed.","report":report}),
-                    Err(error) => json!({"type":"benchmark","running":false,"message":error.to_string()}),
-                };
-                self.broadcast(self.benchmark_status.clone());
-                if self.worker.try_send(Work::Load(self.config.clone())).is_err() {
-                    self.error("Could not restore the selected model after the benchmark".into());
-                }
-                self.broadcast_state();
-            }
-            Event::Model(identity, result) => {
-                if identity != optimization::identity(&self.config) { return; }
-                self.ready = result.is_ok();
-                match result { Ok(profile) => self.runtime_profile = profile, Err(error) => self.error(format!("Model load failed: {error}")) }
-                self.broadcast_state();
-            }
-            Event::Transcribed(generation, result, duration, history_id, model) => {
-                let history_id = history_id.or_else(|| self.stream_history_id.take());
-                self.transcribed_recording(generation, result, duration, history_id, &model)
-            }
-            Event::Delivered(_, result) => {
-                self.flow.outputting = false;
-                self.flow.pending = self.flow.pending.saturating_sub(1);
-                if let Err(error) = result { self.error(error.to_string()); }
-                self.flush_output(); self.broadcast_state();
-            }
-            Event::Test(token, message) => {
-                if self.test.as_ref().is_some_and(|test| test.token == token) {
-                    let id = self.test.as_ref().unwrap().client;
-                    let done = message["done"] == true; self.reply(id, message);
-                    if done { self.stop_test(); }
-                }
-            }
-            Event::Stop => {}
+    fn fail(&mut self, id: JobId, message: String) {
+        if !self.jobs.active.contains_key(&id) {
+            return;
         }
-    }
-    #[cfg(test)]
-    fn transcribed(&mut self, generation: u64, result: Result<String>, duration: f64) {
-        self.transcribed_recording(generation, result, duration, None, "test-model");
-    }
-    fn transcribed_recording(
-        &mut self,
-        generation: u64,
-        result: Result<String>,
-        duration: f64,
-        history_id: Option<i64>,
-        model: &str,
-    ) {
-        if generation != self.flow.generation {
-            self.flow.pending = self.flow.pending.saturating_sub(1);
-        } else {
-            match result {
-                Ok(text) if !text.is_empty() => {
-                    log::info!(
-                        "Transcription complete: characters={} elapsed={duration:.2}s",
-                        text.chars().count()
-                    );
-                    let saved = if let Some(id) = history_id {
-                        self.history
-                            .finish_transcription(id, &text, false, model, duration)
-                    } else {
-                        self.history
-                            .add_transcription(&text, model, duration)
-                            .map(|_| ())
-                    };
-                    if let Err(error) = saved {
-                        self.error(format!("Could not save transcription history: {error}"));
-                    }
-                    self.broadcast(json!({"type":"transcription","text":text,"duration":duration,"model":model}));
-                    self.completed.push_back((generation, text));
-                }
-                result => {
-                    self.flow.pending = self.flow.pending.saturating_sub(1);
-                    let message = result
-                        .err()
-                        .map(|error| format!("Transcription failed: {error}"))
-                        .unwrap_or_else(|| {
-                            "No speech detected. Check the microphone in Settings.".into()
-                        });
-                    if let Some(id) = history_id {
-                        let _ = self
-                            .history
-                            .finish_transcription(id, "", true, model, duration);
-                    }
-                    self.error(message);
-                }
-            }
-        }
+        log::error!("Dictation failed: job={id} error={message}");
+        self.terminal(id, "failed");
+        self.error(message);
         self.flush_output();
         self.broadcast_state();
     }
-    fn start_recording(&mut self) {
-        self.start_recording_from(self.config.clone());
-    }
-    fn start_recording_from(&mut self, config: Config) {
-        if self.benchmarking {
-            return;
-        }
-        if !self.flow.can_record() {
-            if self.flow.listening && !self.flow.recording {
-                self.error("Wait for pending dictation or text output to finish.".into());
+    fn terminal(&mut self, id: JobId, outcome: &str) {
+        if let Some(mut job) = self.jobs.complete(id, outcome) {
+            job.cancelled.store(true, Ordering::Release);
+            if let Some(stream) = job.stream.take() {
+                let _ = stream.try_send(StreamInput::Cancel);
             }
+            if let Some(capture) = job.capture.take() {
+                self.finish_capture(id, capture);
+            }
+        }
+    }
+    fn persist(&mut self, id: JobId) {
+        let Some(job) = self.jobs.active.get_mut(&id) else {
+            return;
+        };
+        let Some(result) = &job.result else {
+            return;
+        };
+        let history_id = job.history_id;
+        let text = result.text.as_ref().cloned().unwrap_or_default();
+        let failed = result.text.is_err() || text.is_empty();
+        let model = result.model.clone();
+        let seconds = result.seconds;
+        let cancelled = job.cancelled.clone();
+        job.transition(Stage::Persisting);
+        if let Err(e) = self.effect(move |history| {
+            if cancelled.load(Ordering::Acquire) {
+                return Event::Persisted(id, Ok(()));
+            }
+            let result = if let Some(id) = history_id {
+                history.finish_transcription(id, &text, failed, &model, seconds)
+            } else if !failed {
+                history
+                    .add_transcription(&text, &model, seconds)
+                    .map(|_| ())
+            } else {
+                Ok(())
+            };
+            Event::Persisted(id, result)
+        }) {
+            self.event(Event::Persisted(id, Err(e)));
+        }
+    }
+    fn start_recording(&mut self) {
+        self.start_recording_from(self.config.clone(), None);
+    }
+    fn start_recording_from(&mut self, config: Config, owner: Option<u64>) {
+        if self.benchmarking || self.configuring || !self.jobs.can_record() {
             return;
         }
         if self.test.is_some() {
             self.error("Stop the microphone test before dictating.".into());
             return;
         }
-        self.capture_id += 1;
-        let id = self.capture_id;
-        let send = self.server.send.clone();
+        let id = self
+            .jobs
+            .insert(config.clone(), Stage::Starting, owner, None);
         let model = config.string("transcription", "model");
         let streaming = (model == PARAKEET_MODEL || model.ends_with(".gguf"))
             && optimization::profile(&config) != "vulkan-full"
             && config.number("audio", "sample_rate") == 16000
             && config.number("audio", "channels") == 1
             && config.string("audio", "format") == "S16_LE";
-        let (stream_send, stream_receive) = mpsc::channel();
-        let audio = streaming.then_some(stream_send.clone());
-        match Capture::start(&config, move |samples, level, db| {
-            if let Some(audio) = &audio {
-                let _ = audio.send(StreamInput::Audio(samples));
+        let (audio, receive) = mpsc::sync_channel(256);
+        if streaming {
+            let job = self.jobs.active.get_mut(&id).unwrap();
+            job.stream = Some(audio.clone());
+            if self
+                .worker
+                .try_send(Work::Stream {
+                    id,
+                    generation: job.generation,
+                    cancelled: job.cancelled.clone(),
+                    config: config.clone(),
+                    receive,
+                    finished: job.finished.clone(),
+                })
+                .is_err()
+            {
+                self.fail(id, "Speech worker is busy".into());
+                return;
             }
-            let _ = send.try_send(Event::Level(id, level, db));
-        }) {
-            Ok(capture) => {
-                self.capture = Some(capture);
-                self.flow.recording = true;
-                self.capture_ready = false;
-                self.recording_started = Instant::now();
-                let finished = Arc::new(OnceLock::new());
-                if streaming
-                    && self
-                        .worker
-                        .try_send(Work::Stream(
-                            config.clone(),
-                            self.flow.generation,
-                            stream_receive,
-                            finished.clone(),
-                        ))
-                        .is_ok()
-                {
-                    self.live_stream = Some(stream_send);
-                    self.stream_finished = Some(finished);
+        }
+        let send = self.server.send.clone();
+        thread::spawn(move || {
+            let events = send.clone();
+            let overrun = AtomicBool::new(false);
+            let (owner, owner_lifetime) = mpsc::channel();
+            let result = Capture::start(&config, move |samples, level, db| {
+                if streaming && !overrun.load(Ordering::Relaxed) {
+                    for chunk in samples.chunks(1600) {
+                        if audio.try_send(StreamInput::Audio(chunk.to_vec())).is_err() {
+                            overrun.store(true, Ordering::Relaxed);
+                            let _=events.send(Event::CaptureFault(id,"Speech inference stopped accepting audio; saving the captured recording.".into()));
+                            break;
+                        }
+                    }
+                }
+                let _ = events.try_send(Event::Level(id, level, db));
+            });
+            let result = result.map(|mut capture| {
+                capture.retain_spawn_owner(owner);
+                capture
+            });
+            if let Err(error) = send.send(Event::CaptureStarted(id, result)) {
+                if let Event::CaptureStarted(_, Ok(capture)) = error.0 {
+                    drop(capture);
                 }
             }
-            Err(e) => self.error(format!("Recording failed: {e}")),
-        }
+            let _ = owner_lifetime.recv();
+        });
+        self.last_error.clear();
         self.broadcast_state();
     }
     fn stop_recording(&mut self) {
-        let stopped = Instant::now();
-        if !self.flow.recording {
+        let Some(id) = self.jobs.recording() else {
             return;
-        }
-        self.flow.recording = false;
-        self.recording_client = None;
-        self.capture_ready = false;
-        if let Some(finished) = self.stream_finished.take() {
-            let _ = finished.set(stopped);
-        }
-        if let Some(capture) = self.capture.take() {
-            match capture.finish() {
-                Ok((file, interruption)) => {
-                    let recordings = self.config.data_dir.join("recordings");
-                    if let Err(error) = std::fs::create_dir_all(&recordings) {
-                        self.error(format!("Could not save recording: {error}"));
-                        return;
-                    }
-                    let destination = recordings.join(format!(
-                        "dictation-{}-{}.wav",
-                        self.capture_id,
-                        std::process::id()
-                    ));
-                    let source = file.path().to_owned();
-                    if let Err(error) = std::fs::copy(&source, &destination) {
-                        self.error(format!("Could not save recording: {error}"));
-                        return;
-                    }
-                    let duration = hound::WavReader::open(&destination)
-                        .map(|reader| reader.duration() as f64 / reader.spec().sample_rate as f64)
-                        .unwrap_or(0.);
-                    let history_id = self
-                        .history
-                        .add_recording("", &destination, duration, true)
-                        .ok();
-                    if let Some(message) = interruption {
-                        self.error(format!(
-                            "{message} Recovering and transcribing the audio captured so far."
-                        ));
-                    }
-                    if let Some(stream) = self.live_stream.take() {
-                        self.stream_history_id = history_id;
-                        self.flow.pending += 1;
-                        let _ = stream.send(StreamInput::Finish);
-                        self.flush_output();
-                        self.broadcast_state();
-                        return;
-                    }
-                    self.flow.pending += 1;
-                    if self
-                        .worker
-                        .try_send(Work::Transcribe(
-                            destination,
-                            self.config.clone(),
-                            self.flow.generation,
-                            history_id,
-                            stopped,
-                        ))
-                        .is_err()
-                    {
-                        self.flow.pending -= 1;
-                        self.error("Transcription queue is full".into());
-                    }
-                }
-                Err(e) => {
-                    if let Some(stream) = self.live_stream.take() {
-                        let _ = stream.send(StreamInput::Cancel);
-                    }
-                    self.error(format!("Recording failed: {e}"));
-                }
-            }
-        }
-        self.flush_output();
+        };
+        let job = self.jobs.active.get_mut(&id).unwrap();
+        job.transition(Stage::Finalizing);
+        let _ = job.finished.set(Instant::now());
+        self.finalize_capture(id);
         self.broadcast_state();
     }
-    fn discard_remote_recording(&mut self) {
-        if let Some(stream) = self.live_stream.take() {
-            let _ = stream.send(StreamInput::Cancel);
+    fn finalize_capture(&mut self, id: JobId) {
+        let Some(capture) = self.jobs.active.get_mut(&id).and_then(|j| j.capture.take()) else {
+            return;
+        };
+        self.finish_capture(id, capture);
+    }
+    fn finish_capture(&self, id: JobId, capture: Capture) {
+        let send = self.server.send.clone();
+        thread::spawn(move || {
+            let (file, warning) = capture.finish();
+            // Cleanup is disabled by Capture; dropping this handle never unlinks audio.
+            let path = file.path().to_owned();
+            drop(file);
+            let result = Ok((path, warning));
+            let _ = send.send(Event::Finalized(id, result));
+        });
+    }
+    fn cancel_remote_recording(&mut self) {
+        if let Some(id) = self.jobs.recording() {
+            self.terminal(id, "aborted");
         }
-        self.capture.take();
-        self.flow.recording = false;
-        self.recording_client = None;
-        self.capture_ready = false;
         self.flush_output();
         self.broadcast_state();
     }
     fn cancel(&mut self) {
-        if let Some(stream) = self.live_stream.take() {
-            let _ = stream.send(StreamInput::Cancel);
-        }
-        self.recording_client = None;
-        self.flow.cancel();
+        self.jobs.generation += 1;
         self.generation
-            .store(self.flow.generation, Ordering::Release);
-        self.capture.take();
-        self.capture_ready = false;
-        self.flow.pending = self.flow.pending.saturating_sub(self.completed.len());
-        self.completed.clear();
-        self.broadcast(json!({"type":"cancelled"}));
+            .store(self.jobs.generation, Ordering::Release);
+        for job in self.jobs.active.values() {
+            job.cancelled.store(true, Ordering::Release);
+        }
+        let ids: Vec<_> = self
+            .jobs
+            .active
+            .values()
+            .filter(|j| j.stage != Stage::Delivering)
+            .map(|j| j.id)
+            .collect();
+        for id in ids {
+            self.terminal(id, "cancelled");
+        }
+        self.broadcast(json!({
+        "type":"cancelled"}
+        ));
         self.broadcast_state();
     }
     fn flush_output(&mut self) {
-        if self.flow.recording || self.flow.outputting {
+        if self.jobs.recording().is_some() || self.jobs.outputting() {
             return;
         }
-        if let Some((generation, text)) = self.completed.pop_front() {
-            if generation != self.flow.generation {
-                self.flow.pending = self.flow.pending.saturating_sub(1);
-                return;
-            }
-            self.flow.outputting = true;
-            let config = self.config.clone();
-            let resolved = self.resolved.clone();
-            let events = self.server.send.clone();
-            let current = self.generation.clone();
-            thread::spawn(move || {
-                let result = if generation == current.load(Ordering::Acquire) {
-                    output::deliver(&text, &config, &resolved)
-                } else {
-                    Ok(())
-                };
-                let _ = events.send(Event::Delivered(generation, result));
-            });
+        let Some((&id, job)) = self.jobs.active.first_key_value() else {
+            return;
+        };
+        if job.stage != Stage::Ready {
+            return;
         }
-    }
-    fn config_reply(&mut self, id: u64) {
-        self.reply(
-            id,
-            json!({"type":"config","config":self.config.data,"microphones":audio::microphones()}),
-        );
-    }
-    fn command(&mut self, id: u64, message: &Value) -> Result<()> {
-        let command = message["cmd"].as_str().unwrap_or("");
-        if self.benchmarking
-            && matches!(
-                command,
-                "save_config"
-                    | "reload_config"
-                    | "retry_history"
-                    | "start_recording"
-                    | "test_microphone"
-            )
-        {
-            bail!("Finish or cancel the benchmark first");
-        }
-        match command {
-            "benchmark_status" => {
-                let mut status = self.benchmark_status.clone();
-                status["reports"] = optimization::reports(&self.config);
-                self.reply(id, status);
-            }
-            "cancel_benchmark" => {
-                if self.benchmark_client != Some(id) {
-                    bail!("This client does not own the benchmark");
-                }
-                self.benchmark_cancel.store(true, Ordering::Relaxed);
-            }
-            "benchmark" => {
-                if self.benchmarking
-                    || self.flow.busy()
-                    || self.flow.outputting
-                    || !self.ready
-                    || self.test.is_some()
-                {
-                    bail!("Wait for the model and pending dictation before benchmarking");
-                }
-                let candidate = self.config.changed(&json!({
-                    "transcription":message["transcription"], "performance":message["performance"]
-                }))?;
-                optimization::check_profile(&candidate)?;
-                let durations = optimization::durations(&message["durations"])?;
-                self.benchmark_cancel.store(false, Ordering::Relaxed);
-                self.worker
-                    .try_send(Work::Benchmark(
-                        candidate,
-                        durations,
-                        self.benchmark_cancel.clone(),
-                    ))
-                    .map_err(|_| anyhow::anyhow!("Speech worker is busy"))?;
-                self.benchmarking = true;
-                self.benchmark_client = Some(id);
-                self.ready = false;
-                self.benchmark_status = json!({"type":"benchmark","running":true,"message":"Starting local benchmark. Dictation resumes when it finishes."});
-                self.broadcast(self.benchmark_status.clone());
-                self.broadcast_state();
-            }
-            "start_recording" => {
-                if id == 0 || !self.clients.contains_key(&id) {
-                    bail!("Recording requires a connected client")
-                }
-                if !self.flow.can_record() || self.key_capture.is_some() || self.test.is_some() {
-                    bail!("Dictation is paused or busy")
-                }
-                let node = message["pipewire_node"].as_str().unwrap_or("");
-                if node.is_empty() || node.len() > 256 || node.chars().any(char::is_control) {
-                    bail!("A microphone node is required")
-                }
-                let config = self.config.changed(&json!({"audio":{
-                    "device":"pipewire", "pipewire_node":node
-                }}))?;
-                self.start_recording_from(config);
-                if !self.flow.recording {
-                    bail!("Could not start recording: {}", self.last_error)
-                }
-                self.recording_client = Some(id);
-                self.reply(id, json!({"type":"recording_started"}));
-            }
-            "stop_recording" | "abort_recording" => {
-                if self.recording_client != Some(id) {
-                    bail!("This client does not own the recording")
-                }
-                if message["cmd"] == "abort_recording" {
-                    self.discard_remote_recording();
-                } else {
-                    self.stop_recording();
-                }
-                self.reply(id, json!({"type":"recording_stopped"}));
-            }
-            "get_state" => self.reply(id, self.state()),
-            "get_config" => {
-                self.config_reply(id);
-                if let Some(item) = self.history.recent(1, "")?.first() {
-                    self.reply(id, json!({"type":"transcription","text":item["text"]}));
-                }
-            }
-            "history" => {
-                let query = message["search"].as_str().unwrap_or("");
-                if query.len() > 4096 {
-                    bail!("Search is too long")
-                }
-                self.reply(id,json!({"type":"history","search":query,"items":self.history.recent(100,query)?}));
-            }
-            "favorite_history" => {
-                self.history.set_favorite(
-                    message["id"].as_i64().unwrap_or_default(),
-                    message["favorite"].as_bool().unwrap_or(false),
-                )?;
-                self.reply(id, json!({"type":"history_changed"}));
-            }
-            "delete_history" => {
-                if let Some(path) = self
-                    .history
-                    .remove(message["id"].as_i64().unwrap_or_default())?
-                {
-                    match std::fs::remove_file(path) {
-                        Ok(()) => {}
-                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                        Err(error) => return Err(error.into()),
-                    }
-                }
-                self.reply(id, json!({"type":"history_changed"}));
-            }
-            "retry_history" => {
-                let requested = Instant::now();
-                let history_id = message["id"].as_i64().unwrap_or_default();
-                let item = self
-                    .history
-                    .get(history_id)?
-                    .ok_or_else(|| anyhow::anyhow!("Recording no longer exists"))?;
-                let path = item["audio_path"]
-                    .as_str()
-                    .filter(|path| !path.is_empty())
-                    .ok_or_else(|| {
-                        anyhow::anyhow!("This older history item has no saved recording")
-                    })?;
-                if !std::path::Path::new(path).is_file() {
-                    bail!("The saved recording is missing")
-                }
-                let config = retry_config(&self.config, message)?;
-                log::info!(
-                    "Retrying history {history_id} with model {}",
-                    config.string("transcription", "model")
-                );
-                self.flow.pending += 1;
-                if self
-                    .worker
-                    .try_send(Work::Transcribe(
-                        path.into(),
-                        config,
-                        self.flow.generation,
-                        Some(history_id),
-                        requested,
-                    ))
-                    .is_err()
-                {
-                    self.flow.pending -= 1;
-                    bail!("Transcription queue is full")
-                }
-                self.last_error.clear();
-                self.broadcast_state();
-            }
-            "play_history" => {
-                if let Some(item) = self
-                    .history
-                    .get(message["id"].as_i64().unwrap_or_default())?
-                {
-                    if let Some(path) = item["audio_path"].as_str() {
-                        std::process::Command::new("xdg-open")
-                            .arg(path)
-                            .stdin(std::process::Stdio::null())
-                            .stdout(std::process::Stdio::null())
-                            .stderr(std::process::Stdio::null())
-                            .spawn()?;
-                    }
-                }
-            }
-            "open_recordings" => {
-                let directory = self.config.data_dir.join("recordings");
-                std::fs::create_dir_all(&directory)?;
-                std::process::Command::new("xdg-open")
-                    .arg(directory)
-                    .stdin(std::process::Stdio::null())
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .spawn()?;
-            }
-            "toggle_listening" | "set_listening" => {
-                if self.key_capture.is_some() {
-                    bail!("Finish hotkey capture first")
-                }
-                self.flow.listening = if message["cmd"] == "toggle_listening" {
-                    !self.flow.listening
-                } else {
-                    message["value"]
-                        .as_bool()
-                        .ok_or_else(|| anyhow::anyhow!("Expected a boolean"))?
-                };
-                if !self.flow.listening {
-                    self.stop_recording();
-                }
-                self.broadcast_state();
-            }
-            "cancel" => self.cancel(),
-            "clear_error" => {
-                self.last_error.clear();
-                self.broadcast_state();
-            }
-            "save_config" | "reload_config" | "set_log_level" => {
-                if self.flow.busy() || self.key_capture.is_some() || self.test.is_some() {
-                    bail!("Wait for dictation or microphone/hotkey testing to finish, then save settings again.")
-                }
-                let old_model = self.config.string("transcription", "model").to_owned();
-                let old_setting = optimization::current_setting(&self.config);
-                let mut candidate = if message["cmd"] == "reload_config" {
-                    Config::load()?
-                } else if message["cmd"] == "set_log_level" {
-                    self.config
-                        .changed(&json!({"logging":{"level":message["value"]}}))?
-                } else {
-                    self.config.changed(&message["config"])?
-                };
-                let selected_model = candidate.string("transcription", "model").to_owned();
-                if selected_model != old_model {
-                    let submitted_old_setting = message["config"]["performance"]["by_model"]
-                        .get(&old_model)
-                        .is_some_and(Value::is_object);
-                    if !submitted_old_setting {
-                        optimization::remember(&mut candidate, &old_model, old_setting);
-                    }
-                    if message["remember_performance"] == true {
-                        optimization::remember_current(&mut candidate);
-                    } else {
-                        optimization::activate_saved(&mut candidate);
-                    }
-                } else if message["remember_performance"] == true {
-                    optimization::remember_current(&mut candidate);
-                } else if message["cmd"] == "reload_config" {
-                    optimization::activate_saved(&mut candidate);
-                }
-                optimization::check_profile(&candidate)?;
-                let model_changed =
-                    optimization::identity(&candidate) != optimization::identity(&self.config);
-                let resolved = output::resolve(candidate.string("output", "method"));
-                if model_changed {
-                    self.worker
-                        .try_send(Work::Load(candidate.clone()))
-                        .map_err(|_| {
-                            anyhow::anyhow!("Model loading is busy. Try saving again shortly.")
-                        })?;
-                }
-                candidate.save()?;
-                self.config = candidate;
-                self.resolved = resolved;
-                crate::logging::level(&self.config);
-                if let Some(keys) = &self.hotkeys {
-                    keys.key.store(
-                        key_code(self.config.string("input", "trigger_key"))
-                            .unwrap()
-                            .code(),
-                        Ordering::Relaxed,
-                    );
-                }
-                if model_changed {
-                    self.ready = false;
-                }
-                self.broadcast(json!({"type":"config_reloaded"}));
-                self.config_reply(id);
-                self.broadcast_state();
-            }
-            "capture_hotkey" => {
-                if self.flow.busy() || self.key_capture.is_some() || self.test.is_some() {
-                    bail!("Finish dictation or testing before changing the hotkey")
-                }
-                let keys = self
-                    .hotkeys
-                    .as_ref()
-                    .ok_or_else(|| anyhow::anyhow!("Hotkeys are disabled in probe mode"))?;
-                self.key_capture = Some(KeyCapture {
-                    client: id,
-                    restore: self.flow.listening,
-                    deadline: Instant::now() + Duration::from_secs(10),
-                });
-                self.flow.listening = false;
-                keys.capture.store(true, Ordering::Relaxed);
-                self.reply(id, json!({"type":"hotkey_waiting"}));
-                self.broadcast_state();
-            }
-            "test_microphone" => {
-                if self.flow.busy() || self.key_capture.is_some() {
-                    bail!("Finish dictation before testing the microphone")
-                }
-                if self.test.is_some() {
-                    self.stop_test();
-                    self.reply(id,json!({"type":"microphone_test","level":0,"message":"Microphone test stopped.","done":true}));
-                } else {
-                    self.start_test(
-                        id,
-                        message["node"]
-                            .as_str()
-                            .unwrap_or(self.config.string("audio", "pipewire_node"))
-                            .to_owned(),
-                    );
-                }
-            }
-            "diagnostics" => {
-                let tools = ["arecord", "ffmpeg", "xdotool", "ydotool", "dotool", "wtype"]
-                    .map(|tool| json!({"name":tool,"installed":crate::process::exists(tool)}));
-                let text = json!({"session":std::env::var("XDG_SESSION_TYPE").unwrap_or_default(),"socket":crate::ipc::socket_path(),"daemon":self.state(),"audio":self.config.data["audio"],"transcription":self.config.data["transcription"],"microphones":audio::microphones(),"engine":"Rust speech engines (transcribe.cpp / CTranslate2)","tools":tools});
-                self.reply(id,json!({"type":"diagnostics","text":serde_json::to_string_pretty(&text)?,"logs":crate::logging::recent(&self.config)}));
-            }
-            "quit" => {
-                // Existing adapters must not automatically restart an intentional quit.
-                std::fs::write(crate::ipc::stopped_path(), b"")?;
-                self.quitting = true;
-            }
-            _ => bail!("Unknown speech service command"),
-        }
-        Ok(())
+        let job = self.jobs.active.get_mut(&id).unwrap();
+        let text = job.result.as_ref().unwrap().text.as_ref().unwrap().clone();
+        let config = job.config.clone();
+        let generation = job.generation;
+        let cancelled = job.cancelled.clone();
+        job.transition(Stage::Delivering);
+        let events = self.server.send.clone();
+        let current = self.generation.clone();
+        thread::spawn(move || {
+            let result = if current.load(Ordering::Acquire) == generation {
+                let resolved = output::resolve(config.string("output", "method"));
+                output::deliver(&text, &config, &resolved, || {
+                    cancelled.load(Ordering::Acquire)
+                        || current.load(Ordering::Acquire) != generation
+                })
+            } else {
+                Ok(())
+            };
+            let _ = events.send(Event::Delivered(id, result));
+        });
     }
     fn end_key_capture(&mut self) {
         if let Some(capture) = self.key_capture.take() {
-            self.flow.listening = capture.restore;
+            self.jobs.listening = capture.restore;
             if let Some(keys) = &self.hotkeys {
                 keys.capture.store(false, Ordering::Relaxed);
             }
@@ -1127,7 +645,9 @@ impl Daemon {
         if let Some(test) = self.test.take() {
             test.stop.store(true, Ordering::Relaxed);
             if let Some(thread) = test.thread {
-                let _ = thread.join();
+                thread::spawn(move || {
+                    let _ = thread.join();
+                });
             }
         }
     }
@@ -1147,7 +667,9 @@ impl Daemon {
             let send = |level: f32, message: String, done: bool| {
                 let _ = events.try_send(Event::Test(
                     token,
-                    json!({"type":"microphone_test","level":level,"message":message,"done":done}),
+                    json!({
+                    "type":"microphone_test","level":level,"message":message,"done":done}
+                    ),
                 ));
             };
             let result = (|| -> Result<()> {
@@ -1246,12 +768,16 @@ impl Daemon {
 }
 impl Drop for Daemon {
     fn drop(&mut self) {
+        self.worker_shutdown.store(true, Ordering::Release);
         self.benchmark_cancel.store(true, Ordering::Relaxed);
-        self.capture.take();
+        self.jobs.generation += 1;
+        self.generation
+            .store(self.jobs.generation, Ordering::Release);
+        let jobs = std::mem::take(&mut self.jobs.active);
+        thread::spawn(move || drop(jobs));
         self.stop_test();
     }
 }
-
 fn retry_config(saved: &Config, message: &Value) -> Result<Config> {
     let mut changes = json!({});
     for key in ["transcription", "performance"] {
@@ -1263,387 +789,53 @@ fn retry_config(saved: &Config, message: &Value) -> Result<Config> {
     optimization::check_profile(&selected)?;
     Ok(selected)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    fn isolated() -> (tempfile::TempDir, Daemon) {
-        let root = tempfile::tempdir().unwrap();
-        let config = Config::at(root.path())
-            .unwrap()
-            .changed(&json!({
-                "output":{"method":"none"},
-                "notifications":{"enabled":false,"audio_feedback":false}
-            }))
-            .unwrap();
-        let server = Server::bind(root.path().join("run/daemon.sock")).unwrap();
-        let daemon = Daemon::with_server(config, true, false, server).unwrap();
-        (root, daemon)
-    }
-    #[test]
-    fn benchmark_blocks_competing_work_and_cancels_without_changing_settings() {
-        let (_root, mut daemon) = isolated();
-        let original = daemon.config.data.clone();
-        daemon.benchmarking = true;
-        daemon.benchmark_client = Some(1);
-        assert!(daemon
-            .command(1, &json!({"cmd":"save_config","config":{}}))
-            .is_err());
-        assert!(daemon
-            .command(1, &json!({"cmd":"retry_history","id":1}))
-            .is_err());
-        assert!(daemon
-            .command(1, &json!({"cmd":"benchmark","durations":[5]}))
-            .is_err());
-        daemon.start_recording();
-        assert!(!daemon.flow.recording);
-        assert!(daemon
-            .command(2, &json!({"cmd":"cancel_benchmark"}))
-            .is_err());
-        assert!(!daemon.benchmark_cancel.load(Ordering::Relaxed));
-        daemon
-            .command(1, &json!({"cmd":"cancel_benchmark"}))
-            .unwrap();
-        assert!(daemon.benchmark_cancel.load(Ordering::Relaxed));
-        assert_eq!(daemon.config.data, original);
-    }
-    #[test]
-    fn failed_load_records_job_model_and_elapsed_queue_time() {
-        let (_root, mut daemon) = isolated();
-        let id = daemon
-            .history
-            .add_recording("", std::path::Path::new("synthetic.wav"), 5., true)
-            .unwrap();
-        let config = daemon
-            .config
-            .changed(&json!({"transcription":{"model":"/nonexistent/synthetic-model.gguf"}}))
-            .unwrap();
-        daemon
-            .worker
-            .send(Work::Transcribe(
-                "synthetic.wav".into(),
-                config,
-                0,
-                Some(id),
-                Instant::now() - Duration::from_millis(200),
-            ))
-            .unwrap();
-        let event = daemon
-            .server
-            .receive
-            .recv_timeout(Duration::from_secs(3))
-            .unwrap();
-        assert!(
-            matches!(&event, Event::Transcribed(_, Err(_), seconds, Some(_), model) if *seconds >= 0.2 && model == "/nonexistent/synthetic-model.gguf")
-        );
-        daemon.event(event);
-        let row = daemon.history.get(id).unwrap().unwrap();
-        assert_eq!(row["model"], "/nonexistent/synthetic-model.gguf");
-        assert!(row["transcription_seconds"].as_f64().unwrap() >= 0.2);
-        assert_eq!(row["failed"], true);
-    }
-
-    #[test]
-    fn retry_carries_unsaved_performance_settings() {
-        let root = tempfile::tempdir().unwrap();
-        let saved = Config::at(root.path()).unwrap();
-        let selected = retry_config(
-            &saved,
-            &json!({"performance":{"profile":"standard","threads":2}}),
-        )
-        .unwrap();
-        assert_eq!(selected.number("performance", "threads"), 2);
-        assert_eq!(saved.number("performance", "threads"), 0);
-        assert_ne!(
-            optimization::identity(&saved),
-            optimization::identity(&selected)
-        );
-    }
-    #[test]
-    fn switching_models_restores_each_saved_performance_setting() {
-        let (_root, mut daemon) = isolated();
-        let (worker, receive) = mpsc::sync_channel(5);
-        daemon.worker = worker;
-        daemon
-            .command(
-                1,
-                &json!({"cmd":"save_config","remember_performance":true,
-                    "config":{"performance":{"profile":"standard","threads":4}}}),
-            )
-            .unwrap();
-        assert!(matches!(receive.try_recv().unwrap(), Work::Load(_)));
-        daemon
-            .command(
-                1,
-                &json!({"cmd":"save_config","remember_performance":true,"config":{
-                    "transcription":{"model":"base.en"},
-                    "performance":{"profile":"adaptive","threads":8}}}),
-            )
-            .unwrap();
-        assert!(matches!(receive.try_recv().unwrap(), Work::Load(_)));
-        daemon
-            .command(
-                1,
-                &json!({"cmd":"save_config","config":{
-                    "transcription":{"model":crate::engine::PARAKEET_MODEL}}}),
-            )
-            .unwrap();
-        let Work::Load(selected) = receive.try_recv().unwrap() else {
-            panic!("Expected the restored model to load");
-        };
-        assert_eq!(
-            optimization::current_setting(&selected),
-            json!({"profile":"standard","threads":4})
-        );
-        assert_eq!(
-            selected.data["performance"]["by_model"]["base.en"],
-            json!({"profile":"adaptive","threads":8})
-        );
-    }
-    #[test]
-    fn ui_model_switch_preserves_an_unsaved_outgoing_performance_draft() {
-        let (_root, mut daemon) = isolated();
-        let (worker, receive) = mpsc::sync_channel(5);
-        daemon.worker = worker;
-        daemon
-            .command(
-                1,
-                &json!({"cmd":"save_config","remember_performance":true,"config":{
-                    "transcription":{"model":"canary-180m-flash"},
-                    "performance":{"profile":"standard","threads":8,"by_model":{
-                        PARAKEET_MODEL:{"profile":"standard","threads":4}
-                    }}
-                }}),
-            )
-            .unwrap();
-        let Work::Load(selected) = receive.try_recv().unwrap() else {
-            panic!("Expected the selected model to load");
-        };
-        assert_eq!(
-            selected.data["performance"]["by_model"][PARAKEET_MODEL],
-            json!({"profile":"standard","threads":4})
-        );
-        assert_eq!(
-            optimization::current_setting(&selected),
-            json!({"profile":"standard","threads":8})
-        );
-    }
-    #[test]
-    fn history_retry_uses_selected_settings_without_changing_saved_config() {
-        let root = tempfile::tempdir().unwrap();
-        let saved = Config::at(root.path()).unwrap();
-        let selected = retry_config(
-            &saved,
-            &json!({"transcription":{"model":"canary-180m-flash"}}),
-        )
-        .unwrap();
-        assert_eq!(
-            selected.string("transcription", "model"),
-            "canary-180m-flash"
-        );
-        assert_eq!(saved.string("transcription", "model"), PARAKEET_MODEL);
-        assert_eq!(retry_config(&saved, &json!({})).unwrap().data, saved.data);
-        assert!(retry_config(&saved, &json!({"transcription":{"beam_size":0}})).is_err());
-    }
-    #[test]
-    fn history_retry_queues_selected_model_and_clears_previous_failure() {
-        let (root, mut daemon) = isolated();
-        let path = root.path().join("synthetic.wav");
-        std::fs::write(&path, []).unwrap();
-        let id = daemon.history.add_recording("", &path, 160., true).unwrap();
-        let (worker, receive) = mpsc::sync_channel(5);
-        daemon.worker = worker;
-        daemon.last_error = "Old model failed".into();
-        daemon
-            .command(
-                1,
-                &json!({"cmd":"retry_history", "id":id,
-            "transcription":{"model":"canary-180m-flash"}}),
-            )
-            .unwrap();
-        let Work::Transcribe(queued_path, config, _, history_id, _) = receive.try_recv().unwrap()
-        else {
-            panic!("Expected a history transcription");
-        };
-        assert_eq!(queued_path, path);
-        assert_eq!(history_id, Some(id));
-        assert_eq!(config.string("transcription", "model"), "canary-180m-flash");
-        assert_eq!(
-            daemon.config.string("transcription", "model"),
-            PARAKEET_MODEL
-        );
-        assert!(daemon.last_error.is_empty());
-        assert_eq!(daemon.flow.pending, 1);
-    }
-    #[test]
-    fn canceled_inference_never_reaches_history_or_output() {
-        let (_root, mut daemon) = isolated();
-        daemon.flow.pending = 1;
-        daemon.cancel();
-        daemon.transcribed(0, Ok("Synthetic canceled words".into()), 0.1);
-        assert!(daemon.history.recent(100, "").unwrap().is_empty());
-        assert_eq!(daemon.flow.pending, 0);
-        assert!(!daemon.flow.outputting);
-    }
-    #[test]
-    fn completed_dictations_wait_for_release_and_keep_order() {
-        let (_root, mut daemon) = isolated();
-        daemon.flow.recording = true;
-        daemon.flow.pending = 2;
-        daemon.transcribed(0, Ok("Synthetic first".into()), 0.1);
-        daemon.transcribed(0, Ok("Synthetic second".into()), 0.1);
-        assert!(!daemon.flow.outputting);
-        assert_eq!(
-            daemon
-                .completed
-                .iter()
-                .map(|(_, text)| text.as_str())
-                .collect::<Vec<_>>(),
-            ["Synthetic first", "Synthetic second"]
-        );
-        daemon.flow.recording = false;
-        daemon.flush_output();
-        assert!(daemon.flow.outputting);
-        assert_eq!(daemon.completed.front().unwrap().1, "Synthetic second");
-        for _ in 0..2 {
-            let event = daemon
-                .server
-                .receive
-                .recv_timeout(Duration::from_secs(2))
-                .unwrap();
-            assert!(matches!(event, Event::Delivered(_, _)));
-            daemon.event(event);
+fn prepare_config(previous: &Config, message: &Value) -> Result<Config> {
+    let old_model = previous.string("transcription", "model").to_owned();
+    let old_setting = optimization::current_setting(previous);
+    let mut candidate = if message["cmd"] == "reload_config" {
+        Config::load()?
+    } else if message["cmd"] == "set_log_level" {
+        previous.changed(&json!({
+        "logging":{
+        "level":message["value"]}
         }
-        assert_eq!(daemon.flow.pending, 0);
-        assert!(!daemon.flow.outputting);
+        ))?
+    } else {
+        previous.changed(&message["config"])?
+    };
+    let selected_model = candidate.string("transcription", "model").to_owned();
+    if selected_model != old_model {
+        let submitted_old_setting = message["config"]["performance"]["by_model"]
+            .get(&old_model)
+            .is_some_and(Value::is_object);
+        if !submitted_old_setting {
+            optimization::remember(&mut candidate, &old_model, old_setting);
+        }
+        if message["remember_performance"] == true {
+            optimization::remember_current(&mut candidate);
+        } else {
+            optimization::activate_saved(&mut candidate);
+        }
+    } else if message["remember_performance"] == true {
+        optimization::remember_current(&mut candidate);
+    } else if message["cmd"] == "reload_config" {
+        optimization::activate_saved(&mut candidate);
     }
-    #[test]
-    fn output_failure_keeps_history_and_allows_next_dictation() {
-        let (_root, mut daemon) = isolated();
-        daemon.config.data["output"]["method"] = json!("auto");
-        daemon.flow.pending = 1;
-        daemon.transcribed(0, Ok("Synthetic retained text".into()), 0.1);
-        assert_eq!(
-            daemon.history.recent(1, "").unwrap()[0]["text"],
-            "Synthetic retained text"
-        );
-        let event = daemon
-            .server
-            .receive
-            .recv_timeout(Duration::from_secs(2))
-            .unwrap();
-        daemon.event(event);
-        assert!(daemon.last_error.contains("History"));
-        assert_eq!(daemon.flow.pending, 0);
-        assert!(daemon.flow.can_record());
-    }
-    #[test]
-    fn shutdown_drains_inflight_transcription_into_history() {
-        let (_root, mut daemon) = isolated();
-        daemon.flow.pending = 1;
-        daemon
-            .server
-            .send
-            .send(Event::Transcribed(
-                daemon.flow.generation,
-                Ok("Synthetic shutdown recovery".into()),
-                0.1,
-                None,
-                "test-model".into(),
-            ))
-            .unwrap();
-        daemon.finish_shutdown();
-        let history = daemon.history.recent(1, "").unwrap();
-        assert_eq!(history[0]["text"], "Synthetic shutdown recovery");
-        assert_eq!(daemon.flow.pending, 0);
-    }
-    #[test]
-    fn busy_settings_never_write_and_reload_keeps_pause() {
-        let (_root, mut daemon) = isolated();
-        daemon.flow.pending = 1;
-        assert!(daemon
-            .command(
-                0,
-                &json!({"cmd":"save_config","config":{"ui":{"cursor_indicator":true}}})
-            )
-            .is_err());
-        assert!(!daemon.config.path.exists());
-        daemon.flow.pending = 0;
-        daemon.flow.listening = false;
-        daemon
-            .command(
-                0,
-                &json!({"cmd":"save_config","config":{"ui":{"cursor_indicator":true}}}),
-            )
-            .unwrap();
-        assert!(!daemon.flow.listening);
-        assert!(daemon.config.flag("ui", "cursor_indicator"));
-    }
-    #[test]
-    fn remote_recording_requires_owner_and_ignores_hotkey_release() {
-        let (_root, mut daemon) = isolated();
-        daemon.flow.recording = true;
-        daemon.recording_client = Some(7);
-        assert!(daemon.command(8, &json!({"cmd":"stop_recording"})).is_err());
-        daemon.event(Event::Key(KeyEvent::Up));
-        assert!(daemon.flow.recording);
-        daemon.command(7, &json!({"cmd":"stop_recording"})).unwrap();
-        assert!(!daemon.flow.recording);
-        assert_eq!(daemon.recording_client, None);
-    }
-    #[test]
-    fn remote_disconnect_discards_only_its_recording() {
-        let (_root, mut daemon) = isolated();
-        daemon.flow.recording = true;
-        daemon.flow.pending = 1;
-        daemon.recording_client = Some(7);
-        daemon.event(Event::Disconnect(8));
-        assert!(daemon.flow.recording);
-        daemon.event(Event::Disconnect(7));
-        assert!(!daemon.flow.recording);
-        assert_eq!(daemon.flow.pending, 1);
-        assert_eq!(daemon.flow.generation, 0);
-    }
-    #[test]
-    fn remote_start_respects_pause_and_existing_recording() {
-        let (_root, mut daemon) = isolated();
-        let (send, _receive) = mpsc::sync_channel(64);
-        daemon.clients.insert(7, send);
-        let request = json!({"cmd":"start_recording", "pipewire_node":"phonemic2_src"});
-        daemon.flow.listening = false;
-        assert!(daemon.command(7, &request).is_err());
-        daemon.flow.listening = true;
-        daemon.flow.recording = true;
-        assert!(daemon.command(7, &request).is_err());
-        assert_eq!(daemon.recording_client, None);
-        assert!(!daemon.config.path.exists());
-    }
-    #[test]
-    fn queue_is_bounded_and_typing_blocks_new_capture() {
-        let mut f = Flow {
-            listening: true,
-            ..Default::default()
-        };
-        assert!(f.can_record());
-        f.pending = 4;
-        assert!(!f.can_record());
-        f.pending = 1;
-        f.outputting = true;
-        assert!(!f.can_record());
-        f.outputting = false;
-        assert!(f.can_record());
-    }
-    #[test]
-    fn cancel_invalidates_inflight_generation() {
-        let mut f = Flow {
-            recording: true,
-            generation: 9,
-            pending: 2,
-            ..Default::default()
-        };
-        f.cancel();
-        assert_eq!(f.generation, 10);
-        assert!(!f.recording);
-        assert_eq!(f.pending, 2);
-    }
+    optimization::check_profile(&candidate)?;
+    Ok(candidate)
 }
+fn open_path(path: &std::path::Path) -> Result<()> {
+    let mut child = std::process::Command::new("xdg-open")
+        .arg(path)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()?;
+    thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}
+#[cfg(test)]
+#[path = "daemon_tests.rs"]
+mod tests;

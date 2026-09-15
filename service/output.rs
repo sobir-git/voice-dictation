@@ -50,7 +50,15 @@ pub fn resolve(method: &str) -> String {
     }
     "none".into()
 }
-pub fn deliver(text: &str, config: &Config, method: &str) -> Result<()> {
+pub fn deliver(
+    text: &str,
+    config: &Config,
+    method: &str,
+    cancelled: impl Fn() -> bool,
+) -> Result<()> {
+    if cancelled() {
+        return Ok(());
+    }
     if config.string("output", "method") == "none" {
         return Ok(());
     }
@@ -106,14 +114,20 @@ pub fn deliver(text: &str, config: &Config, method: &str) -> Result<()> {
         }
         _ => bail!("Unknown output tool"),
     };
-    process::run(
+    let result = process::run_cancellable(
         &mut cmd,
         input,
         Duration::from_secs_f64(
             (out.chars().count() as f64 * (delay as f64 / 1000.) * 2. + 5.).max(10.),
         ),
-    )
-    .map_err(|_| anyhow::anyhow!("{method} could not deliver text. Text is saved in History."))?;
+        &cancelled,
+    );
+    if cancelled() {
+        return Ok(());
+    }
+    result.map_err(|_| {
+        anyhow::anyhow!("{method} could not deliver text. Text is saved in History.")
+    })?;
     Ok(())
 }
 pub fn dotool_input(text: &str) -> String {

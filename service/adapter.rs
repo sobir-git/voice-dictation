@@ -50,6 +50,7 @@ pub fn run() -> Result<()> {
             };
             let _ = stream.set_read_timeout(Some(Duration::from_millis(50)));
             let _ = stream.set_write_timeout(Some(Duration::from_millis(250)));
+            log::info!("Adapter connected to daemon");
             emit(&json!({"type":"connected"}));
             let _ = writeln!(stream, "{}", json!({"cmd":"get_config"}));
             let mut pending = Vec::new();
@@ -57,6 +58,11 @@ pub fn run() -> Result<()> {
             while !flag.load(Ordering::Relaxed) {
                 let mut failed = false;
                 for message in receive.try_iter() {
+                    log::info!(
+                        "Adapter forwarding: request_id={} command={}",
+                        message["request_id"],
+                        message["cmd"]
+                    );
                     if writeln!(stream, "{message}").is_err() {
                         emit(
                             &json!({"type":"error","message":"Speech service disconnected before the request was delivered."}),

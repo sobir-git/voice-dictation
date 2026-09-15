@@ -304,3 +304,22 @@ fn performance_profile_choices_match_model_family() {
         assert!(!canary.contains(&json!("vulkan")));
     }
 }
+
+#[test]
+fn worker_failure_does_not_leave_a_false_loading_status() {
+    let mut ui = setup(Size::new(1000., 860.));
+    send(
+        &mut ui,
+        Command::Backend(Arc::new(
+            json!({"type":"state","listening":true,"model_ready":false,"model_loading":false,"last_error":"Inference worker exited"}),
+        )),
+    );
+    assert_eq!(ui.root().status, "Ready to retry dictation");
+    send(
+        &mut ui,
+        Command::Backend(Arc::new(
+            json!({"type":"state","listening":true,"model_ready":false,"model_loading":true}),
+        )),
+    );
+    assert_eq!(ui.root().status, "Loading your speech model");
+}

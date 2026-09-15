@@ -1,8 +1,8 @@
 use crate::{config::Config, process};
-use anyhow::{bail, Result};
+use anyhow::Result;
 use std::{
     fs::File,
-    io::{Read, Seek, SeekFrom},
+    io::{Read, Seek, SeekFrom, Write},
     process::{Child, Command, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -31,6 +31,40 @@ fn wav_data_offset(file: &mut File) -> Option<u64> {
     None
 }
 
+/// Repair sizes left by an interrupted WAV writer without replacing audio bytes.
+/// Unknown or incomplete headers remain on disk for manual recovery.
+pub fn repair_wav(path: &std::path::Path) -> Result<()> {
+    let mut file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)?;
+    let offset = wav_data_offset(&mut file).ok_or_else(|| {
+        anyhow::anyhow!("Incomplete WAV header; recovery audio: {}", path.display())
+    })?;
+    let length = file.metadata()?.len();
+    file.seek(SeekFrom::Start(offset - 4))?;
+    let mut size = [0; 4];
+    file.read_exact(&mut size)?;
+    let declared = u32::from_le_bytes(size) as u64;
+    let available = length.saturating_sub(offset);
+    // Our recorder writes data as the final chunk. A killed writer may leave
+    // either an oversized placeholder or a header describing only its first block.
+    if declared != available {
+        // hound reads the format even when the declared data length is stale.
+        let reader = hound::WavReader::open(path)?;
+        let spec = reader.spec();
+        let frame = u64::from(spec.channels) * u64::from(spec.bits_per_sample).div_ceil(8);
+        anyhow::ensure!(frame > 0, "Invalid WAV format at {}", path.display());
+        let data_size = u32::try_from(available - available % frame)?;
+        file.seek(SeekFrom::Start(offset - 4))?;
+        file.write_all(&data_size.to_le_bytes())?;
+        file.seek(SeekFrom::Start(4))?;
+        file.write_all(&u32::try_from(length - 8)?.to_le_bytes())?;
+        file.sync_all()?;
+    }
+    Ok(())
+}
+
 pub fn level(bytes: &[u8]) -> (f32, f32) {
     let n = bytes.len() / 2;
     let energy = bytes
@@ -49,8 +83,15 @@ pub struct Capture {
     error: File,
     stop: Arc<AtomicBool>,
     monitor: Option<JoinHandle<()>>,
+    spawn_owner: Option<std::sync::mpsc::Sender<()>>,
 }
 impl Capture {
+    /// Linux PDEATHSIG tracks the spawning thread. Keep asynchronous startup's
+    /// thread alive until this capture has stopped and reaped its recorder.
+    pub fn retain_spawn_owner(&mut self, owner: std::sync::mpsc::Sender<()>) {
+        self.spawn_owner = Some(owner);
+    }
+
     pub fn exited(&mut self) -> bool {
         self.child.try_wait().is_ok_and(|status| status.is_some())
     }
@@ -65,13 +106,16 @@ impl Capture {
         callback: impl Fn(Vec<f32>, f32, f32) + Send + 'static,
         mut command: Command,
     ) -> Result<Self> {
-        let template = crate::config::expand(c.string("audio", "temp_file"));
-        let directory = template.parent().unwrap_or(std::path::Path::new("/tmp"));
-        std::fs::create_dir_all(directory)?;
+        // Capture directly into persistent storage, before the recorder can write.
+        // A dropped job, panic or SIGKILL must never unlink its only audio.
+        let directory = c.data_dir.join("recordings");
+        std::fs::create_dir_all(&directory)?;
         let file = tempfile::Builder::new()
             .prefix("dictation-")
             .suffix(".wav")
-            .tempfile_in(directory)?;
+            .disable_cleanup(true)
+            .tempfile_in(&directory)?;
+        File::open(&directory)?.sync_all()?;
         let error = tempfile::tempfile()?;
         command
             .args([
@@ -93,7 +137,11 @@ impl Capture {
             command.env("PIPEWIRE_NODE", c.string("audio", "pipewire_node"));
         }
         process::kill_with_parent(&mut command);
-        let child = command.spawn()?;
+        let child = command.spawn().inspect_err(|_| {
+            // No recorder was spawned, so this file cannot contain captured audio.
+            let _ = std::fs::remove_file(file.path());
+        })?;
+        log::info!("Capture recovery audio: {}", file.path().display());
         log::info!(
             "Capture started: rate={} channels={}",
             c.number("audio", "sample_rate"),
@@ -104,9 +152,16 @@ impl Capture {
         let path = file.path().to_owned();
         let monitor = thread::spawn(move || {
             let mut offset = None;
+            let mut synced = Instant::now();
             while !flag.load(Ordering::Relaxed) {
                 thread::sleep(Duration::from_millis(100));
                 if let Ok(mut file) = File::open(&path) {
+                    if synced.elapsed() >= Duration::from_secs(1) {
+                        if let Err(error) = file.sync_data() {
+                            log::error!("Could not sync capture at {}: {error}", path.display());
+                        }
+                        synced = Instant::now();
+                    }
                     if let Ok(meta) = file.metadata() {
                         let Some(start) = offset.or_else(|| wav_data_offset(&mut file)) else {
                             continue;
@@ -134,14 +189,41 @@ impl Capture {
             error,
             stop,
             monitor: Some(monitor),
+            spawn_owner: None,
         })
     }
-    pub fn finish(mut self) -> Result<(NamedTempFile, Option<String>)> {
-        let interruption = if self.child.try_wait()?.is_some() {
+    /// Finalization always returns ownership of the retained audio, including
+    /// when the recorder or WAV validation fails. Failure is a warning, not a
+    /// reason to drop the only recovery path.
+    pub fn finish(mut self) -> (NamedTempFile, Option<String>) {
+        let warning = match self.finalize() {
+            Ok(warning) => warning,
+            Err(error) => {
+                self.stop.store(true, Ordering::Relaxed);
+                let _ = self.child.kill();
+                let _ = self.child.wait();
+                if let Some(thread) = self.monitor.take() {
+                    let _ = thread.join();
+                }
+                let path = self.file.as_ref().unwrap().path();
+                let _ = repair_wav(path);
+                log::error!(
+                    "Capture finalization failed; recovery audio: {}: {error:#}",
+                    path.display()
+                );
+                Some(format!(
+                    "Capture finalization failed: {error:#}. Audio was retained."
+                ))
+            }
+        };
+        (self.file.take().unwrap(), warning)
+    }
+    fn finalize(&mut self) -> Result<Option<String>> {
+        let mut forced = false;
+        let mut interruption = if self.child.try_wait()?.is_some() {
             self.error.rewind()?;
             let mut message = String::new();
-            self.error
-                .by_ref()
+            std::io::Read::by_ref(&mut self.error)
                 .take(4096)
                 .read_to_string(&mut message)?;
             Some(if message.trim().is_empty() {
@@ -157,12 +239,19 @@ impl Capture {
             let deadline = Instant::now() + Duration::from_secs(2);
             while self.child.try_wait()?.is_none() {
                 if Instant::now() > deadline {
-                    bail!("Audio capture did not stop cleanly")
+                    forced = true;
+                    self.child.kill()?;
+                    self.child.wait()?;
+                    break;
                 }
                 thread::sleep(Duration::from_millis(10));
             }
             None
         };
+        if forced {
+            interruption =
+                Some("Recorder did not stop cleanly; captured audio was retained.".into());
+        }
         // Let the monitor consume the recorder's final buffered samples before
         // closing the live stream. Its current iteration reads once after this
         // flag changes, so the finalized WAV tail is forwarded exactly once.
@@ -170,17 +259,30 @@ impl Capture {
         if let Some(thread) = self.monitor.take() {
             let _ = thread.join();
         }
-        let file = self.file.take().unwrap();
+        let file = self.file.as_ref().unwrap();
+        repair_wav(file.path())?;
+        file.as_file().sync_all()?;
         let mut wav = hound::WavReader::open(file.path())?;
         if wav.duration() < wav.spec().sample_rate / 10 {
-            bail!("Recording was too short")
+            interruption.get_or_insert_with(|| {
+                "Recording was too short; captured audio was retained.".into()
+            });
         }
-        if wav.spec().bits_per_sample == 16
-            && !wav.samples::<i16>().any(|s| s.is_ok_and(|v| v != 0))
-        {
-            bail!("Microphone returned silence. Check the microphone and mute setting.")
+        if wav.spec().bits_per_sample == 16 {
+            let mut voiced = false;
+            for sample in wav.samples::<i16>() {
+                if sample? != 0 {
+                    voiced = true;
+                    break;
+                }
+            }
+            if !voiced {
+                interruption.get_or_insert_with(|| {
+                    "Microphone returned silence. Check the microphone and mute setting.".into()
+                });
+            }
         }
-        Ok((file, interruption))
+        Ok(interruption)
     }
 }
 impl Drop for Capture {
@@ -283,14 +385,14 @@ mod tests {
         )
         .is_err());
         assert_eq!(
-            std::fs::read_dir(root.path().join("recordings"))
+            std::fs::read_dir(c.data_dir.join("recordings"))
                 .unwrap()
                 .count(),
             0
         );
     }
     #[test]
-    fn concurrent_recordings_have_private_distinct_files() {
+    fn concurrent_recordings_have_private_distinct_retained_files() {
         use std::os::unix::fs::PermissionsExt;
         let root = tempfile::tempdir().unwrap();
         let c = config(root.path());
@@ -313,33 +415,27 @@ mod tests {
                 & 0o777,
             0o600
         );
-        let (file, interruption) = first.finish().unwrap();
+        let (file, interruption) = first.finish();
         assert!(interruption.is_none());
         assert!(file.path().exists());
         drop(file);
         drop(second);
         assert_eq!(
-            std::fs::read_dir(root.path().join("recordings"))
+            std::fs::read_dir(c.data_dir.join("recordings"))
                 .unwrap()
                 .count(),
-            0
+            2
         );
     }
     #[test]
-    fn silent_capture_is_rejected_before_transcription() {
+    fn silent_capture_is_retained_with_warning() {
         let root = tempfile::tempdir().unwrap();
         let c = config(root.path());
-        assert!(synthetic(&c, 0)
-            .finish()
-            .unwrap_err()
-            .to_string()
-            .contains("silence"));
-        assert_eq!(
-            std::fs::read_dir(root.path().join("recordings"))
-                .unwrap()
-                .count(),
-            0
-        );
+        let (file, warning) = synthetic(&c, 0).finish();
+        assert!(warning.unwrap().contains("silence"));
+        let path = file.path().to_owned();
+        drop(file);
+        assert!(path.exists());
     }
     #[test]
     fn unexpected_recorder_exit_preserves_valid_audio() {
@@ -376,7 +472,7 @@ mod tests {
             thread::sleep(Duration::from_millis(10));
         }
         assert!(capture.exited());
-        let (file, interruption) = capture.finish().unwrap();
+        let (file, interruption) = capture.finish();
         assert!(file.path().exists());
         assert!(interruption.unwrap().contains("device disconnected"));
     }

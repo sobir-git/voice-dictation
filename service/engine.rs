@@ -461,6 +461,13 @@ impl Engine {
     pub fn stream(
         &mut self,
         receive: &mpsc::Receiver<StreamInput>,
+        preview: impl FnMut(String, String),
+    ) -> Result<Option<String>> {
+        self.stream_inputs(|| Ok(receive.recv().ok()), preview)
+    }
+    pub fn stream_inputs(
+        &mut self,
+        mut next: impl FnMut() -> Result<Option<StreamInput>>,
         mut preview: impl FnMut(String, String),
     ) -> Result<Option<String>> {
         let Self::Parakeet { session, .. } = self else {
@@ -472,7 +479,7 @@ impl Engine {
         };
         let options = parakeet_stream_options();
         let mut stream = session.stream(&run, &options)?;
-        while let Ok(input) = receive.recv() {
+        while let Some(input) = next()? {
             match input {
                 StreamInput::Audio(samples) => {
                     let update = stream.feed(&samples)?;

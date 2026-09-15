@@ -44,6 +44,17 @@ feature set, build flags and target-specific provenance still match. Use
 `--no-reuse` to force a fresh artifact or `--dry-run` to inspect the selected
 commands. Unknown or cross-cutting changes require `full`.
 
+Builds are expensive, especially native inference dependencies. Do not run them
+carelessly or after every incremental edit. Finish related implementation changes
+and review the diff before starting the required verification tier. Use focused
+checks while iterating, then run the smallest required gate once the changes are
+ready. Never start duplicate builds or overlapping verification runners for the
+same target. Reuse verified artifacts for probes and installation when their
+provenance matches; do not rebuild merely to repeat a check or hand off the work.
+Repeat compilation only when a source change, failed check, or changed build
+inputs justify it. Documentation-only edits do not require a build. These rules
+reduce redundant work without skipping the required release gate.
+
 For terminal-only optimization discovery, benchmark/apply commands, JSON contracts,
 and host-specific build composition, see [docs/agent-performance.md](docs/agent-performance.md).
 Do not add a benchmark or installer UI; keep optional acceleration dependencies out

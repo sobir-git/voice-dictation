@@ -7,7 +7,12 @@ use voice_dictation::{
 };
 fn main() -> Result<()> {
     let args: Vec<_> = std::env::args().collect();
+    if args.iter().any(|a| a == "--inference-worker") {
+        return voice_dictation::inference::child();
+    }
     if args.iter().any(|a| a == "--adapter") {
+        let config = Config::load()?;
+        let _logging = logging::init_role(&config, "adapter")?;
         return voice_dictation::adapter::run();
     }
     if let Some(index) = args.iter().position(|s| s == "--benchmark-case") {
@@ -17,7 +22,15 @@ fn main() -> Result<()> {
         );
     }
     let config = Config::load()?;
-    logging::init(&config)?;
+    let daemon_mode = args
+        .iter()
+        .skip(1)
+        .all(|a| matches!(a.as_str(), "--probe" | "--probe-tray"));
+    let _logging = if daemon_mode {
+        logging::init(&config)?
+    } else {
+        logging::init_role(&config, "cli")?
+    };
     if voice_dictation::optimization::cli(&args, &config)? {
         return Ok(());
     }

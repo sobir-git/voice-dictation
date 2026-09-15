@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Config {
     pub data: Value,
     pub path: PathBuf,
@@ -30,6 +30,7 @@ pub fn defaults() -> Value {
         "input":{"trigger_key":"KEY_F16"},"output":{"method":"auto","add_space":true,"type_interval":0.0},
         "notifications":{"enabled":true,"audio_feedback":true},
         "logging":{"level":"INFO","file":"~/.local/share/speech-to-text/app.log","max_size_mb":10},
+        "recordings":{"max_age_days":0,"max_mb":0},
         "ui":{"cursor_indicator":false}
     })
 }
@@ -109,6 +110,7 @@ impl Config {
             "output",
             "logging",
             "notifications",
+            "recordings",
             "ui",
         ] {
             if !d[section].is_object() {
@@ -120,6 +122,8 @@ impl Config {
             ("audio", "channels", 1, 8),
             ("transcription", "beam_size", 1, 10),
             ("logging", "max_size_mb", 1, 1000),
+            ("recordings", "max_age_days", 0, 36500),
+            ("recordings", "max_mb", 0, 1048576),
         ] {
             if !d[s][k].as_u64().is_some_and(|n| (lo..=hi).contains(&n)) {
                 bail!("{s}.{k} must be an integer between {lo} and {hi}")

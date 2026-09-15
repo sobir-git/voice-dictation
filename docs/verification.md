@@ -49,8 +49,11 @@ a UI task. By default, each backend builds in its own directory under
 `artifacts/verification/target/`, so verification cannot replace the locally
 installed binaries in `target/release`. Set `CARGO_TARGET_DIR` explicitly when a
 different isolated build directory is required.
-The runner does not call `update_local.sh`, start a daemon, run benchmarks, or
-send notifications.
+The runner does not call `update_local.sh`, install the application, run benchmarks,
+or send notifications. Service integration tests start isolated fixture daemons.
+Before Python tests, the runner builds `speech-service` in the selected target
+directory and passes its path through `STT_TEST_BINARY`, so they exercise the
+selected backend instead of an older local development binary.
 
 Each run records selected checks, skips, command durations, exit status, logs,
 and artifact provenance under the ignored `artifacts/verification/` directory.

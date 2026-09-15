@@ -52,6 +52,15 @@ impl Drop for ChildGuard {
     }
 }
 pub fn run(command: &mut Command, input: Option<Vec<u8>>, timeout: Duration) -> Result<Vec<u8>> {
+    run_cancellable(command, input, timeout, || false)
+}
+pub fn run_cancellable(
+    command: &mut Command,
+    input: Option<Vec<u8>>,
+    timeout: Duration,
+    cancelled: impl Fn() -> bool,
+) -> Result<Vec<u8>> {
+    anyhow::ensure!(!cancelled(), "Command cancelled");
     kill_with_parent(command);
     let mut child = ChildGuard(
         command
@@ -76,6 +85,7 @@ pub fn run(command: &mut Command, input: Option<Vec<u8>>, timeout: Duration) -> 
     let mut block = [0; 8192];
     let deadline = Instant::now() + timeout;
     loop {
+        anyhow::ensure!(!cancelled(), "Command cancelled");
         if let Some(pipe) = &mut stdin {
             if written < input.len() {
                 match pipe.write(&input[written..]) {
@@ -154,5 +164,18 @@ mod tests {
             .unwrap(),
             text
         );
+    }
+    #[test]
+    fn cancellation_reaps_running_command() {
+        let started = Instant::now();
+        let error = run_cancellable(
+            Command::new("sleep").arg("10"),
+            None,
+            Duration::from_secs(20),
+            || started.elapsed() > Duration::from_millis(100),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("cancelled"));
+        assert!(started.elapsed() < Duration::from_secs(2));
     }
 }
