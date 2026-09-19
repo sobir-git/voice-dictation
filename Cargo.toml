@@ -68,5 +68,19 @@ debug = 0
 opt-level = 3
 debug = 0
 
+# Tests build the same native speech stack in the isolated verification target.
+# Keep those archives lean too, or one verification run can consume many GiB.
+[profile.test.package.onednn-src]
+opt-level = 3
+debug = 0
+
+[profile.test.package.ct2rs]
+opt-level = 3
+debug = 0
+
+[profile.test.package.ort-sys]
+opt-level = 3
+debug = 0
+
 [patch.crates-io]
 transcribe-cpp-sys = { git = "https://github.com/sobir-git/transcribe.cpp", rev = "740a9775cf178f412807d5b7bc2de3e714bb9423" }
