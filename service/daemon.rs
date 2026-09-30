@@ -66,6 +66,7 @@ enum Work {
         path: std::path::PathBuf,
         config: Config,
         requested: Instant,
+        queued: Instant,
     },
     Stream {
         id: JobId,
@@ -73,6 +74,7 @@ enum Work {
         cancelled: Arc<AtomicBool>,
         config: Config,
         receive: mpsc::Receiver<StreamInput>,
+        queued: Instant,
         finished: Arc<OnceLock<Instant>>,
     },
 }
@@ -519,6 +521,7 @@ impl Daemon {
                     cancelled: job.cancelled.clone(),
                     config: config.clone(),
                     receive,
+                    queued: Instant::now(),
                     finished: job.finished.clone(),
                 })
                 .is_err()
@@ -538,7 +541,7 @@ impl Daemon {
             let result = Capture::start(&config, move |samples, level, db| {
                 if streaming && !overrun.load(Ordering::Relaxed) {
                     for chunk in samples.chunks(1600) {
-                        match audio.try_send(StreamInput::Audio(chunk.to_vec())) {
+                        match audio.try_send(StreamInput::audio(chunk.to_vec())) {
                             Ok(()) => {
                                 accepted_samples.fetch_add(chunk.len() as u64, Ordering::Relaxed);
                                 accepted_chunks.fetch_add(1, Ordering::Relaxed);
@@ -584,8 +587,8 @@ impl Daemon {
             return;
         };
         let job = self.jobs.active.get_mut(&id).unwrap();
-        job.transition(Stage::Finalizing);
         let _ = job.finished.set(Instant::now());
+        job.transition(Stage::Finalizing);
         self.finalize_capture(id);
         self.broadcast_state();
     }

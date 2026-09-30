@@ -12,7 +12,7 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
     sync::mpsc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 pub const PARAKEET_MODEL: &str = "parakeet-unified-en-0.6b";
@@ -148,9 +148,33 @@ fn load_transcribe_model(path: PathBuf, config: &Config) -> Result<transcribe_cp
 }
 
 pub enum StreamInput {
-    Audio(Vec<f32>),
+    Audio { samples: Vec<f32>, queued: Instant },
     Finish,
     Cancel,
+}
+
+impl StreamInput {
+    pub fn audio(samples: Vec<f32>) -> Self {
+        Self::Audio {
+            samples,
+            queued: Instant::now(),
+        }
+    }
+}
+
+fn native_timing_record(
+    stage: &str,
+    wall_ms: f64,
+    previous: transcribe_cpp::Timings,
+    current: transcribe_cpp::Timings,
+) -> serde_json::Value {
+    let mel = (current.mel_ms - previous.mel_ms).max(0.) as f64;
+    let encode = (current.encode_ms - previous.encode_ms).max(0.) as f64;
+    let decode = (current.decode_ms - previous.decode_ms).max(0.) as f64;
+    serde_json::json!({"event":"native_timing", "stage":stage, "wall_ms":wall_ms,
+        "mel_ms":mel, "encode_ms":encode, "decode_ms":decode,
+        "unaccounted_ms":(wall_ms-mel-encode-decode).max(0.),
+        "native_load_ms":current.load_ms})
 }
 
 pub fn model_path(name: &str) -> Result<PathBuf> {
@@ -226,6 +250,12 @@ pub enum Engine {
 }
 impl Engine {
     pub fn load(config: &Config) -> Result<Self> {
+        Self::load_with_diagnostics(config, &mut |_| Ok(()))
+    }
+    pub fn load_with_diagnostics(
+        config: &Config,
+        emit: &mut impl FnMut(serde_json::Value) -> Result<()>,
+    ) -> Result<Self> {
         GPU_ATTEMPTED.with(|v| v.set(false));
         let _pause_openmp_workers = OpenMpPause;
         optimization::check_profile(config)?;
@@ -246,29 +276,56 @@ impl Engine {
                 }
                 path
             };
+            let load_started = Instant::now();
+            emit(serde_json::json!({"event":"native_timing", "stage":"backend_model_load_start"}))?;
             let model = load_transcribe_model(path, config)?;
+            emit(
+                serde_json::json!({"event":"native_timing", "stage":"backend_model_load", "wall_ms":load_started.elapsed().as_secs_f64()*1000.}),
+            )?;
             if !model.capabilities().supports_streaming {
                 bail!("The selected Parakeet model does not support streaming")
             }
+            let session_started = Instant::now();
             let mut session = model.session_with(&transcribe_cpp::SessionOptions {
                 n_threads: optimization::threads(config, 0) as i32,
                 ..Default::default()
             })?;
+            emit(
+                serde_json::json!({"event":"native_timing", "stage":"session_create", "wall_ms":session_started.elapsed().as_secs_f64()*1000.}),
+            )?;
             // transcribe.cpp prepares some kernels lazily. Exercise the actual
             // stream path while the daemon is loading in the background so the
             // user's first dictation does not pay that one-time cost.
             {
+                emit(
+                    serde_json::json!({"event":"native_timing", "stage":"warmup_start", "audio_samples":33280, "fixture":"silence"}),
+                )?;
+                let warmup_started = Instant::now();
                 let run = transcribe_cpp::RunOptions {
                     language: Some("en".into()),
                     ..Default::default()
                 };
-                if optimization::profile(config) == "vulkan-full" {
-                    let _ = session.run(&vec![0.; 33_280], &run)?;
+                let timings = if optimization::profile(config) == "vulkan-full" {
+                    session.run(&vec![0.; 33_280], &run)?.timings
                 } else {
                     let mut stream = session.stream(&run, &parakeet_stream_options())?;
+                    let baseline = stream.snapshot().timings;
                     stream.feed(&vec![0.; 33_280])?;
                     stream.finalize()?;
-                }
+                    let current = stream.snapshot().timings;
+                    transcribe_cpp::Timings {
+                        load_ms: current.load_ms,
+                        mel_ms: (current.mel_ms - baseline.mel_ms).max(0.),
+                        encode_ms: (current.encode_ms - baseline.encode_ms).max(0.),
+                        decode_ms: (current.decode_ms - baseline.decode_ms).max(0.),
+                    }
+                };
+                emit(native_timing_record(
+                    "warmup",
+                    warmup_started.elapsed().as_secs_f64() * 1000.,
+                    transcribe_cpp::Timings::default(),
+                    timings,
+                ))?;
             }
             return Ok(Self::Parakeet {
                 session,
@@ -337,6 +394,14 @@ impl Engine {
         matches!(self, Self::Parakeet { .. })
     }
     pub fn transcribe(&mut self, samples: &[f32], config: &Config) -> Result<String> {
+        self.transcribe_with_diagnostics(samples, config, &mut |_| Ok(()))
+    }
+    pub fn transcribe_with_diagnostics(
+        &mut self,
+        samples: &[f32],
+        config: &Config,
+        emit: &mut impl FnMut(serde_json::Value) -> Result<()>,
+    ) -> Result<String> {
         let _pause_openmp_workers = OpenMpPause;
         #[cfg(target_os = "linux")]
         let _performance_cores =
@@ -348,14 +413,30 @@ impl Engine {
                 ..Default::default()
             };
             if optimization::profile(config) == "vulkan-full" {
-                return Ok(session.run(samples, &run)?.text);
+                let started = Instant::now();
+                let transcript = session.run(samples, &run)?;
+                emit(native_timing_record(
+                    "batch_inference",
+                    started.elapsed().as_secs_f64() * 1000.,
+                    transcribe_cpp::Timings::default(),
+                    transcript.timings,
+                ))?;
+                return Ok(transcript.text);
             }
             // Use the same buffered stream for history retries and benchmarks as live dictation.
+            let started = Instant::now();
             let mut stream = session.stream(&run, &parakeet_stream_options())?;
+            let baseline = stream.snapshot().timings;
             for chunk in samples.chunks(1600) {
                 stream.feed(chunk)?;
             }
             stream.finalize()?;
+            emit(native_timing_record(
+                "batch_stream_inference",
+                started.elapsed().as_secs_f64() * 1000.,
+                baseline,
+                stream.snapshot().timings,
+            ))?;
             return Ok(stream.text().full);
         }
         if let Self::Canary { session, .. } = self {
@@ -372,7 +453,15 @@ impl Engine {
                     canary_full_input_allowed(samples.len()),
                     "Experimental Canary vulkan-full requires audio shorter than 40 seconds"
                 );
-                return Ok(session.run(samples, &options)?.text.trim().to_owned());
+                let started = Instant::now();
+                let transcript = session.run(samples, &options)?;
+                emit(native_timing_record(
+                    "batch_inference",
+                    started.elapsed().as_secs_f64() * 1000.,
+                    transcribe_cpp::Timings::default(),
+                    transcript.timings,
+                ))?;
+                return Ok(transcript.text.trim().to_owned());
             }
             let mut text = Vec::new();
             // Ordinary Canary profiles retain <=30 s chunks with quiet boundaries.
@@ -380,7 +469,15 @@ impl Engine {
             let mut remaining = samples;
             while !remaining.is_empty() {
                 let end = canary_chunk_end(remaining);
-                let part = session.run(&remaining[..end], &options)?.text;
+                let started = Instant::now();
+                let transcript = session.run(&remaining[..end], &options)?;
+                emit(native_timing_record(
+                    "batch_chunk_inference",
+                    started.elapsed().as_secs_f64() * 1000.,
+                    transcribe_cpp::Timings::default(),
+                    transcript.timings,
+                ))?;
+                let part = transcript.text;
                 if !part.trim().is_empty() {
                     text.push(part.trim().to_owned());
                 }
@@ -394,16 +491,21 @@ impl Engine {
         else {
             unreachable!()
         };
+        let vad_started = Instant::now();
         let samples = if config.flag("transcription", "vad_filter") {
             speech_samples(samples)?
         } else {
             samples.to_vec()
         };
+        emit(
+            serde_json::json!({"event":"native_timing", "stage":"vad", "wall_ms":vad_started.elapsed().as_secs_f64()*1000., "audio_samples":samples.len()}),
+        )?;
         let mut text = Vec::new();
         for chunk in samples.chunks(480000) {
             if chunk.len() < 1600 {
                 continue;
             }
+            let feature_started = Instant::now();
             let mut features = if matches!(optimization::profile(config), "fast" | "adaptive") {
                 fast_log_mel(chunk, model.n_mels())
             } else {
@@ -416,6 +518,10 @@ impl Engine {
                     .flat_map(|bin| bin[..frames].iter().copied())
                     .collect();
             }
+            emit(
+                serde_json::json!({"event":"native_timing", "stage":"whisper_features", "wall_ms":feature_started.elapsed().as_secs_f64()*1000., "audio_samples":chunk.len(), "context_frames":frames}),
+            )?;
+            let generation_started = Instant::now();
             let view = StorageView::new(
                 &[1, model.n_mels(), frames],
                 &mut features,
@@ -451,6 +557,9 @@ impl Engine {
                     ..Default::default()
                 },
             )?;
+            emit(
+                serde_json::json!({"event":"native_timing", "stage":"whisper_generate", "wall_ms":generation_started.elapsed().as_secs_f64()*1000.}),
+            )?;
             for result in results {
                 if result.no_speech_prob > 0.6
                     && result.scores.first().copied().unwrap_or(-2.) < -1.
@@ -482,6 +591,14 @@ impl Engine {
         mut next: impl FnMut() -> Result<Option<StreamInput>>,
         mut preview: impl FnMut(String, String),
     ) -> Result<Option<String>> {
+        self.stream_inputs_with_diagnostics(&mut next, &mut preview, &mut |_| Ok(()))
+    }
+    pub fn stream_inputs_with_diagnostics(
+        &mut self,
+        mut next: impl FnMut() -> Result<Option<StreamInput>>,
+        mut preview: impl FnMut(String, String),
+        emit: &mut impl FnMut(serde_json::Value) -> Result<()>,
+    ) -> Result<Option<String>> {
         let Self::Parakeet { session, .. } = self else {
             bail!("The selected model does not support streaming")
         };
@@ -490,18 +607,91 @@ impl Engine {
             ..Default::default()
         };
         let options = parakeet_stream_options();
+        let started = Instant::now();
         let mut stream = session.stream(&run, &options)?;
+        let mut previous = stream.snapshot().timings;
+        let mut committed_ms = 0;
+        let mut calls = 0_u64;
+        let mut chunks = 0_u64;
+        let mut samples_received = 0_u64;
+        let mut first_audio = None;
+        emit(
+            serde_json::json!({"event":"native_timing", "stage":"stream_begin", "wall_ms":started.elapsed().as_secs_f64()*1000., "chunk_ms":1040, "right_ms":1040, "left_ms":5600,
+                "baseline_mel_ms":previous.mel_ms, "baseline_encode_ms":previous.encode_ms,
+                "baseline_decode_ms":previous.decode_ms}),
+        )?;
         while let Some(input) = next()? {
             match input {
-                StreamInput::Audio(samples) => {
-                    let update = stream.feed(&samples)?;
+                StreamInput::Audio { samples, .. } => {
+                    first_audio.get_or_insert_with(Instant::now);
+                    calls += 1;
+                    samples_received += samples.len() as u64;
+                    let target = if chunks == 0 {
+                        33_280
+                    } else {
+                        33_280 + chunks * 16_640
+                    };
+                    if samples_received >= target {
+                        emit(
+                            serde_json::json!({"event":"native_timing", "stage":"stream_feed_start", "feed_call":calls, "audio_samples":samples_received, "next_processed_chunk":chunks+1}),
+                        )?;
+                    }
+                    let call_started = Instant::now();
+                    let result = stream.feed(&samples);
+                    let wall_ms = call_started.elapsed().as_secs_f64() * 1000.;
+                    let processed = result
+                        .as_ref()
+                        .is_ok_and(|u| u.audio_committed_ms != committed_ms);
+                    if processed || wall_ms >= 10. || result.is_err() {
+                        if let Ok(update) = &result {
+                            // One feed can process multiple fixed 1040 ms chunks.
+                            chunks = update.audio_committed_ms as u64 / 1040;
+                        }
+                        let snapshot_started = Instant::now();
+                        let current = stream.snapshot().timings;
+                        let snapshot_ms = snapshot_started.elapsed().as_secs_f64() * 1000.;
+                        let mut timing =
+                            native_timing_record("stream_feed", wall_ms, previous, current);
+                        timing["snapshot_ms"] = snapshot_ms.into();
+                        timing["feed_call"] = calls.into();
+                        timing["processed_chunk"] = chunks.into();
+                        timing["audio_samples"] = samples_received.into();
+                        timing["since_first_audio_ms"] =
+                            (first_audio.unwrap().elapsed().as_secs_f64() * 1000.).into();
+                        timing["success"] = result.is_ok().into();
+                        if let Ok(update) = &result {
+                            timing["audio_committed_ms"] = update.audio_committed_ms.into();
+                            timing["buffered_audio_ms"] = update.buffered_ms.into();
+                        }
+                        emit(timing)?;
+                        previous = current;
+                    }
+                    let update = result?;
+                    committed_ms = update.audio_committed_ms;
                     if update.committed_changed || update.tentative_changed {
                         let text = stream.text();
                         preview(text.committed, text.tentative);
                     }
                 }
                 StreamInput::Finish => {
-                    stream.finalize()?;
+                    emit(
+                        serde_json::json!({"event":"native_timing", "stage":"stream_finalize_start", "audio_samples":samples_received}),
+                    )?;
+                    let call_started = Instant::now();
+                    let result = stream.finalize();
+                    let wall_ms = call_started.elapsed().as_secs_f64() * 1000.;
+                    let snapshot_started = Instant::now();
+                    let current = stream.snapshot().timings;
+                    let mut timing =
+                        native_timing_record("stream_finalize", wall_ms, previous, current);
+                    timing["snapshot_ms"] =
+                        (snapshot_started.elapsed().as_secs_f64() * 1000.).into();
+                    timing["success"] = result.is_ok().into();
+                    timing["audio_samples"] = samples_received.into();
+                    timing["feed_calls"] = calls.into();
+                    timing["processed_chunks"] = chunks.into();
+                    emit(timing)?;
+                    result?;
                     return Ok(Some(stream.text().full));
                 }
                 StreamInput::Cancel => {
@@ -779,6 +969,36 @@ pub fn fast_log_mel(samples: &[f32], bins: usize) -> Vec<f32> {
 #[cfg(test)]
 mod optimization_tests {
     use super::*;
+    #[test]
+    fn timing_delta_excludes_previous_stream_and_separates_unaccounted_work() {
+        let prior = transcribe_cpp::Timings {
+            load_ms: 50.,
+            mel_ms: 3.,
+            encode_ms: 20.,
+            decode_ms: 10.,
+        };
+        let current = transcribe_cpp::Timings {
+            load_ms: 50.,
+            mel_ms: 5.,
+            encode_ms: 27.,
+            decode_ms: 13.,
+        };
+        let record = native_timing_record("stream_feed", 15., prior, current);
+        assert_eq!(record["mel_ms"], 2.);
+        assert_eq!(record["encode_ms"], 7.);
+        assert_eq!(record["decode_ms"], 3.);
+        assert_eq!(record["unaccounted_ms"], 3.);
+        assert_eq!(record["native_load_ms"], 50.);
+        let reset = native_timing_record(
+            "stream_feed",
+            0.,
+            current,
+            transcribe_cpp::Timings::default(),
+        );
+        assert_eq!(reset["encode_ms"], 0.);
+        assert_eq!(reset["unaccounted_ms"], 0.);
+    }
+
     #[test]
     fn fast_features_match_reference_at_padding_boundaries() {
         for n in [0, 1, 159, 160, 199, 200, 319, 80_000, 479_999, 480_000] {

@@ -54,7 +54,29 @@ pub(super) fn start_worker(
             }
             let identity = optimization::identity(config);
             let model = identity.0.clone();
-            let loaded = if engine.as_ref().is_some_and(|e| e.matches(config)) {
+            let reused = engine.as_ref().is_some_and(|e| e.matches(config));
+            let queue_ms = match &work {
+                Work::Transcribe { queued, .. } | Work::Stream { queued, .. } => {
+                    Some(queued.elapsed().as_secs_f64() * 1000.)
+                }
+                _ => None,
+            };
+            let mut details = crate::logging::current_context();
+            details["event"] = "worker_dispatch".into();
+            details["model_reused"] = reused.into();
+            details["queue_ms"] = json!(queue_ms);
+            details["since_request_ms"] = json!(match &work {
+                Work::Transcribe { requested, .. } =>
+                    Some(requested.elapsed().as_secs_f64() * 1000.),
+                _ => None,
+            });
+            details["model"] = model.clone().into();
+            {
+                let _context = crate::logging::context(details);
+                log::info!("Speech worker dispatched");
+            }
+            let load_started = std::time::Instant::now();
+            let loaded = if reused {
                 Ok(())
             } else {
                 engine = None;
@@ -99,6 +121,15 @@ pub(super) fn start_worker(
                     Work::Benchmark(..) => unreachable!(),
                 }
                 continue;
+            }
+            {
+                let mut details = crate::logging::current_context();
+                details["event"] = "model_available".into();
+                details["model_reused"] = reused.into();
+                details["load_wait_ms"] = (load_started.elapsed().as_secs_f64() * 1000.).into();
+                details["runtime_profile"] = engine.as_ref().unwrap().profile.clone().into();
+                let _context = crate::logging::context(details);
+                log::info!("Speech model available");
             }
             let _ = events.send(Event::Model(
                 identity.clone(),

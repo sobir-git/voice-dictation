@@ -126,3 +126,58 @@ long recordings from exhausting the control socket buffers.
 Power loss can lose writes not yet synchronized, and a full or failed disk can
 prevent new audio from being written. Audio that never arrives from the microphone
 cannot be recovered. These limits do not permit deleting audio already captured.
+
+## Dictation latency
+
+At INFO, `worker_dispatch` records worker queue time and model reuse;
+`since_request_ms` separately measures elapsed time since stop/retry, including
+saving and preparation before worker admission. `model_available` records loading
+wait and the actual runtime profile.
+`inference_attempt` identifies the first user attempt after load, model readiness
+age, and time since the previous attempt. The silent load warmup is logged
+separately and does not count as a user inference attempt.
+
+`native_timing` records backend/model loading, session creation, warmup,
+stream start, each processed audio chunk, and finalization. Chunk records include
+feature extraction (`mel_ms`), encoder (`encode_ms`), decoder (`decode_ms`),
+wall time, received samples, committed audio and buffered audio. Counters are
+reported as deltas, excluding warmup and previous streams. Before-call markers
+and supervisor wait warnings retain evidence when a call does not return.
+`receiving_operation` and `receiving_sequence` identify the supervisor IPC request
+that received a diagnostic; `stage` identifies the measured native work. Stream
+initialization telemetry precedes its acknowledgment. `snapshot_ms` measures the
+public timing accessor's transcript materialization, outside native call wall time.
+Cheap feeds skip that accessor and skip DEBUG context construction at INFO.
+Retries include audio preparation and native batch timings; Whisper reports VAD,
+feature extraction and generation separately.
+
+The native encoder counter measures the forward compute call, including work
+performed by the Vulkan backend there. It is not a GPU hardware timestamp.
+`unaccounted_ms` is call wall time minus the measured native stages, clamped at
+zero for timer rounding. It includes graph preparation, buffer allocation,
+transfers outside compute, result handling and other uninstrumented work. It must
+not be described as shader compilation or GPU preparation without further
+native/driver evidence. Native zero values can mean unmeasured work.
+
+`audio_queue_timing` separates microphone-to-worker queue age from IPC/inference
+call time. INFO retains calls of at least 10 ms and queue ages of at least 100 ms;
+DEBUG retains every audio request and completion. `first_preview` records the
+first nonempty result without logging its text. `stream_timing_summary` retains
+maximum queue/call times, feed/sample counts and outcome, including cancellation
+and failure. `dictation_stage` records each coordinator stage duration and elapsed
+time since recording stop; `dictation_terminal` includes the last delivery stage.
+These records share daemon session, job ID and native worker PID. Logging stays
+asynchronous and produces no periodic inference telemetry while idle.
+
+The explicit native timing probe uses temporary configuration, a supplied cached
+Parakeet GGUF, and the bundled synthetic speech fixture. It runs two paced short
+streams against one resident worker; it neither records a microphone nor writes
+history or inserts text:
+
+```sh
+VOICE_LATENCY_MODEL=/path/to/cached/parakeet.gguf cargo test --locked --features vulkan \
+  --lib inference::tests::native_latency_probe -- --ignored --exact --nocapture
+```
+
+Omit `--features vulkan` for the CPU path. The probe prints numeric timing records
+and checks stage counters, warmup separation, job correlation and worker reuse.

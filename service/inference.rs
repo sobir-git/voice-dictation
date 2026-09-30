@@ -44,6 +44,9 @@ enum Response {
     LoadDiagnostic {
         details: serde_json::Value,
     },
+    Timing {
+        details: serde_json::Value,
+    },
     Ready {
         profile: String,
     },
@@ -106,6 +109,11 @@ pub struct Inference {
     operation_started: Instant,
     last_ack_samples: u64,
     max_response_ms: u128,
+    ready_at: Instant,
+    last_attempt: Option<Instant>,
+    inference_attempts: u64,
+    #[cfg(test)]
+    timing_records: Vec<serde_json::Value>,
 }
 impl Inference {
     pub fn load(config: &Config, cancelled: impl Fn() -> bool) -> Result<Self> {
@@ -171,6 +179,11 @@ impl Inference {
             operation_started: Instant::now(),
             last_ack_samples: 0,
             max_response_ms: 0,
+            ready_at: Instant::now(),
+            last_attempt: None,
+            inference_attempts: 0,
+            #[cfg(test)]
+            timing_records: Vec::new(),
         };
         worker.send(&Request::Load {
             config: config.clone(),
@@ -179,12 +192,27 @@ impl Inference {
             Response::Ready { profile } => worker.profile = profile,
             response => bail!("Unexpected inference load response: {response:?}"),
         }
+        worker.ready_at = Instant::now();
         Ok(worker)
     }
     pub fn matches(&self, c: &Config) -> bool {
         self.identity == optimization::identity(c)
     }
     fn send(&mut self, request: &Request) -> Result<()> {
+        if matches!(request, Request::Stream | Request::Transcribe { .. }) {
+            self.inference_attempts += 1;
+            let mut details = crate::logging::current_context();
+            details["event"] = "inference_attempt".into();
+            details["worker_pid"] = self.child.id().into();
+            details["attempt"] = self.inference_attempts.into();
+            details["first_after_load"] = (self.inference_attempts == 1).into();
+            details["model_ready_age_ms"] = (self.ready_at.elapsed().as_secs_f64() * 1000.).into();
+            details["since_previous_attempt_ms"] =
+                serde_json::json!(self.last_attempt.map(|t| t.elapsed().as_secs_f64() * 1000.));
+            let _context = crate::logging::context(details);
+            log::info!("Inference attempt started");
+            self.last_attempt = Some(Instant::now());
+        }
         self.operation = match request {
             Request::Load { .. } => "load",
             Request::Transcribe { .. } => "transcribe",
@@ -210,6 +238,13 @@ impl Inference {
         }
         self.sequence += 1;
         self.operation_started = Instant::now();
+        log::debug!(
+            "Inference operation started: worker_pid={} operation={} sequence={} audio_samples={}",
+            self.child.id(),
+            self.operation,
+            self.sequence,
+            self.audio_samples
+        );
         write_frame(&mut self.socket, request).with_context(|| {
             format!(
             "Sending inference request: worker_pid={} operation={} sequence={} audio_samples={}",
@@ -268,9 +303,19 @@ impl Inference {
                     let response: Response = serde_json::from_slice(&self.pending[4..size + 4])?;
                     self.pending.drain(..size + 4);
                     match response {
-                        Response::LoadDiagnostic { details } => {
-                            let _context = crate::logging::context(details);
-                            log::info!("Model load stage");
+                        Response::LoadDiagnostic { details } | Response::Timing { details } => {
+                            let mut context = crate::logging::current_context();
+                            if !context.is_object() { context = serde_json::json!({}); }
+                            context.as_object_mut().unwrap().extend(details.as_object().context("Invalid timing diagnostic")?.clone());
+                            context["worker_pid"] = self.child.id().into();
+                            // This is the receiving IPC operation, not a native call identifier.
+                            context["receiving_operation"] = self.operation.into();
+                            context["receiving_sequence"] = self.sequence.into();
+                            context["supervisor_elapsed_ms"] = (self.operation_started.elapsed().as_secs_f64()*1000.).into();
+                            #[cfg(test)]
+                            self.timing_records.push(context.clone());
+                            let _context = crate::logging::context(context);
+                            log::info!("Inference timing diagnostic");
                             continue;
                         }
                         Response::Preview {
@@ -287,9 +332,11 @@ impl Inference {
                                 self.last_ack_samples = self.audio_samples;
                             }
                             if self.operation != "stream_feed"
-                                || self.operation_started.elapsed() >= Duration::from_millis(500)
+                                || self.operation_started.elapsed() >= Duration::from_millis(10)
                             {
                                 log::info!("Inference operation completed: worker_pid={} operation={} sequence={} audio_samples={} elapsed_ms={}", self.child.id(), self.operation, self.sequence, self.audio_samples, self.operation_started.elapsed().as_millis());
+                            } else {
+                                log::debug!("Inference operation completed: worker_pid={} operation={} sequence={} audio_samples={} elapsed_ms={:.3}", self.child.id(), self.operation, self.sequence, self.audio_samples, self.operation_started.elapsed().as_secs_f64()*1000.);
                             }
                             return Ok(response);
                         }
@@ -333,48 +380,117 @@ impl Inference {
         cancelled: impl Fn() -> bool,
         mut preview: impl FnMut(String, String),
     ) -> Result<Option<String>> {
-        self.send(&Request::Stream)?;
-        anyhow::ensure!(
-            matches!(
-                self.response(CALL_TIMEOUT, &cancelled, &mut preview)?,
-                Response::Ack
-            ),
-            "Expected stream acknowledgement"
-        );
-        loop {
-            anyhow::ensure!(!cancelled(), "Inference cancelled");
-            let input = match receive.recv_timeout(Duration::from_millis(25)) {
-                Ok(input) => input,
-                Err(mpsc::RecvTimeoutError::Timeout) => {
-                    anyhow::ensure!(
-                        self.child.try_wait()?.is_none(),
-                        "Inference worker exited during recording"
-                    );
-                    continue;
-                }
-                Err(_) => return Ok(None),
-            };
-            match input {
-                StreamInput::Audio(samples) => {
-                    self.send(&Request::Audio { samples })?;
-                    anyhow::ensure!(
-                        matches!(
-                            self.response(CALL_TIMEOUT, &cancelled, &mut preview)?,
-                            Response::Ack
-                        ),
-                        "Expected audio acknowledgement"
-                    );
-                }
-                StreamInput::Finish => {
-                    self.send(&Request::Finish)?;
-                    return match self.response(CALL_TIMEOUT, &cancelled, &mut preview)? {
-                        Response::Complete { text } => Ok(text),
-                        response => bail!("Unexpected stream result: {response:?}"),
-                    };
-                }
-                StreamInput::Cancel => return Ok(None),
+        let started = Instant::now();
+        let mut feed_calls = 0_u64;
+        let mut max_queue_ms = 0_f64;
+        let mut max_call_ms = 0_f64;
+        let first_preview_ms = std::cell::Cell::new(None);
+        let worker_pid = self.child.id();
+        let mut preview_timed = |committed: String, tentative: String| {
+            if first_preview_ms.get().is_none() && (!committed.is_empty() || !tentative.is_empty())
+            {
+                let elapsed = started.elapsed().as_secs_f64() * 1000.;
+                first_preview_ms.set(Some(elapsed));
+                let mut details = crate::logging::current_context();
+                details["event"] = "first_preview".into();
+                details["worker_pid"] = worker_pid.into();
+                details["stream_elapsed_ms"] = elapsed.into();
+                let _context = crate::logging::context(details);
+                log::info!("First transcription preview");
             }
+            preview(committed, tentative);
+        };
+        let result = (|| {
+            self.send(&Request::Stream)?;
+            anyhow::ensure!(
+                matches!(
+                    self.response(CALL_TIMEOUT, &cancelled, &mut preview_timed)?,
+                    Response::Ack
+                ),
+                "Expected stream acknowledgement"
+            );
+            loop {
+                anyhow::ensure!(!cancelled(), "Inference cancelled");
+                let input = match receive.recv_timeout(Duration::from_millis(25)) {
+                    Ok(input) => input,
+                    Err(mpsc::RecvTimeoutError::Timeout) => {
+                        anyhow::ensure!(
+                            self.child.try_wait()?.is_none(),
+                            "Inference worker exited during recording"
+                        );
+                        continue;
+                    }
+                    Err(_) => return Ok(None),
+                };
+                match input {
+                    StreamInput::Audio { samples, queued } => {
+                        let queue_ms = queued.elapsed().as_secs_f64() * 1000.;
+                        max_queue_ms = max_queue_ms.max(queue_ms);
+                        feed_calls += 1;
+                        let call_started = Instant::now();
+                        let response = self.send(&Request::Audio { samples }).and_then(|()| {
+                            self.response(CALL_TIMEOUT, &cancelled, &mut preview_timed)
+                        });
+                        let call_ms = call_started.elapsed().as_secs_f64() * 1000.;
+                        max_call_ms = max_call_ms.max(call_ms);
+                        let significant = call_ms >= 10. || queue_ms >= 100. || response.is_err();
+                        if significant || log::log_enabled!(log::Level::Debug) || cfg!(test) {
+                            let mut details = crate::logging::current_context();
+                            details["event"] = "audio_queue_timing".into();
+                            details["worker_pid"] = worker_pid.into();
+                            details["feed_call"] = feed_calls.into();
+                            details["audio_samples"] = self.audio_samples.into();
+                            details["queue_ms"] = queue_ms.into();
+                            details["call_ms"] = call_ms.into();
+                            details["success"] = response.is_ok().into();
+                            {
+                                #[cfg(test)]
+                                self.timing_records.push(details.clone());
+                                let _context = crate::logging::context(details);
+                                if significant {
+                                    log::info!("Audio queue timing");
+                                } else {
+                                    log::debug!("Audio queue timing");
+                                }
+                            }
+                        }
+                        anyhow::ensure!(
+                            matches!(response?, Response::Ack),
+                            "Expected audio acknowledgement"
+                        );
+                    }
+                    StreamInput::Finish => {
+                        self.send(&Request::Finish)?;
+                        return match self.response(CALL_TIMEOUT, &cancelled, &mut preview_timed)? {
+                            Response::Complete { text } => Ok(text),
+                            response => bail!("Unexpected stream result: {response:?}"),
+                        };
+                    }
+                    StreamInput::Cancel => return Ok(None),
+                }
+            }
+        })();
+        let mut details = crate::logging::current_context();
+        details["event"] = "stream_timing_summary".into();
+        details["worker_pid"] = worker_pid.into();
+        details["feed_calls"] = feed_calls.into();
+        details["audio_samples"] = self.audio_samples.into();
+        details["max_queue_ms"] = max_queue_ms.into();
+        details["max_call_ms"] = max_call_ms.into();
+        details["first_preview_ms"] = serde_json::json!(first_preview_ms.get());
+        details["stream_elapsed_ms"] = (started.elapsed().as_secs_f64() * 1000.).into();
+        details["outcome"] = match &result {
+            Ok(Some(_)) => "completed",
+            Ok(None) => "cancelled",
+            Err(_) if cancelled() => "cancelled",
+            Err(_) => "failed",
         }
+        .into();
+        #[cfg(test)]
+        self.timing_records.push(details.clone());
+        let _context = crate::logging::context(details);
+        log::info!("Stream timing summary");
+        result
     }
 }
 impl Drop for Inference {
@@ -503,6 +619,12 @@ pub fn child() -> Result<()> {
                 }
             }
             if synthetic {
+                write_frame(
+                    &mut socket,
+                    &Response::Timing {
+                        details: serde_json::json!({"event":"native_timing", "stage":"synthetic", "wall_ms":0.25}),
+                    },
+                )?;
                 let response = match request {
                     Request::Transcribe { .. } => Response::Complete {
                         text: Some("synthetic transcript".into()),
@@ -520,52 +642,78 @@ pub fn child() -> Result<()> {
             match request {
                 Request::Load { config } => {
                     engine = None;
+                    let writer = std::cell::RefCell::new(socket.try_clone()?);
                     let (loaded, profile) = load_with_fallback(
                         &config,
-                        Engine::load,
+                        |c| {
+                            Engine::load_with_diagnostics(c, &mut |details| {
+                                write_frame(&mut writer.borrow_mut(), &Response::Timing { details })
+                            })
+                        },
                         crate::engine::gpu_attempted,
-                        |details| write_frame(&mut socket, &Response::LoadDiagnostic { details }),
+                        |details| {
+                            write_frame(
+                                &mut writer.borrow_mut(),
+                                &Response::LoadDiagnostic { details },
+                            )
+                        },
                     )?;
                     engine = Some(loaded);
                     Ok(Response::Ready { profile })
                 }
                 Request::Transcribe { path, config } => {
+                    let started = Instant::now();
                     let samples =
                         crate::engine::read_audio(&path, config.flag("audio", "preprocess"))?;
+                    write_frame(
+                        &mut socket,
+                        &Response::Timing {
+                            details: serde_json::json!({"event":"native_timing", "stage":"audio_prepare", "wall_ms":started.elapsed().as_secs_f64()*1000., "audio_samples":samples.len()}),
+                        },
+                    )?;
                     let text = engine
                         .as_mut()
                         .context("No model loaded")?
-                        .transcribe(&samples, &config)?;
+                        .transcribe_with_diagnostics(&samples, &config, &mut |details| {
+                            write_frame(&mut socket, &Response::Timing { details })
+                        })?;
                     Ok(Response::Complete { text: Some(text) })
                 }
                 Request::Stream => {
-                    write_frame(&mut socket, &Response::Ack)?;
                     let writer = std::cell::RefCell::new(socket.try_clone()?);
-                    let mut acknowledge = false;
-                    let text = engine.as_mut().context("No model loaded")?.stream_inputs(
-                        || {
-                            if acknowledge {
-                                write_frame(&mut writer.borrow_mut(), &Response::Ack)?;
-                            }
-                            match read_request(&mut socket)? {
-                                Request::Audio { samples } => {
-                                    acknowledge = true;
-                                    Ok(Some(StreamInput::Audio(samples)))
+                    // Acknowledge stream start only after stream_begin telemetry. This
+                    // keeps its initialization cost in the stream-start request.
+                    let mut acknowledge = true;
+                    let text = engine
+                        .as_mut()
+                        .context("No model loaded")?
+                        .stream_inputs_with_diagnostics(
+                            || {
+                                if acknowledge {
+                                    write_frame(&mut writer.borrow_mut(), &Response::Ack)?;
                                 }
-                                Request::Finish => Ok(Some(StreamInput::Finish)),
-                                _ => bail!("Unexpected input during stream"),
-                            }
-                        },
-                        |committed, tentative| {
-                            let _ = write_frame(
-                                &mut writer.borrow_mut(),
-                                &Response::Preview {
-                                    committed,
-                                    tentative,
-                                },
-                            );
-                        },
-                    )?;
+                                match read_request(&mut socket)? {
+                                    Request::Audio { samples } => {
+                                        acknowledge = true;
+                                        Ok(Some(StreamInput::audio(samples)))
+                                    }
+                                    Request::Finish => Ok(Some(StreamInput::Finish)),
+                                    _ => bail!("Unexpected input during stream"),
+                                }
+                            },
+                            |committed, tentative| {
+                                let _ = write_frame(
+                                    &mut writer.borrow_mut(),
+                                    &Response::Preview {
+                                        committed,
+                                        tentative,
+                                    },
+                                );
+                            },
+                            &mut |details| {
+                                write_frame(&mut writer.borrow_mut(), &Response::Timing { details })
+                            },
+                        )?;
                     Ok(Response::Complete { text })
                 }
                 _ => bail!("No active stream"),
@@ -681,7 +829,7 @@ mod tests {
         let mut worker = Inference::load(&c, || false).unwrap();
         let pid = worker.child.id();
         let (send, receive) = mpsc::channel();
-        send.send(StreamInput::Audio(vec![0.; 1600])).unwrap();
+        send.send(StreamInput::audio(vec![0.; 1600])).unwrap();
         send.send(StreamInput::Finish).unwrap();
         assert_eq!(
             worker
@@ -700,6 +848,61 @@ mod tests {
         assert_eq!(worker.audio_samples, 1600);
         assert_eq!(worker.last_ack_samples, 1600);
         assert_eq!(worker.operation, "transcribe");
+        assert_eq!(worker.inference_attempts, 2);
+        let summary = worker
+            .timing_records
+            .iter()
+            .find(|r| r["event"] == "stream_timing_summary")
+            .unwrap();
+        assert_eq!(summary["outcome"], "completed");
+        assert_eq!(summary["feed_calls"], 1);
+        assert_eq!(summary["audio_samples"], 1600);
+        assert!(worker
+            .timing_records
+            .iter()
+            .any(|r| r["stage"] == "synthetic"
+                && r["receiving_operation"] == "stream_start"
+                && r["receiving_sequence"] == 2));
+        assert!(worker
+            .timing_records
+            .iter()
+            .any(|r| r["stage"] == "synthetic"
+                && r["receiving_operation"] == "stream_feed"
+                && r["worker_pid"] == pid));
+    }
+    #[test]
+    fn stream_summary_survives_cancellation_and_worker_failure() {
+        for fail in [false, true] {
+            let (_root, c) = config("test-echo");
+            let mut worker = Inference::load(&c, || false).unwrap();
+            let (send, receive) = mpsc::channel();
+            if fail {
+                worker.child.kill().unwrap();
+                worker.child.wait().unwrap();
+            } else {
+                send.send(StreamInput::Cancel).unwrap();
+            }
+            let result = worker.stream(&receive, || false, |_, _| {});
+            assert_eq!(result.is_err(), fail);
+            let summary = worker.timing_records.last().unwrap();
+            assert_eq!(summary["event"], "stream_timing_summary");
+            assert_eq!(
+                summary["outcome"],
+                if fail { "failed" } else { "cancelled" }
+            );
+            assert_eq!(summary["feed_calls"], 0);
+        }
+    }
+    #[test]
+    fn cancelled_call_retains_cancelled_summary() {
+        let (_root, c) = config("test-echo");
+        let mut worker = Inference::load(&c, || false).unwrap();
+        let (_send, receive) = mpsc::channel();
+        assert!(worker.stream(&receive, || true, |_, _| {}).is_err());
+        assert_eq!(
+            worker.timing_records.last().unwrap()["outcome"],
+            "cancelled"
+        );
     }
     #[test]
     fn load_timeout_reaps_stalled_worker() {
@@ -710,5 +913,85 @@ mod tests {
             .unwrap();
         assert!(error.to_string().contains("timed out"));
         assert!(started.elapsed() < Duration::from_secs(3));
+    }
+    #[test]
+    #[ignore = "requires an explicitly supplied cached GGUF model and synthetic speech fixture"]
+    fn native_latency_probe() {
+        let model = std::env::var("VOICE_LATENCY_MODEL")
+            .expect("Set VOICE_LATENCY_MODEL to a cached Parakeet GGUF file");
+        assert!(std::path::Path::new(&model).is_file());
+        let (_root, config) = config(&model);
+        let profile = if cfg!(feature = "vulkan") {
+            "vulkan"
+        } else {
+            "standard"
+        };
+        let config = config
+            .changed(&serde_json::json!({"performance":{"profile":profile,"threads":0}}))
+            .unwrap();
+        let _context = crate::logging::context(serde_json::json!({"job_id":9001}));
+        let mut worker = Inference::load(&config, || false).unwrap();
+        let pid = worker.child.id();
+        assert_eq!(
+            worker.profile, profile,
+            "Probe must exercise requested backend"
+        );
+        let warmup = worker
+            .timing_records
+            .iter()
+            .find(|r| r["stage"] == "warmup")
+            .expect("warmup timing");
+        assert!(warmup["encode_ms"].as_f64().unwrap() > 0.);
+        let fixture = _root.path().join("speech.flac");
+        std::fs::write(&fixture, include_bytes!("../assets/benchmarks/speech.flac")).unwrap();
+        let mut samples = crate::engine::read_audio(&fixture, false).unwrap();
+        samples.truncate(49_123);
+        for _ in 0..2 {
+            let (send, receive) = mpsc::channel();
+            let audio = samples.clone();
+            let producer = std::thread::spawn(move || {
+                for chunk in audio.chunks(1024) {
+                    send.send(StreamInput::audio(chunk.to_vec())).unwrap();
+                    std::thread::sleep(Duration::from_millis(64));
+                }
+                send.send(StreamInput::Finish).unwrap();
+            });
+            let offset = worker.timing_records.len();
+            let text = worker.stream(&receive, || false, |_, _| {}).unwrap();
+            producer.join().unwrap();
+            assert!(text.is_some());
+            let records = &worker.timing_records[offset..];
+            let begin = records
+                .iter()
+                .find(|r| r["stage"] == "stream_begin")
+                .unwrap();
+            assert_eq!(begin["receiving_operation"], "stream_start");
+            for counter in [
+                "baseline_mel_ms",
+                "baseline_encode_ms",
+                "baseline_decode_ms",
+            ] {
+                assert_eq!(
+                    begin[counter], 0.,
+                    "stream counters must exclude warmup and prior streams"
+                );
+            }
+            assert!(records
+                .iter()
+                .any(|r| r["stage"] == "stream_feed" && r["encode_ms"].as_f64().unwrap() > 0.));
+            assert!(records.iter().any(|r| r["stage"] == "stream_finalize"));
+            assert!(records
+                .iter()
+                .all(|r| r["job_id"] == 9001 && r["worker_pid"] == pid));
+            assert_eq!(worker.child.id(), pid);
+        }
+        assert_eq!(
+            worker.inference_attempts, 2,
+            "warmup is not a user inference attempt"
+        );
+        println!(
+            "{}",
+            serde_json::json!({"profile":profile,"records":worker.timing_records})
+        );
     }
 }

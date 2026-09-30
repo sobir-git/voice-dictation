@@ -264,7 +264,8 @@ impl Daemon {
                 cancelled: job.cancelled.clone(),
                 path: saved.path,
                 config: job.config.clone(),
-                requested: Instant::now(),
+                requested: job.finished.get().copied().unwrap_or(job.started),
+                queued: Instant::now(),
             })
         } else {
             None
@@ -353,6 +354,7 @@ impl Daemon {
                     path,
                     config: job.config.clone(),
                     requested: job.started,
+                    queued: Instant::now(),
                 };
                 if self.worker.try_send(work).is_err() {
                     self.fail(id, "Transcription queue is full".into());

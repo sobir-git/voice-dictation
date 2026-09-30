@@ -57,6 +57,7 @@ pub struct Job {
     pub stream: Option<mpsc::SyncSender<StreamInput>>,
     pub finished: Arc<OnceLock<Instant>>,
     pub started: Instant,
+    stage_started: Instant,
     pub result: Option<Transcript>,
 }
 impl Job {
@@ -76,7 +77,11 @@ impl Job {
             self.stage
         );
         let _context = crate::logging::context(
-            serde_json::json!({"job_id":self.id,"client_id":self.owner,"request_id":self.request_id}),
+            serde_json::json!({"job_id":self.id,"client_id":self.owner,"request_id":self.request_id,
+                "event":"dictation_stage", "from":self.stage,"to":stage,
+                "stage_ms":self.stage_started.elapsed().as_secs_f64()*1000.,
+                "job_elapsed_ms":self.started.elapsed().as_secs_f64()*1000.,
+                "since_recording_stop_ms":self.finished.get().map(|t|t.elapsed().as_secs_f64()*1000.)}),
         );
         log::info!(
             "Dictation transition: job={} from={:?} to={stage:?} history={:?}",
@@ -85,6 +90,7 @@ impl Job {
             self.history_id
         );
         self.stage = stage;
+        self.stage_started = Instant::now();
     }
 }
 #[derive(Default)]
@@ -126,6 +132,7 @@ impl Jobs {
                 stream: None,
                 finished: Arc::new(OnceLock::new()),
                 started: Instant::now(),
+                stage_started: Instant::now(),
                 result: None,
             },
         );
@@ -159,7 +166,10 @@ impl Jobs {
     pub fn complete(&mut self, id: JobId, outcome: &str) -> Option<Job> {
         let job = self.active.remove(&id)?;
         let _context = crate::logging::context(
-            serde_json::json!({"job_id":id,"client_id":job.owner,"request_id":job.request_id}),
+            serde_json::json!({"job_id":id,"client_id":job.owner,"request_id":job.request_id,
+                "event":"dictation_terminal", "outcome":outcome,"stage":job.stage,
+                "last_stage_ms":job.stage_started.elapsed().as_secs_f64()*1000.,
+                "since_recording_stop_ms":job.finished.get().map(|t|t.elapsed().as_secs_f64()*1000.)}),
         );
         log::info!(
             "Dictation terminal: job={id} outcome={outcome} stage={:?} elapsed={:.3}s history={:?}",

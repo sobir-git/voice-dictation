@@ -277,11 +277,15 @@ fn history_retry_queues_selected_model_and_clears_previous_failure() {
         path: queued_path,
         config,
         id: job_id,
+        requested,
+        queued,
         ..
     } = receive.try_recv().unwrap()
     else {
         panic!("Expected a history transcription");
     };
+    assert_eq!(requested, daemon.jobs.active[&job_id].started);
+    assert!(queued >= requested);
     assert_eq!(queued_path, path);
     assert_eq!(daemon.jobs.active[&job_id].history_id, Some(id));
     assert_eq!(config.string("transcription", "model"), "canary-180m-flash");
@@ -486,6 +490,7 @@ fn failed_load_records_correct_model_and_elapsed_time() {
             path: "synthetic.wav".into(),
             config,
             requested: Instant::now() - Duration::from_millis(200),
+            queued: Instant::now(),
         })
         .unwrap();
     d.pump(|d| !d.jobs.busy());
@@ -516,6 +521,7 @@ fn stream_load_failure_finishes_without_waiting_for_audio_sender() {
             cancelled: d.jobs.active[&id].cancelled.clone(),
             config,
             receive,
+            queued: Instant::now(),
             finished: Arc::new(OnceLock::new()),
         })
         .unwrap();
@@ -784,9 +790,13 @@ fn full_or_disconnected_finish_queue_recovers_saved_audio_and_ignores_old_result
             .changed(&json!({"transcription":{"model":"test-echo"}}))
             .unwrap();
         let id = d.jobs.insert(config, Stage::Saving, None, None);
+        d.jobs.active[&id]
+            .finished
+            .set(Instant::now() - Duration::from_millis(200))
+            .unwrap();
         let old_attempt = d.jobs.active[&id].cancelled.clone();
         let (send, receive) = mpsc::sync_channel(1);
-        send.send(StreamInput::Audio(vec![0.; 1600])).unwrap();
+        send.send(StreamInput::audio(vec![0.; 1600])).unwrap();
         let receiver = if disconnected {
             drop(receive);
             None
@@ -822,6 +832,7 @@ fn full_or_disconnected_finish_queue_recovers_saved_audio_and_ignores_old_result
         let saved = d.history.get(row).unwrap().unwrap();
         assert_eq!(saved["failed"], false);
         assert_eq!(saved["text"], "synthetic transcript");
+        assert!(saved["transcription_seconds"].as_f64().unwrap() >= 0.2);
         drop(receiver);
     }
 }
