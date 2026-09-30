@@ -181,3 +181,90 @@ VOICE_LATENCY_MODEL=/path/to/cached/parakeet.gguf cargo test --locked --features
 
 Omit `--features vulkan` for the CPU path. The probe prints numeric timing records
 and checks stage counters, warmup separation, job correlation and worker reuse.
+
+## Idle warmup and paging
+
+Recording admission asks the existing resident Parakeet child to exercise the
+same 33,280-sample silent warmup as loading when at least 60 seconds have elapsed
+since successful real inference completion or successful warmup completion.
+Fresh load warmup already counts as warm. A long recording refreshes the clock
+at final completion, not at recording start. Failed and cancelled calls do not
+advance it. There is no idle timer, heartbeat, or per-recording unconditional
+warmup. Batch recording modes also request warmup at Start, before Stop.
+
+Warmup owns a separate native stream (or a separate run for `vulkan-full`), drops
+its synthetic state before real stream creation, and never produces previews,
+history, text output, or a user inference attempt. The microphone capture thread
+continues independently; real audio queues behind warmup. Existing queue limits
+and saved-recording recovery still apply if a slow call fills the queue. Warmup
+uses the same supervised 120-second call deadline and cancellation checks as real
+inference. A failed child is discarded through the existing worker recovery path;
+loading/fallback rules remain unchanged.
+
+Every recording admission logs one `idle_warmup_decision` with
+`idle_since_completion_ms`, `threshold_ms: 60000`, `needed` (boolean),
+`decision: needed|skipped`, worker PID and job correlation. This includes the
+fresh-load skip and uses completion age even after a long recording;
+`since_previous_attempt_ms` still describes attempt start age separately.
+
+`native_timing` stages `warmup_start`/`warmup` describe load warmup;
+`idle_warmup_start`/`idle_warmup` describe recording-start warmup. Idle warmup
+records carry `receiving_operation: idle_warmup`, request sequence, worker PID
+and the recording job ID. Warmup wall time excludes paging reads and diagnostic
+emission. Native chunk/finalization wall time is captured before after-snapshot
+reads and IPC writes; `batch_stream_inference` sums native stream creation, feed
+and finalize wall time, excluding telemetry between calls.
+
+`paging_snapshot` records have `stage`, `phase` (`before`/`after`), native
+`process_pid`, correlated supervisor `worker_pid`, job and receiving request
+identity. `memory` contains `vm_swap_kb`, `rss_kb`, `rss_anon_kb`, `rss_file_kb`,
+absolute `minor_faults`/`major_faults`, `host_mem_available_kb`,
+`host_swap_total_kb`, and `host_swap_free_kb`. Top-level
+`minor_faults_delta`/`major_faults_delta` compare the after and before snapshots;
+before deltas and missing or malformed fields are null, not zero. After records
+include `success` where the call outcome is available; batch call framing also
+includes `native_wall_ms`. These are cheap `/proc/status`, `/proc/stat` and
+`/proc/meminfo` reads, not `smaps` walks. They run only on the inference worker.
+
+Snapshots frame load/idle warmup, whole real attempts (`stream_attempt` or
+`inference_attempt`), significant native stream feeds (`stream_feed` or
+`batch_stream_feed`), finalization (`stream_finalize` or
+`batch_stream_finalize`), native batch calls (`batch_inference` or
+`batch_chunk_inference`) and Whisper generation (`whisper_generate`). Streaming
+sampling uses the first 33,280 received samples and subsequent 16,640-sample
+boundaries, independent of text/commit progress; tiny feeds do not read `/proc`.
+The supervisor's stalled/failed `worker` snapshot also includes the same `memory`
+absolute counters and host availability, so a hung child need not return to
+provide paging evidence. A killed child cannot guarantee an after snapshot.
+No audio or transcript content is added by this telemetry.
+
+Major faults indicate disk-backed page-in and are **not proof of anonymous
+swapping**: file-backed model mappings can also fault. `VmSwap` measures process
+anonymous swap usage, not model file eviction or GPU residency. GPU allocations
+can be outside process RSS; integrated GPU accounting can share host RAM.
+Use both paging counters and native timings to investigate a stall, without
+attributing all unexplained wall time to swapping or shader compilation.
+
+Swap is diagnostic only, not an additional warmup trigger. Existing measurements
+in `tools/model_speed_experiments/memory-summary.json` show substantially different
+CPU RSS and GPU residency, but do not establish a swap threshold that predicts
+latency. A persistent nonzero `VmSwap` would otherwise cause perpetual warmups.
+The 60-second decision is deterministic; evaluate it with a resident release
+worker and an actual 61-second idle interval on the target GPU host. The ignored
+synthetic native probe privately ages the completion clock instead of waiting,
+and compares identical real fixture text with/without warmup on the same child.
+
+Both fresh autostart setup and `update_local.sh`'s existing-service drop-in set
+`MemorySwapMax=0` for the daemon service and its inference children. This is
+service-specific: no global swapoff, hard memory limit, or `mlockall` is used.
+No `MemoryLow` is added: there is no measured protection budget/effectiveness,
+and user-service ancestors can restrict protection. Swap exclusion can increase
+reclaim pressure, file-backed faults, and OOM-kill risk when physical memory is
+insufficient; it does not pin model pages, protect GPU allocations, or prevent
+OOM. Check `systemctl --user show speech-to-text-daemon.service -p MemorySwapMax`
+and the effective service cgroup `memory.swap.max` after an authorized install.
+On hosts without applicable cgroup v2 swap accounting/controller delegation,
+systemd can ignore the resource control; inference still works and missing
+`/proc` fields remain null. The setting is not a promise of enforcement on those
+hosts. This task changes installer sources only, without installing or restarting
+the active service.

@@ -21,3 +21,5 @@ pub mod inference;
 pub mod jobs;
 pub mod protocol;
 pub mod storage;
+
+pub mod paging;

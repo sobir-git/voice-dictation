@@ -20,7 +20,9 @@ pub(super) fn start_worker(
                 continue;
             }
             let job_id = match &work {
-                Work::Transcribe { id, .. } | Work::Stream { id, .. } => Some(*id),
+                Work::Transcribe { id, .. } | Work::Stream { id, .. } | Work::Warmup { id, .. } => {
+                    Some(*id)
+                }
                 _ => None,
             };
             let _context = crate::logging::context(json!({"job_id":job_id}));
@@ -31,6 +33,12 @@ pub(super) fn start_worker(
                     Arc::new(AtomicBool::new(false)),
                 ),
                 Work::Transcribe {
+                    config,
+                    generation,
+                    cancelled,
+                    ..
+                }
+                | Work::Warmup {
                     config,
                     generation,
                     cancelled,
@@ -90,7 +98,7 @@ pub(super) fn start_worker(
                 let _ = events.send(Event::WorkerUnavailable(identity.clone()));
                 let detail = format!("{error:#}");
                 match work {
-                    Work::Load(_) => {
+                    Work::Load(_) | Work::Warmup { .. } => {
                         let _ = events.send(Event::Model(identity, Err(error)));
                     }
                     Work::Transcribe { id, requested, .. } => {
@@ -137,6 +145,14 @@ pub(super) fn start_worker(
             ));
             let (id, result, seconds) = match work {
                 Work::Load(_) => continue,
+                Work::Warmup { id, .. } => {
+                    if let Err(error) = engine.as_mut().unwrap().warm_if_idle(cancelled) {
+                        log::warn!("Recording-start warmup failed: job={id} error={error:#}");
+                        engine = None;
+                        let _ = events.send(Event::WorkerUnavailable(identity));
+                    }
+                    continue;
+                }
                 Work::Transcribe {
                     id,
                     path,

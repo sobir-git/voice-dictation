@@ -28,6 +28,7 @@ if systemctl --user cat speech-to-text-daemon.service >/dev/null 2>&1; then
   cat > "$UNIT_DROPIN_DIR/worker-lifecycle.conf" <<'EOF'
 [Service]
 KillMode=mixed
+MemorySwapMax=0
 EOF
   systemctl --user daemon-reload
   systemctl --user restart speech-to-text-daemon.service

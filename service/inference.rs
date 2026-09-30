@@ -20,6 +20,10 @@ use std::{
 
 const MAX_FRAME: usize = 2 * 1024 * 1024;
 const LOAD_TIMEOUT: Duration = Duration::from_secs(600);
+fn idle_warmup_due(elapsed: Duration) -> bool {
+    elapsed >= Duration::from_secs(60)
+}
+
 const CALL_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Serialize, Deserialize)]
@@ -32,6 +36,7 @@ enum Request {
         path: std::path::PathBuf,
         config: Config,
     },
+    IdleWarmup,
     Stream,
     Audio {
         samples: Vec<f32>,
@@ -87,6 +92,7 @@ fn worker_snapshot(pid: u32) -> serde_json::Value {
         .map(|(_, rest)| rest.split_whitespace().collect())
         .unwrap_or_default();
     serde_json::json!({
+        "memory":crate::paging::Snapshot::read_process(pid),
         "state":fields.first(),
         "user_cpu_ticks":fields.get(11).and_then(|v| v.parse::<u64>().ok()),
         "system_cpu_ticks":fields.get(12).and_then(|v| v.parse::<u64>().ok()),
@@ -111,6 +117,7 @@ pub struct Inference {
     max_response_ms: u128,
     ready_at: Instant,
     last_attempt: Option<Instant>,
+    last_completed: Instant,
     inference_attempts: u64,
     #[cfg(test)]
     timing_records: Vec<serde_json::Value>,
@@ -180,6 +187,7 @@ impl Inference {
             last_ack_samples: 0,
             max_response_ms: 0,
             ready_at: Instant::now(),
+            last_completed: Instant::now(),
             last_attempt: None,
             inference_attempts: 0,
             #[cfg(test)]
@@ -193,6 +201,7 @@ impl Inference {
             response => bail!("Unexpected inference load response: {response:?}"),
         }
         worker.ready_at = Instant::now();
+        worker.last_completed = worker.ready_at;
         Ok(worker)
     }
     pub fn matches(&self, c: &Config) -> bool {
@@ -215,6 +224,7 @@ impl Inference {
         }
         self.operation = match request {
             Request::Load { .. } => "load",
+            Request::IdleWarmup => "idle_warmup",
             Request::Transcribe { .. } => "transcribe",
             Request::Stream => {
                 self.audio_samples = 0;
@@ -327,6 +337,11 @@ impl Inference {
                         }
                         Response::Failed { error } => bail!("Native inference failed: worker_pid={} operation={} sequence={} audio_samples={} elapsed_ms={} error={error}",self.child.id(),self.operation,self.sequence,self.audio_samples,self.operation_started.elapsed().as_millis()),
                         response => {
+                            if matches!(response, Response::Complete { text: Some(_) })
+                                || (matches!(response, Response::Ack) && self.operation == "idle_warmup")
+                            {
+                                self.last_completed = Instant::now();
+                            }
                             self.max_response_ms = self.max_response_ms.max(self.operation_started.elapsed().as_millis());
                             if matches!(response, Response::Ack) && self.operation == "stream_feed" {
                                 self.last_ack_samples = self.audio_samples;
@@ -374,6 +389,35 @@ impl Inference {
             response => bail!("Unexpected transcription response: {response:?}"),
         }
     }
+    pub fn warm_if_idle(&mut self, cancelled: impl Fn() -> bool) -> Result<()> {
+        anyhow::ensure!(!cancelled(), "Inference cancelled");
+        let elapsed = self.last_completed.elapsed();
+        let needed = idle_warmup_due(elapsed);
+        let mut details = crate::logging::current_context();
+        details["event"] = "idle_warmup_decision".into();
+        details["worker_pid"] = self.child.id().into();
+        details["idle_since_completion_ms"] = (elapsed.as_secs_f64() * 1000.).into();
+        details["threshold_ms"] = 60_000.into();
+        details["needed"] = needed.into();
+        details["decision"] = if needed { "needed" } else { "skipped" }.into();
+        #[cfg(test)]
+        self.timing_records.push(details.clone());
+        {
+            let _context = crate::logging::context(details);
+            log::info!("Recording admission warmup decision");
+        }
+        if needed {
+            self.send(&Request::IdleWarmup)?;
+            anyhow::ensure!(
+                matches!(
+                    self.response(CALL_TIMEOUT, &cancelled, &mut |_, _| {})?,
+                    Response::Ack
+                ),
+                "Expected idle warmup acknowledgement"
+            );
+        }
+        Ok(())
+    }
     pub fn stream(
         &mut self,
         receive: &mpsc::Receiver<StreamInput>,
@@ -401,6 +445,7 @@ impl Inference {
             preview(committed, tentative);
         };
         let result = (|| {
+            self.warm_if_idle(&cancelled)?;
             self.send(&Request::Stream)?;
             anyhow::ensure!(
                 matches!(
@@ -595,8 +640,9 @@ pub fn child() -> Result<()> {
     // SAFETY: the supervisor passes ownership of its socket as fd 0.
     let mut socket = unsafe { UnixStream::from_raw_fd(0) };
     let mut engine: Option<Engine> = None;
+    let mut loaded_config: Option<Config> = None;
     #[cfg(test)]
-    let mut synthetic = false;
+    let mut synthetic = None;
     loop {
         let request = read_request(&mut socket)?;
         #[cfg(test)]
@@ -605,8 +651,8 @@ pub fn child() -> Result<()> {
                 match config.string("transcription", "model") {
                     "test-crash" => std::process::exit(17),
                     "test-stall" => std::thread::sleep(Duration::from_secs(60)),
-                    "test-echo" => {
-                        synthetic = true;
+                    mode @ ("test-echo" | "test-warmup-fail" | "test-warmup-stall") => {
+                        synthetic = Some(mode.to_owned());
                         write_frame(
                             &mut socket,
                             &Response::Ready {
@@ -618,7 +664,46 @@ pub fn child() -> Result<()> {
                     _ => {}
                 }
             }
-            if synthetic {
+            if let Some(mode) = &synthetic {
+                if matches!(request, Request::IdleWarmup) {
+                    if mode == "test-warmup-stall" {
+                        std::thread::sleep(Duration::from_secs(60));
+                    }
+                    let before = crate::paging::Snapshot::read();
+                    write_frame(
+                        &mut socket,
+                        &Response::Timing {
+                            details: before.record("idle_warmup", "before", None),
+                        },
+                    )?;
+                    write_frame(
+                        &mut socket,
+                        &Response::Timing {
+                            details: serde_json::json!({"event":"native_timing","stage":"idle_warmup","audio_samples":33280,"fixture":"silence"}),
+                        },
+                    )?;
+                    write_frame(
+                        &mut socket,
+                        &Response::Timing {
+                            details: crate::paging::Snapshot::read().record(
+                                "idle_warmup",
+                                "after",
+                                Some(&before),
+                            ),
+                        },
+                    )?;
+                    write_frame(
+                        &mut socket,
+                        &if mode == "test-warmup-fail" {
+                            Response::Failed {
+                                error: "synthetic warmup failure".into(),
+                            }
+                        } else {
+                            Response::Ack
+                        },
+                    )?;
+                    continue;
+                }
                 write_frame(
                     &mut socket,
                     &Response::Timing {
@@ -638,6 +723,23 @@ pub fn child() -> Result<()> {
                 continue;
             }
         }
+        let attempt_stage = match &request {
+            Request::Transcribe { .. } => Some("inference_attempt"),
+            Request::Stream => Some("stream_attempt"),
+            _ => None,
+        };
+        let memory_before = attempt_stage.map(|stage| {
+            let before = crate::paging::Snapshot::read();
+            (stage, before)
+        });
+        if let Some((stage, before)) = &memory_before {
+            write_frame(
+                &mut socket,
+                &Response::Timing {
+                    details: before.record(stage, "before", None),
+                },
+            )?;
+        }
         let result = (|| -> Result<Response> {
             match request {
                 Request::Load { config } => {
@@ -646,9 +748,11 @@ pub fn child() -> Result<()> {
                     let (loaded, profile) = load_with_fallback(
                         &config,
                         |c| {
-                            Engine::load_with_diagnostics(c, &mut |details| {
+                            let loaded = Engine::load_with_diagnostics(c, &mut |details| {
                                 write_frame(&mut writer.borrow_mut(), &Response::Timing { details })
-                            })
+                            })?;
+                            loaded_config = Some(c.clone());
+                            Ok(loaded)
                         },
                         crate::engine::gpu_attempted,
                         |details| {
@@ -660,6 +764,13 @@ pub fn child() -> Result<()> {
                     )?;
                     engine = Some(loaded);
                     Ok(Response::Ready { profile })
+                }
+                Request::IdleWarmup => {
+                    engine.as_mut().context("No model loaded")?.idle_warmup(
+                        loaded_config.as_ref().context("No loaded configuration")?,
+                        &mut |details| write_frame(&mut socket, &Response::Timing { details }),
+                    )?;
+                    Ok(Response::Ack)
                 }
                 Request::Transcribe { path, config } => {
                     let started = Instant::now();
@@ -719,6 +830,11 @@ pub fn child() -> Result<()> {
                 _ => bail!("No active stream"),
             }
         })();
+        if let Some((stage, before)) = &memory_before {
+            let mut details = crate::paging::Snapshot::read().record(stage, "after", Some(before));
+            details["success"] = result.is_ok().into();
+            write_frame(&mut socket, &Response::Timing { details })?;
+        }
         match result {
             Ok(response) => write_frame(&mut socket, &response)?,
             Err(error) => {
@@ -779,7 +895,13 @@ mod tests {
         let snapshot = worker_snapshot(std::process::id());
         assert!(snapshot["threads"].as_u64().unwrap() > 0);
         assert!(snapshot["resident_pages"].as_u64().unwrap() > 0);
-        assert!(worker_snapshot(u32::MAX)["state"].is_null());
+        assert!(snapshot["memory"]["vm_swap_kb"].is_number());
+        assert!(snapshot["memory"]["minor_faults"].is_number());
+        assert!(snapshot["memory"]["major_faults"].is_number());
+        let missing = worker_snapshot(u32::MAX);
+        assert!(missing["state"].is_null());
+        assert!(missing["memory"]["vm_swap_kb"].is_null());
+        assert!(missing["memory"]["major_faults"].is_null());
     }
 
     #[test]
@@ -822,6 +944,127 @@ mod tests {
             .unwrap();
         assert!(error.to_string().contains("cancelled"));
         assert!(started.elapsed() < Duration::from_secs(3));
+    }
+    #[test]
+    fn idle_boundary_and_completion_clock() {
+        assert!(!idle_warmup_due(Duration::from_millis(59_999)));
+        assert!(idle_warmup_due(Duration::from_secs(60)));
+        let (_root, c) = config("test-echo");
+        let mut worker = Inference::load(&c, || false).unwrap();
+        worker.warm_if_idle(|| false).unwrap();
+        assert_eq!(worker.sequence, 1, "fresh load is already warm");
+        let decision = worker.timing_records.last().unwrap();
+        assert_eq!(decision["event"], "idle_warmup_decision");
+        assert_eq!(decision["decision"], "skipped");
+        assert_eq!(decision["threshold_ms"], 60_000);
+        assert!(decision["idle_since_completion_ms"].as_f64().unwrap() < 60_000.);
+        let old = Instant::now() - Duration::from_secs(61);
+        worker.last_completed = old;
+        let pid = worker.child.id();
+        let _context = crate::logging::context(serde_json::json!({"job_id":123}));
+        // Producer queues real input while warmup runs; synthetic samples never enter this queue.
+        let (send, receive) = mpsc::channel();
+        let producer = std::thread::spawn(move || {
+            send.send(StreamInput::audio(vec![0.25; 1600])).unwrap();
+            send.send(StreamInput::Finish).unwrap();
+        });
+        assert_eq!(
+            worker
+                .stream(&receive, || false, |_, _| {})
+                .unwrap()
+                .as_deref(),
+            Some("synthetic streaming transcript")
+        );
+        producer.join().unwrap();
+        assert_eq!(worker.audio_samples, 1600);
+        let decision = worker
+            .timing_records
+            .iter()
+            .find(|r| r["event"] == "idle_warmup_decision" && r["needed"] == true)
+            .unwrap();
+        assert_eq!(decision["decision"], "needed");
+        assert_eq!(decision["worker_pid"], pid);
+        assert_eq!(decision["job_id"], 123);
+        assert!(decision["idle_since_completion_ms"].as_f64().unwrap() >= 60_000.);
+        assert_eq!(worker.inference_attempts, 1);
+        assert_eq!(worker.child.id(), pid);
+        let warm: Vec<_> = worker
+            .timing_records
+            .iter()
+            .filter(|r| r["stage"] == "idle_warmup")
+            .collect();
+        assert_eq!(warm.len(), 3);
+        assert!(warm
+            .iter()
+            .all(|r| r["receiving_operation"] == "idle_warmup"
+                && r["worker_pid"] == pid
+                && r["job_id"] == 123));
+        assert_eq!(warm[0]["phase"], "before");
+        assert_eq!(warm[2]["phase"], "after");
+        assert!(warm[2]["minor_faults_delta"].is_number());
+        assert!(worker.last_completed > old);
+        let sequence = worker.sequence;
+        // A long recording's start/attempt age must not make its completed engine cold.
+        worker.last_attempt = Some(old);
+        worker.warm_if_idle(|| false).unwrap();
+        assert_eq!(worker.sequence, sequence);
+        assert_eq!(worker.inference_attempts, 1);
+        worker.send(&Request::Stream).unwrap();
+        assert!(matches!(
+            worker
+                .response(CALL_TIMEOUT, &|| false, &mut |_, _| {})
+                .unwrap(),
+            Response::Ack
+        ));
+        worker.last_completed = old; // Simulate a recording spanning more than 60 seconds.
+        worker.send(&Request::Finish).unwrap();
+        assert!(matches!(
+            worker
+                .response(CALL_TIMEOUT, &|| false, &mut |_, _| {})
+                .unwrap(),
+            Response::Complete { .. }
+        ));
+        let sequence = worker.sequence;
+        worker.warm_if_idle(|| false).unwrap();
+        assert_eq!(
+            worker.sequence, sequence,
+            "long recording is warm from completion"
+        );
+    }
+    #[test]
+    fn failed_cancelled_and_timed_out_warmup_do_not_advance_clock() {
+        for mode in ["test-warmup-fail", "test-warmup-stall"] {
+            let (_root, c) = config(mode);
+            let mut worker = Inference::load(&c, || false).unwrap();
+            let old = Instant::now() - Duration::from_secs(61);
+            worker.last_completed = old;
+            assert!(worker.warm_if_idle(|| true).is_err());
+            assert_eq!(worker.sequence, 1, "cancel before admission");
+            worker.send(&Request::IdleWarmup).unwrap();
+            let started = Instant::now();
+            let error = worker
+                .response(Duration::from_millis(150), &|| false, &mut |_, _| {})
+                .unwrap_err();
+            assert!(error.to_string().contains(if mode == "test-warmup-stall" {
+                "timed out"
+            } else {
+                "synthetic warmup failure"
+            }));
+            assert_eq!(worker.last_completed, old);
+            assert_eq!(worker.inference_attempts, 0);
+            assert!(started.elapsed() < Duration::from_secs(3));
+        }
+        let (_root, c) = config("test-warmup-stall");
+        let mut worker = Inference::load(&c, || false).unwrap();
+        worker.last_completed = Instant::now() - Duration::from_secs(61);
+        let old = worker.last_completed;
+        let started = Instant::now();
+        assert!(worker
+            .warm_if_idle(|| started.elapsed() > Duration::from_millis(150))
+            .unwrap_err()
+            .to_string()
+            .contains("cancelled"));
+        assert_eq!(worker.last_completed, old);
     }
     #[test]
     fn stream_and_batch_share_one_resident_worker() {
@@ -939,14 +1182,18 @@ mod tests {
         let warmup = worker
             .timing_records
             .iter()
-            .find(|r| r["stage"] == "warmup")
+            .find(|r| r["event"] == "native_timing" && r["stage"] == "warmup")
             .expect("warmup timing");
         assert!(warmup["encode_ms"].as_f64().unwrap() > 0.);
         let fixture = _root.path().join("speech.flac");
         std::fs::write(&fixture, include_bytes!("../assets/benchmarks/speech.flac")).unwrap();
         let mut samples = crate::engine::read_audio(&fixture, false).unwrap();
         samples.truncate(49_123);
-        for _ in 0..2 {
+        let mut baseline_text = None;
+        for iteration in 0..2 {
+            if iteration == 1 {
+                worker.last_completed = Instant::now() - Duration::from_secs(61);
+            }
             let (send, receive) = mpsc::channel();
             let audio = samples.clone();
             let producer = std::thread::spawn(move || {
@@ -960,11 +1207,29 @@ mod tests {
             let text = worker.stream(&receive, || false, |_, _| {}).unwrap();
             producer.join().unwrap();
             assert!(text.is_some());
+            if iteration == 0 {
+                baseline_text = text.clone();
+            } else {
+                assert_eq!(
+                    text, baseline_text,
+                    "idle synthetic stream must not change real text"
+                );
+            }
             let records = &worker.timing_records[offset..];
             let begin = records
                 .iter()
-                .find(|r| r["stage"] == "stream_begin")
+                .find(|r| r["event"] == "native_timing" && r["stage"] == "stream_begin")
                 .unwrap();
+            assert_eq!(
+                records
+                    .iter()
+                    .filter(|r| r["event"] == "native_timing" && r["stage"] == "idle_warmup")
+                    .count(),
+                iteration
+            );
+            assert!(records.iter().any(|r| r["event"] == "paging_snapshot"
+                && r["stage"] == "stream_finalize"
+                && r["phase"] == "after"));
             assert_eq!(begin["receiving_operation"], "stream_start");
             for counter in [
                 "baseline_mel_ms",
@@ -976,9 +1241,9 @@ mod tests {
                     "stream counters must exclude warmup and prior streams"
                 );
             }
-            assert!(records
-                .iter()
-                .any(|r| r["stage"] == "stream_feed" && r["encode_ms"].as_f64().unwrap() > 0.));
+            assert!(records.iter().any(|r| r["event"] == "native_timing"
+                && r["stage"] == "stream_feed"
+                && r["encode_ms"].as_f64().unwrap() > 0.));
             assert!(records.iter().any(|r| r["stage"] == "stream_finalize"));
             assert!(records
                 .iter()

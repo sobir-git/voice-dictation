@@ -59,6 +59,12 @@ pub enum Event {
 enum Work {
     Benchmark(Config, Vec<u64>, Arc<AtomicBool>),
     Load(Config),
+    Warmup {
+        id: JobId,
+        generation: u64,
+        cancelled: Arc<AtomicBool>,
+        config: Config,
+    },
     Transcribe {
         id: JobId,
         generation: u64,
@@ -523,6 +529,23 @@ impl Daemon {
                     receive,
                     queued: Instant::now(),
                     finished: job.finished.clone(),
+                })
+                .is_err()
+            {
+                self.fail(id, "Speech worker is busy".into());
+                return;
+            }
+        }
+        if !streaming && (model == PARAKEET_MODEL || model.ends_with(".gguf")) {
+            let job = self.jobs.active.get(&id).unwrap();
+            // Batch captures have no stream admission; warm the worker concurrently with capture.
+            if self
+                .worker
+                .try_send(Work::Warmup {
+                    id,
+                    generation: job.generation,
+                    cancelled: job.cancelled.clone(),
+                    config: config.clone(),
                 })
                 .is_err()
             {

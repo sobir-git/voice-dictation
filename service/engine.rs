@@ -293,40 +293,7 @@ impl Engine {
             emit(
                 serde_json::json!({"event":"native_timing", "stage":"session_create", "wall_ms":session_started.elapsed().as_secs_f64()*1000.}),
             )?;
-            // transcribe.cpp prepares some kernels lazily. Exercise the actual
-            // stream path while the daemon is loading in the background so the
-            // user's first dictation does not pay that one-time cost.
-            {
-                emit(
-                    serde_json::json!({"event":"native_timing", "stage":"warmup_start", "audio_samples":33280, "fixture":"silence"}),
-                )?;
-                let warmup_started = Instant::now();
-                let run = transcribe_cpp::RunOptions {
-                    language: Some("en".into()),
-                    ..Default::default()
-                };
-                let timings = if optimization::profile(config) == "vulkan-full" {
-                    session.run(&vec![0.; 33_280], &run)?.timings
-                } else {
-                    let mut stream = session.stream(&run, &parakeet_stream_options())?;
-                    let baseline = stream.snapshot().timings;
-                    stream.feed(&vec![0.; 33_280])?;
-                    stream.finalize()?;
-                    let current = stream.snapshot().timings;
-                    transcribe_cpp::Timings {
-                        load_ms: current.load_ms,
-                        mel_ms: (current.mel_ms - baseline.mel_ms).max(0.),
-                        encode_ms: (current.encode_ms - baseline.encode_ms).max(0.),
-                        decode_ms: (current.decode_ms - baseline.decode_ms).max(0.),
-                    }
-                };
-                emit(native_timing_record(
-                    "warmup",
-                    warmup_started.elapsed().as_secs_f64() * 1000.,
-                    transcribe_cpp::Timings::default(),
-                    timings,
-                ))?;
-            }
+            parakeet_warmup(&mut session, config, "warmup", emit)?;
             return Ok(Self::Parakeet {
                 session,
                 identity: optimization::identity(config),
@@ -375,6 +342,17 @@ impl Engine {
             identity: optimization::identity(config),
         })
     }
+    pub fn idle_warmup(
+        &mut self,
+        config: &Config,
+        emit: &mut impl FnMut(serde_json::Value) -> Result<()>,
+    ) -> Result<()> {
+        let _pause_openmp_workers = OpenMpPause;
+        if let Self::Parakeet { session, .. } = self {
+            parakeet_warmup(session, config, "idle_warmup", emit)?;
+        }
+        Ok(())
+    }
     pub fn matches(&self, c: &Config) -> bool {
         let identity = match self {
             Self::Whisper { identity, .. }
@@ -413,11 +391,11 @@ impl Engine {
                 ..Default::default()
             };
             if optimization::profile(config) == "vulkan-full" {
-                let started = Instant::now();
-                let transcript = session.run(samples, &run)?;
+                let (transcript, wall_ms) =
+                    paging_call("batch_inference", emit, || Ok(session.run(samples, &run)?))?;
                 emit(native_timing_record(
                     "batch_inference",
-                    started.elapsed().as_secs_f64() * 1000.,
+                    wall_ms,
                     transcribe_cpp::Timings::default(),
                     transcript.timings,
                 ))?;
@@ -426,14 +404,28 @@ impl Engine {
             // Use the same buffered stream for history retries and benchmarks as live dictation.
             let started = Instant::now();
             let mut stream = session.stream(&run, &parakeet_stream_options())?;
+            let mut wall_ms = started.elapsed().as_secs_f64() * 1000.;
             let baseline = stream.snapshot().timings;
+            let mut received = 0;
+            let mut target = 33_280;
             for chunk in samples.chunks(1600) {
-                stream.feed(chunk)?;
+                received += chunk.len();
+                if received >= target {
+                    wall_ms +=
+                        paging_call("batch_stream_feed", emit, || Ok(stream.feed(chunk)?))?.1;
+                    while target <= received {
+                        target += 16_640;
+                    }
+                } else {
+                    let started = Instant::now();
+                    stream.feed(chunk)?;
+                    wall_ms += started.elapsed().as_secs_f64() * 1000.;
+                }
             }
-            stream.finalize()?;
+            wall_ms += paging_call("batch_stream_finalize", emit, || Ok(stream.finalize()?))?.1;
             emit(native_timing_record(
                 "batch_stream_inference",
-                started.elapsed().as_secs_f64() * 1000.,
+                wall_ms,
                 baseline,
                 stream.snapshot().timings,
             ))?;
@@ -453,11 +445,12 @@ impl Engine {
                     canary_full_input_allowed(samples.len()),
                     "Experimental Canary vulkan-full requires audio shorter than 40 seconds"
                 );
-                let started = Instant::now();
-                let transcript = session.run(samples, &options)?;
+                let (transcript, wall_ms) = paging_call("batch_inference", emit, || {
+                    Ok(session.run(samples, &options)?)
+                })?;
                 emit(native_timing_record(
                     "batch_inference",
-                    started.elapsed().as_secs_f64() * 1000.,
+                    wall_ms,
                     transcribe_cpp::Timings::default(),
                     transcript.timings,
                 ))?;
@@ -469,11 +462,12 @@ impl Engine {
             let mut remaining = samples;
             while !remaining.is_empty() {
                 let end = canary_chunk_end(remaining);
-                let started = Instant::now();
-                let transcript = session.run(&remaining[..end], &options)?;
+                let (transcript, wall_ms) = paging_call("batch_chunk_inference", emit, || {
+                    Ok(session.run(&remaining[..end], &options)?)
+                })?;
                 emit(native_timing_record(
                     "batch_chunk_inference",
-                    started.elapsed().as_secs_f64() * 1000.,
+                    wall_ms,
                     transcribe_cpp::Timings::default(),
                     transcript.timings,
                 ))?;
@@ -521,7 +515,6 @@ impl Engine {
             emit(
                 serde_json::json!({"event":"native_timing", "stage":"whisper_features", "wall_ms":feature_started.elapsed().as_secs_f64()*1000., "audio_samples":chunk.len(), "context_frames":frames}),
             )?;
-            let generation_started = Instant::now();
             let view = StorageView::new(
                 &[1, model.n_mels(), frames],
                 &mut features,
@@ -547,18 +540,20 @@ impl Engine {
                 prompt.extend([token, "<|transcribe|>".into()]);
             }
             prompt.push("<|notimestamps|>".into());
-            let results = model.generate(
-                &view,
-                &[prompt],
-                &WhisperOptions {
-                    beam_size: config.number("transcription", "beam_size") as usize,
-                    return_scores: true,
-                    return_no_speech_prob: true,
-                    ..Default::default()
-                },
-            )?;
+            let (results, native_wall_ms) = paging_call("whisper_generate", emit, || {
+                model.generate(
+                    &view,
+                    &[prompt],
+                    &WhisperOptions {
+                        beam_size: config.number("transcription", "beam_size") as usize,
+                        return_scores: true,
+                        return_no_speech_prob: true,
+                        ..Default::default()
+                    },
+                )
+            })?;
             emit(
-                serde_json::json!({"event":"native_timing", "stage":"whisper_generate", "wall_ms":generation_started.elapsed().as_secs_f64()*1000.}),
+                serde_json::json!({"event":"native_timing", "stage":"whisper_generate", "wall_ms":native_wall_ms}),
             )?;
             for result in results {
                 if result.no_speech_prob > 0.6
@@ -614,6 +609,7 @@ impl Engine {
         let mut calls = 0_u64;
         let mut chunks = 0_u64;
         let mut samples_received = 0_u64;
+        let mut next_memory_target = 33_280_u64;
         let mut first_audio = None;
         emit(
             serde_json::json!({"event":"native_timing", "stage":"stream_begin", "wall_ms":started.elapsed().as_secs_f64()*1000., "chunk_ms":1040, "right_ms":1040, "left_ms":5600,
@@ -626,12 +622,17 @@ impl Engine {
                     first_audio.get_or_insert_with(Instant::now);
                     calls += 1;
                     samples_received += samples.len() as u64;
-                    let target = if chunks == 0 {
-                        33_280
-                    } else {
-                        33_280 + chunks * 16_640
-                    };
-                    if samples_received >= target {
+                    let significant = samples_received >= next_memory_target;
+                    if significant {
+                        while next_memory_target <= samples_received {
+                            next_memory_target += 16_640;
+                        }
+                    }
+                    let memory_before = significant.then(crate::paging::Snapshot::read);
+                    if let Some(before) = &memory_before {
+                        emit(before.record("stream_feed", "before", None))?;
+                    }
+                    if significant {
                         emit(
                             serde_json::json!({"event":"native_timing", "stage":"stream_feed_start", "feed_call":calls, "audio_samples":samples_received, "next_processed_chunk":chunks+1}),
                         )?;
@@ -639,6 +640,13 @@ impl Engine {
                     let call_started = Instant::now();
                     let result = stream.feed(&samples);
                     let wall_ms = call_started.elapsed().as_secs_f64() * 1000.;
+                    if let Some(before) = &memory_before {
+                        emit(crate::paging::Snapshot::read().record(
+                            "stream_feed",
+                            "after",
+                            Some(before),
+                        ))?;
+                    }
                     let processed = result
                         .as_ref()
                         .is_ok_and(|u| u.audio_committed_ms != committed_ms);
@@ -677,9 +685,16 @@ impl Engine {
                     emit(
                         serde_json::json!({"event":"native_timing", "stage":"stream_finalize_start", "audio_samples":samples_received}),
                     )?;
+                    let memory_before = crate::paging::Snapshot::read();
+                    emit(memory_before.record("stream_finalize", "before", None))?;
                     let call_started = Instant::now();
                     let result = stream.finalize();
                     let wall_ms = call_started.elapsed().as_secs_f64() * 1000.;
+                    emit(crate::paging::Snapshot::read().record(
+                        "stream_finalize",
+                        "after",
+                        Some(&memory_before),
+                    ))?;
                     let snapshot_started = Instant::now();
                     let current = stream.snapshot().timings;
                     let mut timing =
@@ -704,6 +719,72 @@ impl Engine {
         Ok(None)
     }
 }
+fn paging_call<T>(
+    stage: &str,
+    emit: &mut impl FnMut(serde_json::Value) -> Result<()>,
+    call: impl FnOnce() -> Result<T>,
+) -> Result<(T, f64)> {
+    let before = crate::paging::Snapshot::read();
+    emit(before.record(stage, "before", None))?;
+    let started = Instant::now();
+    let result = call();
+    let wall_ms = started.elapsed().as_secs_f64() * 1000.;
+    let mut after = crate::paging::Snapshot::read().record(stage, "after", Some(&before));
+    after["success"] = result.is_ok().into();
+    after["native_wall_ms"] = wall_ms.into();
+    emit(after)?;
+    result.map(|value| (value, wall_ms))
+}
+
+// A separate stream owns all synthetic state and is dropped before real stream creation.
+// Exercise the representative two-chunk encoder shape on the existing resident session.
+fn parakeet_warmup(
+    session: &mut transcribe_cpp::Session,
+    config: &Config,
+    stage: &str,
+    emit: &mut impl FnMut(serde_json::Value) -> Result<()>,
+) -> Result<()> {
+    let before = crate::paging::Snapshot::read();
+    emit(before.record(stage, "before", None))?;
+    emit(
+        serde_json::json!({"event":"native_timing", "stage":format!("{stage}_start"), "audio_samples":33280,"fixture":"silence"}),
+    )?;
+    let started = Instant::now();
+    let result = (|| -> Result<transcribe_cpp::Timings> {
+        let run = transcribe_cpp::RunOptions {
+            language: Some("en".into()),
+            ..Default::default()
+        };
+        if optimization::profile(config) == "vulkan-full" {
+            return Ok(session.run(&vec![0.; 33_280], &run)?.timings);
+        }
+        let mut stream = session.stream(&run, &parakeet_stream_options())?;
+        let baseline = stream.snapshot().timings;
+        stream.feed(&vec![0.; 33_280])?;
+        stream.finalize()?;
+        let current = stream.snapshot().timings;
+        Ok(transcribe_cpp::Timings {
+            load_ms: current.load_ms,
+            mel_ms: (current.mel_ms - baseline.mel_ms).max(0.),
+            encode_ms: (current.encode_ms - baseline.encode_ms).max(0.),
+            decode_ms: (current.decode_ms - baseline.decode_ms).max(0.),
+        })
+    })();
+    let wall_ms = started.elapsed().as_secs_f64() * 1000.;
+    let mut memory = crate::paging::Snapshot::read().record(stage, "after", Some(&before));
+    memory["success"] = result.is_ok().into();
+    emit(memory)?;
+    let mut timing = native_timing_record(
+        stage,
+        wall_ms,
+        transcribe_cpp::Timings::default(),
+        result.as_ref().copied().unwrap_or_default(),
+    );
+    timing["success"] = result.is_ok().into();
+    emit(timing)?;
+    result.map(|_| ())
+}
+
 // At 16 kHz, look for the quietest 20 ms frame in the last five
 // seconds of a 30 s window. Every sample belongs to exactly one chunk.
 fn canary_chunk_end(samples: &[f32]) -> usize {
@@ -820,6 +901,41 @@ pub fn speech_samples(samples: &[f32]) -> Result<Vec<f32>> {
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn paging_framing_excludes_emit_delay_and_survives_call_failure() {
+        let mut records = Vec::new();
+        let (value, wall_ms) = super::paging_call(
+            "test_call",
+            &mut |record| {
+                std::thread::sleep(std::time::Duration::from_millis(80));
+                records.push(record);
+                Ok(())
+            },
+            || Ok(42),
+        )
+        .unwrap();
+        assert_eq!(value, 42);
+        assert!(
+            wall_ms < 80.,
+            "IPC emission must not be timed as native work"
+        );
+        assert_eq!(records[0]["phase"], "before");
+        assert_eq!(records[1]["phase"], "after");
+        assert_eq!(records[1]["native_wall_ms"], wall_ms);
+        records.clear();
+        let result: anyhow::Result<((), f64)> = super::paging_call(
+            "failed_call",
+            &mut |record| {
+                records.push(record);
+                Ok(())
+            },
+            || anyhow::bail!("fake native failure"),
+        );
+        assert!(result.is_err());
+        assert_eq!(records[1]["success"], false);
+        assert_eq!(records[1]["phase"], "after");
+    }
+
     use super::*;
     #[test]
     fn canary_full_limit_is_exclusive() {
