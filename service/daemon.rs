@@ -41,7 +41,9 @@ pub enum Event {
     CaptureFault(JobId, String),
     Finalized(JobId, Result<(std::path::PathBuf, Option<String>)>),
     Saved(JobId, Result<SavedRecording>),
+    #[cfg(test)]
     Transcribed(JobId, Transcript),
+    WorkerTranscribed(JobId, Arc<AtomicBool>, Transcript),
     Persisted(JobId, Result<()>),
     Delivered(JobId, Result<()>),
     Storage(Option<u64>, Box<Event>),
@@ -136,7 +138,9 @@ impl Daemon {
     fn with_server(config: Config, probe: bool, probe_tray: bool, server: Server) -> Result<Self> {
         let history_owner = History::open(&config.data_dir)?;
         // Startup only, before capture admission. All later storage runs on its worker.
-        if let Err(error) = crate::storage::recover_recordings(&history_owner, &config.data_dir.join("recordings")) {
+        if let Err(error) =
+            crate::storage::recover_recordings(&history_owner, &config.data_dir.join("recordings"))
+        {
             log::error!("Recording recovery scan failed; retained files remain on disk: {error:#}");
         }
         let storage = Storage::start(history_owner, server.send.clone());
@@ -363,7 +367,9 @@ impl Daemon {
             .recording()
             .filter(|job| self.jobs.active[job].owner == Some(id))
         {
-            log::warn!("Recording owner disconnected: job={job}; saving and transcribing captured audio");
+            log::warn!(
+                "Recording owner disconnected: job={job}; saving and transcribing captured audio"
+            );
             self.stop_recording();
         }
         if self.key_capture.as_ref().is_some_and(|k| k.client == id) {
@@ -425,7 +431,14 @@ impl Daemon {
         if !self.jobs.active.contains_key(&id) {
             return;
         }
-        log::error!("Dictation failed: job={id} error={message}");
+        let job = &self.jobs.active[&id];
+        let _context = crate::logging::context(json!({
+            "event":"dictation_failed", "job_id":id, "history_id":job.history_id,
+            "stage":job.stage, "model":job.config.string("transcription","model"),
+            "requested_profile":optimization::profile(&job.config), "runtime_profile":self.runtime_profile,
+            "elapsed_ms":job.started.elapsed().as_millis(), "error":message
+        }));
+        log::error!("Dictation failed: job={id} history={:?} stage={:?} runtime={} elapsed_ms={} error={message}",job.history_id,job.stage,self.runtime_profile,job.started.elapsed().as_millis());
         self.terminal(id, "failed");
         self.error(message);
         self.flush_output();
@@ -518,14 +531,35 @@ impl Daemon {
         thread::spawn(move || {
             let events = send.clone();
             let overrun = AtomicBool::new(false);
+            let accepted_samples = AtomicU64::new(0);
+            let accepted_chunks = AtomicU64::new(0);
+            let capture_started = Instant::now();
             let (owner, owner_lifetime) = mpsc::channel();
             let result = Capture::start(&config, move |samples, level, db| {
                 if streaming && !overrun.load(Ordering::Relaxed) {
                     for chunk in samples.chunks(1600) {
-                        if audio.try_send(StreamInput::Audio(chunk.to_vec())).is_err() {
-                            overrun.store(true, Ordering::Relaxed);
-                            let _=events.send(Event::CaptureFault(id,"Speech inference stopped accepting audio; saving the captured recording.".into()));
-                            break;
+                        match audio.try_send(StreamInput::Audio(chunk.to_vec())) {
+                            Ok(()) => {
+                                accepted_samples.fetch_add(chunk.len() as u64, Ordering::Relaxed);
+                                accepted_chunks.fetch_add(1, Ordering::Relaxed);
+                            }
+                            Err(error) => {
+                                let reason = match error {
+                                    mpsc::TrySendError::Full(_) => "queue_full",
+                                    mpsc::TrySendError::Disconnected(_) => "worker_disconnected",
+                                };
+                                let _context = crate::logging::context(json!({
+                                    "event":"stream_delivery_failed", "job_id":id, "reason":reason,
+                                    "queue_capacity_chunks":256, "accepted_chunks":accepted_chunks.load(Ordering::Relaxed),
+                                    "accepted_samples":accepted_samples.load(Ordering::Relaxed),
+                                    "callback_samples":samples.len(), "rejected_chunk_samples":chunk.len(),
+                                    "capture_elapsed_ms":capture_started.elapsed().as_millis()
+                                }));
+                                log::error!("Stream delivery failed: job={id} reason={reason} capacity_chunks=256 accepted_chunks={} accepted_audio_seconds={:.3} capture_elapsed_ms={} recovery=transcribe_saved_audio",accepted_chunks.load(Ordering::Relaxed),accepted_samples.load(Ordering::Relaxed) as f64 / 16000.,capture_started.elapsed().as_millis());
+                                overrun.store(true, Ordering::Relaxed);
+                                let _=events.send(Event::CaptureFault(id,format!("Streaming interrupted ({reason}); recovering the saved recording.")));
+                                break;
+                            }
                         }
                     }
                 }
@@ -786,7 +820,21 @@ fn retry_config(saved: &Config, message: &Value) -> Result<Config> {
         }
     }
     let selected = saved.changed(&changes)?;
-    optimization::check_profile(&selected)?;
+    // The inference supervisor applies the same CPU fallback as live dictation.
+    // Validate user values in changed(), but do not reject a saved GPU preference
+    // merely because this executable lacks that backend.
+    if let Err(error) = optimization::check_profile(&selected) {
+        if !matches!(
+            optimization::profile(&selected),
+            "vulkan" | "vulkan-full" | "hybrid"
+        ) {
+            return Err(error);
+        }
+        log::warn!(
+            "History retry will use inference fallback: requested_profile={} reason={error:#}",
+            optimization::profile(&selected)
+        );
+    }
     Ok(selected)
 }
 fn prepare_config(previous: &Config, message: &Value) -> Result<Config> {

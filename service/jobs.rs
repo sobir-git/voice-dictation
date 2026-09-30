@@ -60,6 +60,15 @@ pub struct Job {
     pub result: Option<Transcript>,
 }
 impl Job {
+    pub fn recover_stream(&mut self, reason: &str) {
+        log::warn!("Stream recovery: job={} history={:?} reason={reason} action=cancel_stream_then_transcribe_saved_audio", self.id, self.history_id);
+        self.cancelled
+            .store(true, std::sync::atomic::Ordering::Release);
+        self.cancelled = Arc::new(AtomicBool::new(false));
+        self.stream = None;
+        self.result = None;
+    }
+
     pub fn transition(&mut self, stage: Stage) {
         assert!(
             self.stage.allows(stage),

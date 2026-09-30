@@ -85,3 +85,13 @@ VOICE_DICTATION_FEATURES=vulkan ./update_local.sh
 GPU builders need Vulkan development headers, loader and a recent glslc shader compiler, discoverable through the Vulkan SDK/CMake toolchain. End users need the Vulkan loader and their normal GPU driver, not the development SDK. A CPU-only build must not be presented as GPU-enabled.
 
 Native compiler ISA settings must be selected for the release's supported CPU floor when distributing prebuilt binaries. Do not distribute a locally CPU-native-tuned binary as a universal host build. transcribe.cpp exposes `TRANSCRIBE_X86_CONSERVATIVE=ON` for a conservative x86 build through `TRANSCRIBE_CMAKE_ARGS`; release builders can retain their Vulkan SDK arguments alongside it.
+
+### Keeping the installed backend consistent
+
+Both `install.sh` and `update_local.sh` preserve Vulkan when the installed speech
+service reports Vulkan support. Use `VOICE_DICTATION_FEATURES=vulkan` to enable
+it explicitly. An explicitly empty `VOICE_DICTATION_FEATURES` selects CPU; an
+unset variable preserves the installed backend. Fresh installs default to CPU.
+When `CARGO_TARGET_DIR` points at a verified build directory, installation copies
+those binaries atomically into `target/release`, which is where `run.sh` starts
+them. Verification alone never changes the installed backend or user settings.

@@ -72,8 +72,9 @@ pub(super) fn start_worker(
                         let _ = events.send(Event::Model(identity, Err(error)));
                     }
                     Work::Transcribe { id, requested, .. } => {
-                        let _ = events.send(Event::Transcribed(
+                        let _ = events.send(Event::WorkerTranscribed(
                             id,
+                            cancellation.clone(),
                             Transcript {
                                 text: Err(detail),
                                 seconds: requested.elapsed().as_secs_f64(),
@@ -82,8 +83,9 @@ pub(super) fn start_worker(
                         ));
                     }
                     Work::Stream { id, finished, .. } => {
-                        let _ = events.send(Event::Transcribed(
+                        let _ = events.send(Event::WorkerTranscribed(
                             id,
+                            cancellation.clone(),
                             Transcript {
                                 text: Err(detail),
                                 seconds: finished
@@ -144,12 +146,19 @@ pub(super) fn start_worker(
                 Work::Benchmark(..) => unreachable!(),
             };
             if let Err(error) = &result {
-                log::error!("Inference operation failed: {error:#}");
+                if cancelled() {
+                    log::warn!("Inference attempt cancelled by coordinator: job={id} generation={generation} current_generation={} shutdown={} error={error:#}", current.load(Ordering::Acquire), shutdown.load(Ordering::Acquire));
+                } else {
+                    log::error!(
+                        "Inference operation failed: job={id} model={model} error={error:#}"
+                    );
+                }
                 engine = None;
                 let _ = events.send(Event::WorkerUnavailable(identity));
             }
-            let _ = events.send(Event::Transcribed(
+            let _ = events.send(Event::WorkerTranscribed(
                 id,
+                cancellation.clone(),
                 Transcript {
                     text: result.map_err(|e| format!("{e:#}")),
                     seconds,

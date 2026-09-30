@@ -63,12 +63,21 @@ impl Daemon {
             Event::CaptureStarted(id, result) => self.capture_started(id, result),
             Event::CaptureFault(id, error) => {
                 if self.jobs.recording() == Some(id) {
+                    self.jobs.active.get_mut(&id).unwrap().recover_stream(&error);
                     self.error(error);
                     self.stop_recording();
                 }
             }
             Event::Finalized(id, result) => self.capture_finalized(id, result),
             Event::Saved(id, result) => self.capture_saved(id, result),
+            Event::WorkerTranscribed(id, attempt, result) => {
+                if self.jobs.active.get(&id).is_some_and(|job| Arc::ptr_eq(&job.cancelled, &attempt)) {
+                    self.transcribed(id, result);
+                } else {
+                    log::info!("Discarded superseded inference result: job={id}");
+                }
+            }
+            #[cfg(test)]
             Event::Transcribed(id, result) => self.transcribed(id, result),
             Event::Persisted(id, result) => self.persisted(id, result),
             Event::Delivered(id, result) => {
@@ -166,7 +175,12 @@ impl Daemon {
         id: JobId,
         result: Result<(std::path::PathBuf, Option<String>)>,
     ) {
-        if let Some(job) = self.jobs.active.get_mut(&id).filter(|job| job.stage == Stage::Finalizing) {
+        if let Some(job) = self
+            .jobs
+            .active
+            .get_mut(&id)
+            .filter(|job| job.stage == Stage::Finalizing)
+        {
             job.transition(Stage::Saving);
         }
         // Even late completions after cancellation must be indexed in history.
@@ -175,15 +189,22 @@ impl Daemon {
             Ok((file, warning)) => {
                 let directory = self.config.data_dir.join("recordings");
                 let effect = move |history: &History| {
-                    Event::Saved(id, crate::storage::save_recording(history, &directory, file, warning))
+                    Event::Saved(
+                        id,
+                        crate::storage::save_recording(history, &directory, file, warning),
+                    )
                 };
                 if let Err(error) = self.effect(effect) {
-                    self.error(format!("Could not index recording; audio retained on disk: {error:#}"));
+                    self.error(format!(
+                        "Could not index recording; audio retained on disk: {error:#}"
+                    ));
                     self.fail(id, format!("Could not save recording: {error:#}"));
                 }
             }
             Err(error) => {
-                self.error(format!("Recording finalization failed; capture file retained in recordings: {error:#}"));
+                self.error(format!(
+                    "Recording finalization failed; capture file retained in recordings: {error:#}"
+                ));
                 self.fail(id, format!("Recording failed: {error:#}"));
             }
         }
@@ -198,10 +219,15 @@ impl Daemon {
         else {
             match result {
                 Ok(saved) => {
-                    log::info!("Interrupted recording retained: history={}", saved.history_id);
+                    log::info!(
+                        "Interrupted recording retained: history={}",
+                        saved.history_id
+                    );
                     self.broadcast(json!({"type":"history_changed"}));
                 }
-                Err(error) => self.error(format!("Could not index interrupted recording; audio retained: {error:#}")),
+                Err(error) => self.error(format!(
+                    "Could not index interrupted recording; audio retained: {error:#}"
+                )),
             }
             return;
         };
@@ -215,8 +241,23 @@ impl Daemon {
         job.history_id = Some(saved.history_id);
         job.transition(Stage::Transcribing);
         let has_result = job.result.is_some();
-        let stream = job.stream.take();
-        let work = if !has_result && stream.is_none() {
+        if let Some(stream) = job.stream.take() {
+            if let Err(error) = stream.try_send(StreamInput::Finish) {
+                if !has_result {
+                    let reason = match error {
+                        mpsc::TrySendError::Full(_) => "finish_queue_full",
+                        mpsc::TrySendError::Disconnected(_) => "finish_worker_disconnected",
+                    };
+                    job.recover_stream(reason);
+                } else {
+                    log::info!("Stream finish unnecessary: job={id} result_already_received=true");
+                }
+            } else {
+                // Keep a marker so this job waits for its stream result.
+                job.stream = Some(stream);
+            }
+        }
+        let work = if !has_result && job.stream.is_none() {
             Some(Work::Transcribe {
                 id,
                 generation: job.generation,
@@ -228,15 +269,6 @@ impl Daemon {
         } else {
             None
         };
-        if let Some(stream) = stream {
-            if stream.try_send(StreamInput::Finish).is_err() && !has_result {
-                self.fail(
-                    id,
-                    "Audio stream could not finalize; recording is saved in history.".into(),
-                );
-                return;
-            }
-        }
         if let Some(warning) = saved.warning {
             self.error(format!("{warning} Recovering the audio captured so far."));
         }

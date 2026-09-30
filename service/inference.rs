@@ -73,12 +73,36 @@ fn read_request(stream: &mut UnixStream) -> Result<Request> {
     Ok(serde_json::from_slice(&data)?)
 }
 
+// Read only on a stalled/failed operation, never on the audio producer or UI thread.
+fn worker_snapshot(pid: u32) -> serde_json::Value {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap_or_default();
+    let fields: Vec<_> = stat
+        .rsplit_once(") ")
+        .map(|(_, rest)| rest.split_whitespace().collect())
+        .unwrap_or_default();
+    serde_json::json!({
+        "state":fields.first(),
+        "user_cpu_ticks":fields.get(11).and_then(|v| v.parse::<u64>().ok()),
+        "system_cpu_ticks":fields.get(12).and_then(|v| v.parse::<u64>().ok()),
+        "threads":fields.get(17).and_then(|v| v.parse::<u64>().ok()),
+        "resident_pages":fields.get(21).and_then(|v| v.parse::<u64>().ok()),
+        "wait_channel":std::fs::read_to_string(format!("/proc/{pid}/wchan")).ok().map(|v| v.trim().to_owned()),
+        "host_load":std::fs::read_to_string("/proc/loadavg").ok().map(|v| v.trim().to_owned())
+    })
+}
+
 pub struct Inference {
     child: Child,
     socket: UnixStream,
     pending: Vec<u8>,
     identity: (String, String),
     pub profile: String,
+    operation: &'static str,
+    sequence: u64,
+    audio_samples: u64,
+    operation_started: Instant,
+    last_ack_samples: u64,
+    max_response_ms: u128,
 }
 impl Inference {
     pub fn load(config: &Config, cancelled: impl Fn() -> bool) -> Result<Self> {
@@ -138,6 +162,12 @@ impl Inference {
             pending: Vec::new(),
             identity: optimization::identity(config),
             profile: String::new(),
+            operation: "load",
+            sequence: 0,
+            audio_samples: 0,
+            operation_started: Instant::now(),
+            last_ack_samples: 0,
+            max_response_ms: 0,
         };
         worker.send(&Request::Load {
             config: config.clone(),
@@ -152,7 +182,37 @@ impl Inference {
         self.identity == optimization::identity(c)
     }
     fn send(&mut self, request: &Request) -> Result<()> {
-        write_frame(&mut self.socket, request).context("Sending inference request")
+        self.operation = match request {
+            Request::Load { .. } => "load",
+            Request::Transcribe { .. } => "transcribe",
+            Request::Stream => {
+                self.audio_samples = 0;
+                self.last_ack_samples = 0;
+                self.max_response_ms = 0;
+                "stream_start"
+            }
+            Request::Audio { samples } => {
+                self.audio_samples += samples.len() as u64;
+                "stream_feed"
+            }
+            Request::Finish => "stream_finalize",
+        };
+        if self.operation == "stream_start" {
+            log::info!(
+                "Inference stream started: worker_pid={} runtime_profile={} worker={}",
+                self.child.id(),
+                self.profile,
+                worker_snapshot(self.child.id())
+            );
+        }
+        self.sequence += 1;
+        self.operation_started = Instant::now();
+        write_frame(&mut self.socket, request).with_context(|| {
+            format!(
+            "Sending inference request: worker_pid={} operation={} sequence={} audio_samples={}",
+            self.child.id(), self.operation, self.sequence, self.audio_samples
+        )
+        })
     }
     fn response(
         &mut self,
@@ -161,7 +221,37 @@ impl Inference {
         preview: &mut impl FnMut(String, String),
     ) -> Result<Response> {
         let deadline = Instant::now() + timeout;
+        let mut next_report = Instant::now() + Duration::from_secs(5);
         loop {
+            if Instant::now() >= next_report || cancelled() || Instant::now() >= deadline {
+                let outcome = if cancelled() {
+                    "cancelled"
+                } else if Instant::now() >= deadline {
+                    "timeout"
+                } else {
+                    "waiting"
+                };
+                let mut details = crate::logging::current_context();
+                if !details.is_object() {
+                    details = serde_json::json!({});
+                }
+                let diagnostic = serde_json::json!({
+                    "event":"inference_wait",
+                    "worker_pid":self.child.id(), "operation":self.operation,
+                    "sequence":self.sequence, "audio_samples":self.audio_samples,
+                    "acknowledged_samples":self.last_ack_samples, "max_response_ms":self.max_response_ms,
+                    "elapsed_ms":self.operation_started.elapsed().as_millis(),
+                    "timeout_ms":timeout.as_millis(), "outcome":outcome,
+                    "worker":worker_snapshot(self.child.id())
+                });
+                details
+                    .as_object_mut()
+                    .unwrap()
+                    .extend(diagnostic.as_object().unwrap().clone());
+                let _context = crate::logging::context(details);
+                log::warn!("Inference {outcome}: worker_pid={} operation={} sequence={} audio_seconds={:.3} elapsed_ms={}",self.child.id(),self.operation,self.sequence,self.audio_samples as f64 / 16000.,self.operation_started.elapsed().as_millis());
+                next_report = Instant::now() + Duration::from_secs(5);
+            }
             anyhow::ensure!(!cancelled(), "Inference cancelled");
             anyhow::ensure!(
                 Instant::now() < deadline,
@@ -182,8 +272,19 @@ impl Inference {
                             preview(committed, tentative);
                             continue;
                         }
-                        Response::Failed { error } => bail!("{error}"),
-                        response => return Ok(response),
+                        Response::Failed { error } => bail!("Native inference failed: worker_pid={} operation={} sequence={} audio_samples={} elapsed_ms={} error={error}",self.child.id(),self.operation,self.sequence,self.audio_samples,self.operation_started.elapsed().as_millis()),
+                        response => {
+                            self.max_response_ms = self.max_response_ms.max(self.operation_started.elapsed().as_millis());
+                            if matches!(response, Response::Ack) && self.operation == "stream_feed" {
+                                self.last_ack_samples = self.audio_samples;
+                            }
+                            if self.operation != "stream_feed"
+                                || self.operation_started.elapsed() >= Duration::from_millis(500)
+                            {
+                                log::info!("Inference operation completed: worker_pid={} operation={} sequence={} audio_samples={} elapsed_ms={}", self.child.id(), self.operation, self.sequence, self.audio_samples, self.operation_started.elapsed().as_millis());
+                            }
+                            return Ok(response);
+                        }
                     }
                 }
             }
@@ -412,6 +513,14 @@ pub fn child() -> Result<()> {
 mod tests {
     use super::*;
     #[test]
+    fn worker_snapshot_is_readable_and_missing_process_is_tolerated() {
+        let snapshot = worker_snapshot(std::process::id());
+        assert!(snapshot["threads"].as_u64().unwrap() > 0);
+        assert!(snapshot["resident_pages"].as_u64().unwrap() > 0);
+        assert!(worker_snapshot(u32::MAX)["state"].is_null());
+    }
+
+    #[test]
     fn worker_entry() {
         if std::env::var_os("VOICE_TEST_INFERENCE_CHILD").is_some() {
             let _ = child();
@@ -474,6 +583,9 @@ mod tests {
             "synthetic transcript"
         );
         assert_eq!(worker.child.id(), pid);
+        assert_eq!(worker.audio_samples, 1600);
+        assert_eq!(worker.last_ack_samples, 1600);
+        assert_eq!(worker.operation, "transcribe");
     }
     #[test]
     fn load_timeout_reaps_stalled_worker() {

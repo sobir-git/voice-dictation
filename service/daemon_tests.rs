@@ -700,7 +700,7 @@ fn prunes_old_and_oversized_recordings_but_keeps_favorites() {
     assert!(favorite.exists());
     assert!(fresh.exists());
     assert!(extra.exists()); // Unindexed recordings are always protected.
-    // Disabled limits leave files alone.
+                             // Disabled limits leave files alone.
     daemon.config = daemon
         .config
         .changed(&json!({"recordings":{"max_age_days":0,"max_mb":0}}))
@@ -751,11 +751,19 @@ fn late_finalization_after_cancel_is_saved_without_output() {
     let directory = d.config.data_dir.join("recordings");
     std::fs::create_dir_all(&directory).unwrap();
     let path = directory.join("dictation-cancelled.wav");
-    let mut writer = hound::WavWriter::create(&path, hound::WavSpec {
-        channels: 1, sample_rate: 16000, bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    }).unwrap();
-    for _ in 0..1600 { writer.write_sample(100_i16).unwrap(); }
+    let mut writer = hound::WavWriter::create(
+        &path,
+        hound::WavSpec {
+            channels: 1,
+            sample_rate: 16000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        },
+    )
+    .unwrap();
+    for _ in 0..1600 {
+        writer.write_sample(100_i16).unwrap();
+    }
     writer.finalize().unwrap();
     d.cancel();
     d.event(Event::Finalized(id, Ok((path.clone(), None))));
@@ -765,4 +773,92 @@ fn late_finalization_after_cancel_is_saved_without_output() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["failed"], true);
     assert!(!d.jobs.busy());
+}
+
+#[test]
+fn full_or_disconnected_finish_queue_recovers_saved_audio_and_ignores_old_result() {
+    for disconnected in [false, true] {
+        let (_root, mut d) = isolated();
+        let config = d
+            .config
+            .changed(&json!({"transcription":{"model":"test-echo"}}))
+            .unwrap();
+        let id = d.jobs.insert(config, Stage::Saving, None, None);
+        let old_attempt = d.jobs.active[&id].cancelled.clone();
+        let (send, receive) = mpsc::sync_channel(1);
+        send.send(StreamInput::Audio(vec![0.; 1600])).unwrap();
+        let receiver = if disconnected {
+            drop(receive);
+            None
+        } else {
+            Some(receive)
+        };
+        d.jobs.active.get_mut(&id).unwrap().stream = Some(send);
+        let row = d
+            .history
+            .add_recording("", std::path::Path::new("synthetic.wav"), 1., true)
+            .unwrap();
+        d.event(Event::Saved(
+            id,
+            Ok(SavedRecording {
+                path: "synthetic.wav".into(),
+                history_id: row,
+                warning: None,
+            }),
+        ));
+        assert!(old_attempt.load(Ordering::Acquire));
+        assert!(!Arc::ptr_eq(&old_attempt, &d.jobs.active[&id].cancelled));
+        d.event(Event::WorkerTranscribed(
+            id,
+            old_attempt,
+            Transcript {
+                text: Ok("stale partial text".into()),
+                seconds: 0.,
+                model: "test-echo".into(),
+            },
+        ));
+        assert!(d.jobs.active[&id].result.is_none());
+        d.pump(|d| !d.jobs.busy());
+        let saved = d.history.get(row).unwrap().unwrap();
+        assert_eq!(saved["failed"], false);
+        assert_eq!(saved["text"], "synthetic transcript");
+        drop(receiver);
+    }
+}
+
+#[test]
+fn capture_overrun_cancels_only_the_old_stream_and_preserves_job() {
+    let (_root, mut d) = isolated();
+    let id = d.seed(Stage::Recording, None);
+    let old_attempt = d.jobs.active[&id].cancelled.clone();
+    let (send, _receive) = mpsc::sync_channel(1);
+    d.jobs.active.get_mut(&id).unwrap().stream = Some(send);
+    d.event(Event::CaptureFault(id, "queue_full".into()));
+    let job = &d.jobs.active[&id];
+    assert_eq!(job.stage, Stage::Finalizing);
+    assert!(old_attempt.load(Ordering::Acquire));
+    assert!(!job.cancelled.load(Ordering::Acquire));
+    assert!(job.stream.is_none());
+    d.event(Event::WorkerTranscribed(
+        id,
+        old_attempt,
+        Transcript {
+            text: Err("Inference cancelled".into()),
+            seconds: 0.,
+            model: "test-echo".into(),
+        },
+    ));
+    assert!(d.jobs.active[&id].result.is_none());
+}
+
+#[test]
+fn history_retry_accepts_saved_gpu_preference_for_supervised_cpu_fallback() {
+    let root = tempfile::tempdir().unwrap();
+    let saved = Config::at(root.path())
+        .unwrap()
+        .changed(&json!({"performance":{"profile":"vulkan"}}))
+        .unwrap();
+    let original = saved.data.clone();
+    assert_eq!(retry_config(&saved, &json!({})).unwrap().data, original);
+    assert_eq!(saved.data, original);
 }
