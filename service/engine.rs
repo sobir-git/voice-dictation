@@ -111,6 +111,11 @@ fn parakeet_stream_options() -> transcribe_cpp::StreamOptions {
     }
 }
 
+thread_local! { static GPU_ATTEMPTED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; }
+pub(crate) fn gpu_attempted() -> bool {
+    GPU_ATTEMPTED.with(|v| v.get())
+}
+
 fn load_transcribe_model(path: PathBuf, config: &Config) -> Result<transcribe_cpp::Model> {
     let hybrid = optimization::profile(config) == "hybrid";
     if hybrid {
@@ -120,6 +125,12 @@ fn load_transcribe_model(path: PathBuf, config: &Config) -> Result<transcribe_cp
         std::env::remove_var("TRANSCRIBE_CANARY_HYBRID");
         std::env::remove_var("GGML_VK_DISABLE_F16");
     }
+    GPU_ATTEMPTED.with(|v| {
+        v.set(matches!(
+            optimization::profile(config),
+            "vulkan" | "vulkan-full" | "hybrid"
+        ))
+    });
     Ok(transcribe_cpp::Model::load_with(
         path,
         &transcribe_cpp::ModelOptions {
@@ -215,6 +226,7 @@ pub enum Engine {
 }
 impl Engine {
     pub fn load(config: &Config) -> Result<Self> {
+        GPU_ATTEMPTED.with(|v| v.set(false));
         let _pause_openmp_workers = OpenMpPause;
         optimization::check_profile(config)?;
         #[cfg(target_os = "linux")]

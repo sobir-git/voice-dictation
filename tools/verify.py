@@ -10,21 +10,26 @@ import json
 import os
 from pathlib import Path
 import shutil
+import shlex
 import subprocess
 import sys
 import time
 from typing import Any
 
 
-SCHEMA = 1
+SCHEMA = 2
 MODES = ("ui-layout", "ui-behavior", "full")
 BACKENDS = ("cpu", "vulkan")
 PROVENANCE_ENV = (
     "RUSTFLAGS",
     "CARGO_PROFILE_RELEASE_LTO",
     "TRANSCRIBE_CMAKE_ARGS",
+    "CMAKE_ARGS",
     "VULKAN_SDK",
     "LIBRARY_PATH",
+    "CC", "CXX", "CMAKE", "GLSLC", "CFLAGS", "CXXFLAGS", "CMAKE_TOOLCHAIN_FILE",
+    "CARGO_BUILD_TARGET", "CARGO_ENCODED_RUSTFLAGS", "CARGO_PROFILE_RELEASE_CODEGEN_UNITS",
+    "CARGO_PROFILE_RELEASE_OPT_LEVEL", "CARGO_PROFILE_RELEASE_STRIP",
 )
 
 
@@ -53,15 +58,13 @@ def git_inputs(root: Path) -> list[Path]:
 
 
 def command_output(command: list[str], root: Path) -> str:
-    result = subprocess.run(
-        command,
-        cwd=root,
-        check=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    )
-    return result.stdout.strip()
+    try:
+        result = subprocess.run(command, cwd=root, check=False, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True)
+        return result.stdout.strip()
+    except OSError:
+        return "unavailable"
+
 
 
 def source_fingerprint(root: Path, backend: str, target_dir: Path) -> dict[str, Any]:
@@ -74,7 +77,9 @@ def source_fingerprint(root: Path, backend: str, target_dir: Path) -> dict[str, 
         digest.update(b"\0")
     rustc = command_output(["rustc", "-Vv"], root)
     cargo = command_output(["cargo", "-V"], root)
-    environment = {name: os.environ.get(name, "") for name in PROVENANCE_ENV}
+    environment_names = set(PROVENANCE_ENV) | {name for name in os.environ if name.startswith((
+        "CARGO_TARGET_", "CC_", "CXX_", "CFLAGS_", "CXXFLAGS_"))}
+    environment = {name: hashlib.sha256(os.environ.get(name, "").encode()).hexdigest() for name in sorted(environment_names)}
     payload: dict[str, Any] = {
         "schema": SCHEMA,
         "backend": backend,
@@ -89,7 +94,15 @@ def source_fingerprint(root: Path, backend: str, target_dir: Path) -> dict[str, 
         "environment": environment,
         "inputs": [path.as_posix() for path in inputs],
     }
-    payload["fingerprint"] = digest.hexdigest()
+    payload["source_digest"] = digest.hexdigest()
+    payload["native_toolchain"] = {
+        name: command_output(shlex.split(os.environ.get(variable, "") or default) + ["--version"], root)
+        for name, variable, default in (("cmake", "CMAKE", "cmake"), ("cc", "CC", "cc"),
+                                        ("c++", "CXX", "c++"), ("glslc", "GLSLC", "glslc"))
+    }
+    payload["fingerprint"] = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
     return payload
 
 
@@ -156,7 +169,7 @@ def mode_steps(mode: str, backend: str, binary: Path) -> list[tuple[str, list[st
     steps.extend(
         [
             ("release-build", cargo_command(["build", "--release", "--locked"], backend), 1800),
-            ("native-probe", [sys.executable, "tools/native_probe.py", "--binary", str(binary)], 600),
+            ("native-probe", [sys.executable, "tools/native_probe.py", "--binary", str(binary), "--output", str(binary.parent / "native")], 600),
         ]
     )
     return steps
@@ -204,6 +217,7 @@ def main() -> int:
     artifact_dir = root / "artifacts" / "verification" / "bin" / args.backend
     binary = artifact_dir / "voice-dictation"
     report_dir = root / "artifacts" / "verification"
+    report_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     report_path = report_dir / f"{stamp}-{mode}-{args.backend}.json"
     manifest_path = report_dir / f"provenance-{args.backend}.json"
@@ -230,6 +244,13 @@ def main() -> int:
     if args.dry_run:
         print("Dry run: no commands will execute and no installation will occur.", flush=True)
 
+    if not args.dry_run and manifest_path.is_file():
+        try:
+            previous = json.loads(manifest_path.read_text())
+            previous["verification"] = {"status": "pending", "mode": mode}
+            write_report(manifest_path, previous)
+        except (OSError, ValueError, TypeError):
+            manifest_path.unlink(missing_ok=True)
     for name, command, timeout in steps:
         if name == "release-build":
             existing = None
@@ -245,6 +266,7 @@ def main() -> int:
                 and (artifact_dir / "speech-service").is_file()
                 and isinstance(existing, dict)
                 and existing.get("fingerprint") == provenance["fingerprint"]
+                and all(existing.get(key) == value for key, value in provenance.items())
                 and existing.get("binary_sha256") == artifact_hashes(artifact_dir)
             )
             if reusable:
@@ -327,9 +349,21 @@ def main() -> int:
                 "artifact_dir": str(artifact_dir),
                 "binary_sha256": artifact_hashes(artifact_dir),
                 "created_at": now(),
+                "verification": {"status": "built", "mode": mode},
             }
             write_report(manifest_path, manifest)
 
+    if not args.dry_run:
+        manifest = json.loads(manifest_path.read_text())
+        if source_fingerprint(root, args.backend, target_dir) != provenance or artifact_hashes(artifact_dir) != manifest['binary_sha256']:
+            report['result'] = 'failed'
+            report['error'] = 'Source/provenance or artifact pair changed during verification'
+            report['finished_at'] = now()
+            write_report(report_path, report)
+            print(report['error'], file=sys.stderr)
+            return 1
+        manifest["verification"] = {"status": "passed", "mode": mode, "report": str(report_path), "finished_at": now()}
+        write_report(manifest_path, manifest)
     report["result"] = "planned" if args.dry_run else "passed"
     report["finished_at"] = now()
     write_report(report_path, report)

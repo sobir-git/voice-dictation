@@ -73,7 +73,9 @@ def collect(output, log_path, binary_dir, system=True):
                 'privacy': 'Logs and system metadata can contain paths or native error text. Review before sharing.'}
     remaining = TOTAL_LIMIT
     with os.fdopen(fd, 'wb') as raw, zipfile.ZipFile(raw, 'w', zipfile.ZIP_DEFLATED) as archive:
-        for path in log_files(log_path):
+        installation = Path(os.environ.get('XDG_DATA_HOME', str(Path.home()/'.local/share')))/'speech-to-text'
+        installation_logs = [installation/'installation.jsonl'] + [installation/f'installation.jsonl.{i}' for i in range(1, 6)]
+        for path in log_files(log_path) + installation_logs:
             entry = {'source': str(path)}
             try:
                 if path.is_symlink():
@@ -91,6 +93,9 @@ def collect(output, log_path, binary_dir, system=True):
             except OSError as error:
                 entry['unavailable'] = str(error)
             manifest['files'].append(entry)
+        receipt = binary_dir/'receipt.json'
+        if receipt.is_file() and receipt.stat().st_size <= FILE_LIMIT:
+            archive.writestr('installation-receipt.json', receipt.read_bytes())
         archive.writestr('daemon-state.json', json.dumps(daemon_state(), indent=2))
         binaries = []
         for name in ('speech-service', 'voice-dictation'):
@@ -125,7 +130,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path)
     parser.add_argument('--log-path', type=Path, default=Path.home()/'.local/share/speech-to-text/app.log')
-    parser.add_argument('--binary-dir', type=Path, default=Path(__file__).resolve().parents[1]/'target/release')
+    parser.add_argument('--binary-dir', type=Path, default=(Path(os.environ.get('XDG_DATA_HOME', str(Path.home()/'.local/share')))/'speech-to-text/installations/current').resolve())
     args = parser.parse_args()
     output = args.output or Path.home()/'.local/share/speech-to-text/diagnostics'/f'report-{time.time_ns()}.zip'
     collect(output, args.log_path, args.binary_dir)

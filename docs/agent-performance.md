@@ -16,7 +16,7 @@ The product supplies composable commands, not an automatic tuner. Use the existi
 | `--apply-optimization ID --threads N` | Optional `--model NAME` | JSON save acknowledgment | Saves that exact model's setting through the daemon; reload occurs in the background |
 | `--benchmark-case REQUEST.json RESULT.json` | JSON object containing `config` sections and `seconds` | No stdout; JSON result written to output path | Loads only the requested model in this process; no daemon, configuration, history or output mutations |
 
-All commands are on `target/release/speech-service`. Nonzero exit means failure, with details on stderr. Paired benchmark progress also goes to stderr; stdout stays valid JSON. Ctrl-C or a disconnected requesting client cancels a paired benchmark. Each case has a five-minute watchdog. A GPU failure is never relabeled as a successful CPU benchmark.
+Installed commands are on `${XDG_DATA_HOME:-$HOME/.local/share}/speech-to-text/installations/current/speech-service` (resolve the release path before a multi-command session). Development commands can use `target/release/speech-service`. See [installation](installation.md). Nonzero exit means failure, with details on stderr. Paired benchmark progress also goes to stderr; stdout stays valid JSON. Ctrl-C or a disconnected requesting client cancels a paired benchmark. Each case has a five-minute watchdog. A GPU failure is never relabeled as a successful CPU benchmark.
 
 An atomic case can be composed into a custom experiment. Example input:
 
@@ -29,7 +29,7 @@ A case uses one warmup and two measured repetitions. Process memory is peak RSS;
 ## Compose an experiment
 
 1. Query capabilities and status. Preserve the user's existing model, precision, language, beam size, VAD and performance settings. Identify whether the installed executable actually includes the requested backend.
-2. Start with the existing CPU build. Build `--features vulkan` only when testing a compatible GGUF GPU path. The GPU-enabled executable replaces the CPU executable; no second copy needs to remain installed. Development SDKs belong in the build environment, not the product installation.
+2. Start with the existing CPU build. Build `--features vulkan` only when testing a compatible GGUF GPU path. Explicitly install the Vulkan edition; later installs preserve its receipt edition. Cargo output never replaces the installed pair. Development SDKs belong in the build environment, not the product installation.
 3. Compare a small set of thread counts that make sense for this host. Do not copy another machine's affinity masks or assume Intel P/E core numbering. Begin with five-second tests; use 2/15/30/60 seconds when length scaling matters.
 4. Keep the transcription settings fixed while comparing performance. Inspect `rows[].reference` and `candidate` timings, `same_words`, `stable_words`, both texts, loading time, and process/GPU memory. Repeat close or noisy results. Normalized text agreement on the synthetic English fixture is not evidence of broad recognition accuracy.
 5. Decide using the user's actual workload. The experimental base.en adaptive profile changes context length while retaining one loaded model. Do not promote it solely on synthetic timing or apply it to untested model sizes. Full GPU versus CPU switching per clip would require accounting for model reload time or duplicate RAM; neither is silently enabled.

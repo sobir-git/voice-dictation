@@ -41,6 +41,9 @@ enum Request {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 enum Response {
+    LoadDiagnostic {
+        details: serde_json::Value,
+    },
     Ready {
         profile: String,
     },
@@ -265,6 +268,11 @@ impl Inference {
                     let response: Response = serde_json::from_slice(&self.pending[4..size + 4])?;
                     self.pending.drain(..size + 4);
                     match response {
+                        Response::LoadDiagnostic { details } => {
+                            let _context = crate::logging::context(details);
+                            log::info!("Model load stage");
+                            continue;
+                        }
                         Response::Preview {
                             committed,
                             tentative,
@@ -389,6 +397,83 @@ impl Drop for Inference {
     }
 }
 
+fn load_with_fallback<T>(
+    config: &Config,
+    mut load: impl FnMut(&Config) -> Result<T>,
+    gpu_attempted: impl Fn() -> bool,
+    mut emit: impl FnMut(serde_json::Value) -> Result<()>,
+) -> Result<(T, String)> {
+    let started = Instant::now();
+    let requested = optimization::profile(config);
+    let gpu = matches!(requested, "vulkan" | "vulkan-full" | "hybrid");
+    let diagnostic = |stage: &str,
+                      reason: &str,
+                      attempted: bool,
+                      actual: &str,
+                      error: Option<String>| {
+        serde_json::json!({"event":"model_load", "stage":stage,"reason":reason,"elapsed_ms":started.elapsed().as_millis(),
+            "model":config.string("transcription","model"),"requested_profile":requested,
+            "compiled_backend":if cfg!(feature="vulkan") {"vulkan"} else {"cpu"},
+            "gpu_attempted":attempted,"actual_profile":actual,"error":error})
+    };
+    emit(diagnostic("attempt", "requested", false, "pending", None))?;
+    let validation = optimization::check_profile(config);
+    let preflight_failed = validation.is_err();
+    let result = validation.and_then(|_| load(config));
+    match result {
+        Ok(engine) => {
+            emit(diagnostic(
+                "success",
+                "requested_loaded",
+                gpu_attempted(),
+                requested,
+                None,
+            ))?;
+            Ok((engine, requested.into()))
+        }
+        Err(error) => {
+            let attempted = !preflight_failed && gpu_attempted();
+            let reason = if gpu && !cfg!(feature = "vulkan") {
+                "backend_not_compiled"
+            } else if preflight_failed {
+                "profile_validation_failed"
+            } else if attempted {
+                "gpu_initialization_or_model_load_failed"
+            } else {
+                "model_load_failed_before_gpu_init"
+            };
+            emit(diagnostic(
+                if gpu { "fallback" } else { "failure" },
+                reason,
+                attempted,
+                "pending",
+                Some(format!("{error:#}")),
+            ))?;
+            if !gpu {
+                return Err(error);
+            }
+            let cpu = config.changed(&serde_json::json!({"performance":{"profile":"standard"}}))?;
+            let loaded = load(&cpu).inspect_err(|cpu_error| {
+                let _ = emit(diagnostic(
+                    "failure",
+                    "cpu_fallback_failed",
+                    attempted,
+                    "none",
+                    Some(format!("{cpu_error:#}")),
+                ));
+            })?;
+            emit(diagnostic(
+                "success",
+                "cpu_fallback_loaded",
+                attempted,
+                "standard",
+                None,
+            ))?;
+            Ok((loaded, format!("CPU fallback: {error:#}")))
+        }
+    }
+}
+
 /// Private child entry point. stdin is a duplex Unix socket, not user input.
 pub fn child() -> Result<()> {
     // SAFETY: the supervisor passes ownership of its socket as fd 0.
@@ -435,19 +520,12 @@ pub fn child() -> Result<()> {
             match request {
                 Request::Load { config } => {
                     engine = None;
-                    let mut profile = optimization::profile(&config).to_owned();
-                    let loaded = Engine::load(&config).or_else(|error| {
-                        if !matches!(
-                            optimization::profile(&config),
-                            "vulkan" | "vulkan-full" | "hybrid"
-                        ) {
-                            return Err(error);
-                        }
-                        profile = format!("CPU fallback: {error:#}");
-                        let cpu = config
-                            .changed(&serde_json::json!({"performance":{"profile":"standard"}}))?;
-                        Engine::load(&cpu)
-                    })?;
+                    let (loaded, profile) = load_with_fallback(
+                        &config,
+                        Engine::load,
+                        crate::engine::gpu_attempted,
+                        |details| write_frame(&mut socket, &Response::LoadDiagnostic { details }),
+                    )?;
                     engine = Some(loaded);
                     Ok(Response::Ready { profile })
                 }
@@ -511,6 +589,42 @@ pub fn child() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn fallback_diagnostic_distinguishes_compilation_from_gpu_attempt() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = crate::config::Config::at(dir.path())
+            .unwrap()
+            .changed(&serde_json::json!({"performance":{"profile":"vulkan"}}))
+            .unwrap();
+        let mut records = Vec::new();
+        let ((), profile) = super::load_with_fallback(
+            &config,
+            |c| {
+                if crate::optimization::profile(c) == "vulkan" {
+                    anyhow::bail!("synthetic GPU failure");
+                }
+                Ok(())
+            },
+            || true,
+            |v| {
+                records.push(v);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert!(profile.starts_with("CPU fallback:"));
+        assert_eq!(
+            records[1]["reason"],
+            if cfg!(feature = "vulkan") {
+                "gpu_initialization_or_model_load_failed"
+            } else {
+                "backend_not_compiled"
+            }
+        );
+        assert_eq!(records[1]["gpu_attempted"], cfg!(feature = "vulkan"));
+        assert_eq!(records.last().unwrap()["actual_profile"], "standard");
+    }
+
     use super::*;
     #[test]
     fn worker_snapshot_is_readable_and_missing_process_is_tolerated() {

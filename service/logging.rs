@@ -291,6 +291,7 @@ pub fn init_role(c: &Config, role: &str) -> anyhow::Result<Guard> {
         flush();
         previous(info);
     }));
+    let _startup = context(startup_record(c));
     log::info!(
         "Process started: version={} vulkan={} executable={:?}",
         env!("CARGO_PKG_VERSION"),
@@ -298,6 +299,22 @@ pub fn init_role(c: &Config, role: &str) -> anyhow::Result<Guard> {
         std::env::current_exe()
     );
     Ok(Guard)
+}
+fn startup_record(c: &Config) -> serde_json::Value {
+    let executable = std::env::current_exe().ok();
+    let receipt_path = executable
+        .as_ref()
+        .map(|p| p.with_file_name("receipt.json"));
+    let receipt = receipt_path
+        .as_ref()
+        .and_then(|p| std::fs::read(p).ok())
+        .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok());
+    json!({"event":"process_startup", "compiled_backend":if cfg!(feature="vulkan") {"vulkan"} else {"cpu"},
+        "requested_profile":crate::optimization::profile(c), "model":c.string("transcription","model"),
+        "config_path":c.path, "executable":executable, "receipt_path":receipt_path,
+        "installation_identity":receipt.as_ref().map(|r| json!({"install_id":r["install_id"],
+            "build_id":r["build_id"],"backend":r["backend"],"selection_source":r["selection_source"]})),
+        "installation_evidence":if receipt.is_some() {"receipt_observed"} else {"historical_unknown"}})
 }
 fn prune_components(path: &Path) {
     let Some(parent) = path.parent() else {
@@ -351,6 +368,19 @@ pub fn recent(c: &Config) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn startup_records_backend_and_requested_profile_without_config_contents() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = Config::at(dir.path())
+            .unwrap()
+            .changed(&json!({"performance":{"profile":"vulkan"},"private":"secret"}))
+            .unwrap();
+        let record = startup_record(&c);
+        assert_eq!(record["event"], "process_startup");
+        assert_eq!(record["requested_profile"], "vulkan");
+        assert_eq!(record["config_path"], c.path.to_string_lossy().as_ref());
+        assert!(!record.to_string().contains("secret"));
+    }
     #[test]
     fn rotation_retains_five_backups_and_current() {
         let dir = tempfile::tempdir().unwrap();

@@ -53,6 +53,11 @@ if [[ -d "$DATA_DIR" ]]; then
     rm -rf "$DATA_DIR"
 fi
 
+if [[ "${XDG_DATA_HOME:-$HOME/.local/share}/speech-to-text" != "$DATA_DIR" ]]; then
+    rm -rf "${XDG_DATA_HOME}/speech-to-text/installations"
+    rm -f "${XDG_DATA_HOME}/speech-to-text/installation.jsonl"*
+fi
+
 if [[ -f "$AUTOSTART_FILE" ]]; then
     echo "Removing autostart desktop entry..."
     rm -f "$AUTOSTART_FILE"

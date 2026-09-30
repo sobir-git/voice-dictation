@@ -47,7 +47,7 @@ python3 tools/verify.py ui-layout --full
 selects a separate provenance-checked artifact directory and is never implied by
 a UI task. By default, each backend builds in its own directory under
 `artifacts/verification/target/`, so verification cannot replace the locally
-installed binaries in `target/release`. Set `CARGO_TARGET_DIR` explicitly when a
+installed release pair. Set `CARGO_TARGET_DIR` explicitly when a
 different isolated build directory is required.
 The runner does not call `update_local.sh`, install the application, run benchmarks,
 or send notifications. Service integration tests start isolated fixture daemons.
@@ -98,3 +98,15 @@ Track edit-to-handoff time by tier and warm or cold build state. The intended
 outcome is near-zero repeated builds for unchanged provenance, zero Vulkan runs
 for layout-only tasks, normally one native session after the final edit, and no
 increase in missed regressions, escaped regressions, or user-data mutations.
+
+## Activation boundary
+
+See [installation and causal diagnostics](installation.md). Provenance separates
+portable `source_digest` from the complete build `fingerprint`, which covers
+source, effective toolchains, environment value hashes, flags, features, and
+target directory. A manifest says `built` after compilation and `passed` only
+after all selected checks and the native probe succeed. Installable artifacts
+require a passed **full** gate. A new gate sets prior evidence to `pending` until
+it succeeds. Export a relative-path bundle with `tools/export_verified_artifact.py`
+and activate it with `update_local.sh --verified-artifact MANIFEST`; this never
+rebuilds. CPU and Vulkan probe output live beside their respective artifact pairs.

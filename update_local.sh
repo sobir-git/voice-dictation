@@ -9,7 +9,9 @@ if pgrep -x voice-dictation >/dev/null; then
   DESKTOP_WAS_OPEN=true
 fi
 
-"$SCRIPT_DIR/install.sh"
+"$SCRIPT_DIR/install.sh" "$@"
+trap 'python3 "$SCRIPT_DIR/tools/installation.py" restart-failed || true' ERR
+python3 "$SCRIPT_DIR/tools/installation.py" restart-start
 
 if [[ "$DESKTOP_WAS_OPEN" == true ]]; then
   pkill -TERM -x voice-dictation || true
@@ -38,6 +40,7 @@ if [[ "$DESKTOP_WAS_OPEN" == true ]]; then
 fi
 
 systemctl --user is-active --quiet speech-to-text-daemon.service
+python3 "$SCRIPT_DIR/tools/installation.py" restart-result
 echo "Local Voice Dictation build installed and service restarted."
 if [[ "$DESKTOP_WAS_OPEN" == true ]]; then
   echo "Desktop reopened."

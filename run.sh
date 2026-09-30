@@ -2,17 +2,13 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export VOICE_DICTATION_PROJECT="$SCRIPT_DIR"
+COMPONENT=desktop
+if [[ "${1:-}" == '--daemon' ]]; then COMPONENT=daemon; fi
+RELEASE="$(python3 "$SCRIPT_DIR/tools/installation.py" resolve --component "$COMPONENT")"
 if [[ "${1:-}" == '--daemon' ]]; then
   shift
-  if [[ ! -x "$SCRIPT_DIR/target/release/speech-service" ]]; then
-    echo 'Build the Rust speech service with ./install.sh first.' >&2
-    exit 1
-  fi
-  STT_ARGS=("$SCRIPT_DIR/target/release/speech-service" "$@")
+  STT_ARGS=("$RELEASE/speech-service" "$@")
 else
-  if [[ ! -x "$SCRIPT_DIR/target/release/voice-dictation" || ! -x "$SCRIPT_DIR/target/release/speech-service" ]]; then
-    cargo build --manifest-path "$SCRIPT_DIR/Cargo.toml" --locked --release
-  fi
   STT_LOCK_DIR="${XDG_RUNTIME_DIR:-/tmp/speech-to-text-$(id -u)}/speech-to-text"
   umask 077
   mkdir -p "$STT_LOCK_DIR"
@@ -23,10 +19,10 @@ else
     fi
     exit 0
   fi
-  STT_ARGS=("$SCRIPT_DIR/target/release/voice-dictation" "$@")
+  STT_ARGS=("$RELEASE/voice-dictation" "$@")
 fi
 if [[ " $(id -nG) " == *" input "* ]]; then
   exec "${STT_ARGS[@]}"
 fi
 printf -v STT_COMMAND '%q ' "${STT_ARGS[@]}"
-exec sg input -c "$STT_COMMAND"
+exec sg input -c "exec $STT_COMMAND"
