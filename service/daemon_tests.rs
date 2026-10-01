@@ -513,7 +513,7 @@ fn stream_load_failure_finishes_without_waiting_for_audio_sender() {
     let id = d
         .jobs
         .insert(config.clone(), Stage::Transcribing, None, None);
-    let (_audio, receive) = mpsc::sync_channel(10);
+    let (_audio, receive) = crate::stream_queue::channel();
     d.worker
         .send(Work::Stream {
             id,
@@ -782,69 +782,73 @@ fn late_finalization_after_cancel_is_saved_without_output() {
 }
 
 #[test]
-fn full_or_disconnected_finish_queue_recovers_saved_audio_and_ignores_old_result() {
-    for disconnected in [false, true] {
-        let (_root, mut d) = isolated();
-        let config = d
-            .config
-            .changed(&json!({"transcription":{"model":"test-echo"}}))
-            .unwrap();
-        let id = d.jobs.insert(config, Stage::Saving, None, None);
-        d.jobs.active[&id]
-            .finished
-            .set(Instant::now() - Duration::from_millis(200))
-            .unwrap();
-        let old_attempt = d.jobs.active[&id].cancelled.clone();
-        let (send, receive) = mpsc::sync_channel(1);
-        send.send(StreamInput::audio(vec![0.; 1600])).unwrap();
-        let receiver = if disconnected {
-            drop(receive);
-            None
-        } else {
-            Some(receive)
-        };
-        d.jobs.active.get_mut(&id).unwrap().stream = Some(send);
-        let row = d
-            .history
-            .add_recording("", std::path::Path::new("synthetic.wav"), 1., true)
-            .unwrap();
-        d.event(Event::Saved(
-            id,
-            Ok(SavedRecording {
-                path: "synthetic.wav".into(),
-                history_id: row,
-                warning: None,
-            }),
-        ));
-        assert!(old_attempt.load(Ordering::Acquire));
-        assert!(!Arc::ptr_eq(&old_attempt, &d.jobs.active[&id].cancelled));
-        d.event(Event::WorkerTranscribed(
-            id,
-            old_attempt,
-            Transcript {
-                text: Ok("stale partial text".into()),
-                seconds: 0.,
-                model: "test-echo".into(),
-            },
-        ));
-        assert!(d.jobs.active[&id].result.is_none());
-        d.pump(|d| !d.jobs.busy());
-        let saved = d.history.get(row).unwrap().unwrap();
-        assert_eq!(saved["failed"], false);
-        assert_eq!(saved["text"], "synthetic transcript");
-        assert!(saved["transcription_seconds"].as_f64().unwrap() >= 0.2);
-        drop(receiver);
-    }
+fn disconnected_finish_queue_recovers_saved_audio_and_ignores_old_result() {
+    let (_root, mut d) = isolated();
+    let config = d
+        .config
+        .changed(&json!({"transcription":{"model":"test-echo"}}))
+        .unwrap();
+    let id = d.jobs.insert(config, Stage::Saving, None, None);
+    d.jobs.active[&id]
+        .finished
+        .set(Instant::now() - Duration::from_millis(200))
+        .unwrap();
+    let old_attempt = d.jobs.active[&id].cancelled.clone();
+    let (send, receive) = crate::stream_queue::channel();
+    send.send(StreamInput::audio(vec![0.; 1600])).unwrap();
+    drop(receive);
+    d.jobs.active.get_mut(&id).unwrap().stream = Some(send);
+    let row = d
+        .history
+        .add_recording("", std::path::Path::new("synthetic.wav"), 1., true)
+        .unwrap();
+    d.event(Event::Saved(
+        id,
+        Ok(SavedRecording {
+            path: "synthetic.wav".into(),
+            history_id: row,
+            warning: None,
+        }),
+    ));
+    assert!(old_attempt.load(Ordering::Acquire));
+    assert!(!Arc::ptr_eq(&old_attempt, &d.jobs.active[&id].cancelled));
+    d.event(Event::WorkerTranscribed(
+        id,
+        old_attempt,
+        Transcript {
+            text: Ok("stale partial text".into()),
+            seconds: 0.,
+            model: "test-echo".into(),
+        },
+    ));
+    assert!(d.jobs.active[&id].result.is_none());
+    d.pump(|d| !d.jobs.busy());
+    let saved = d.history.get(row).unwrap().unwrap();
+    assert_eq!(saved["failed"], false);
+    assert_eq!(saved["text"], "synthetic transcript");
+    assert!(saved["transcription_seconds"].as_f64().unwrap() >= 0.2);
 }
 
 #[test]
-fn capture_overrun_cancels_only_the_old_stream_and_preserves_job() {
+fn capture_duration_cap_cancels_only_the_old_stream_and_preserves_job() {
     let (_root, mut d) = isolated();
-    let id = d.seed(Stage::Recording, None);
+    let config = d
+        .config
+        .changed(&json!({"transcription":{"model":"test-echo"}}))
+        .unwrap();
+    let id = d.jobs.insert(config, Stage::Recording, None, None);
     let old_attempt = d.jobs.active[&id].cancelled.clone();
-    let (send, _receive) = mpsc::sync_channel(1);
-    d.jobs.active.get_mut(&id).unwrap().stream = Some(send);
-    d.event(Event::CaptureFault(id, "queue_full".into()));
+    let (send, _receive) = crate::stream_queue::channel();
+    d.jobs.active.get_mut(&id).unwrap().stream = Some(send.clone());
+    send.try_send(StreamInput::audio(
+        vec![0.; crate::stream_queue::STREAM_BACKLOG_MAX_SAMPLES],
+    ))
+    .unwrap();
+    assert!(matches!(
+        send.try_send(StreamInput::audio(vec![0.; 1])),
+        Err(mpsc::TrySendError::Full(_))
+    ));
+    d.event(Event::CaptureFault(id, "audio_duration_cap".into()));
     let job = &d.jobs.active[&id];
     assert_eq!(job.stage, Stage::Finalizing);
     assert!(old_attempt.load(Ordering::Acquire));
@@ -860,6 +864,28 @@ fn capture_overrun_cancels_only_the_old_stream_and_preserves_job() {
         },
     ));
     assert!(d.jobs.active[&id].result.is_none());
+    d.jobs
+        .active
+        .get_mut(&id)
+        .unwrap()
+        .transition(Stage::Saving);
+    let row = d
+        .history
+        .add_recording("", std::path::Path::new("synthetic.wav"), 600., true)
+        .unwrap();
+    d.event(Event::Saved(
+        id,
+        Ok(SavedRecording {
+            path: "synthetic.wav".into(),
+            history_id: row,
+            warning: None,
+        }),
+    ));
+    d.pump(|d| !d.jobs.busy());
+    assert_eq!(
+        d.history.get(row).unwrap().unwrap()["text"],
+        "synthetic transcript"
+    );
 }
 
 #[test]
@@ -872,4 +898,66 @@ fn history_retry_accepts_saved_gpu_preference_for_supervised_cpu_fallback() {
     let original = saved.data.clone();
     assert_eq!(retry_config(&saved, &json!({})).unwrap().data, original);
     assert_eq!(saved.data, original);
+}
+
+#[test]
+fn slow_stream_backlog_keeps_recording_and_stop_uses_drained_result() {
+    let (_root, mut d) = isolated();
+    let config = d
+        .config
+        .changed(&json!({"transcription":{"model":"test-slow-stream"}}))
+        .unwrap();
+    let id = d.jobs.insert(config.clone(), Stage::Recording, None, None);
+    let attempt = d.jobs.active[&id].cancelled.clone();
+    let (send, receive) = crate::stream_queue::channel();
+    d.jobs.active.get_mut(&id).unwrap().stream = Some(send.clone());
+    d.worker
+        .send(Work::Stream {
+            id,
+            generation: 0,
+            cancelled: attempt.clone(),
+            config,
+            receive,
+            queued: Instant::now(),
+            finished: d.jobs.active[&id].finished.clone(),
+        })
+        .unwrap();
+    // More callbacks than the old slot cap, with four seconds of synthetic audio.
+    for _ in 0..320 {
+        send.try_send(StreamInput::audio(vec![0.; 200])).unwrap();
+    }
+    std::thread::sleep(Duration::from_millis(100));
+    assert_eq!(d.jobs.recording(), Some(id));
+    assert!(!attempt.load(Ordering::Acquire));
+    d.stop_recording();
+    d.jobs
+        .active
+        .get_mut(&id)
+        .unwrap()
+        .transition(Stage::Saving);
+    let row = d
+        .history
+        .add_recording("", std::path::Path::new("synthetic.wav"), 4., true)
+        .unwrap();
+    d.event(Event::Saved(
+        id,
+        Ok(SavedRecording {
+            path: "synthetic.wav".into(),
+            history_id: row,
+            warning: None,
+        }),
+    ));
+    assert!(Arc::ptr_eq(&attempt, &d.jobs.active[&id].cancelled));
+    assert!(d.jobs.active[&id].stream.is_some());
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while d.jobs.busy() {
+        assert!(Instant::now() < deadline);
+        if let Ok(event) = d.server.receive.recv_timeout(Duration::from_millis(100)) {
+            d.event(event);
+        }
+    }
+    let saved = d.history.get(row).unwrap().unwrap();
+    assert_eq!(saved["text"], "synthetic streaming transcript");
+    assert_eq!(saved["failed"], false);
+    assert!(d.last_error.is_empty());
 }

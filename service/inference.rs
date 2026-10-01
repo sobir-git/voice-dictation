@@ -19,6 +19,9 @@ use std::{
 };
 
 const MAX_FRAME: usize = 2 * 1024 * 1024;
+// Capture can deliver a large callback after a scheduling pause. Keep each JSON
+// audio frame comfortably below MAX_FRAME without bounding the capture queue.
+const STREAM_IPC_MAX_SAMPLES: usize = 16_000;
 const LOAD_TIMEOUT: Duration = Duration::from_secs(600);
 fn idle_warmup_due(elapsed: Duration) -> bool {
     elapsed >= Duration::from_secs(60)
@@ -268,7 +271,7 @@ impl Inference {
         cancelled: &impl Fn() -> bool,
         preview: &mut impl FnMut(String, String),
     ) -> Result<Response> {
-        let deadline = Instant::now() + timeout;
+        let mut deadline = Instant::now() + timeout;
         let mut next_report = Instant::now() + Duration::from_secs(5);
         loop {
             if Instant::now() >= next_report || cancelled() || Instant::now() >= deadline {
@@ -326,12 +329,14 @@ impl Inference {
                             self.timing_records.push(context.clone());
                             let _context = crate::logging::context(context);
                             log::info!("Inference timing diagnostic");
+                            if matches!(self.operation, "stream_feed" | "stream_finalize") { deadline = Instant::now() + timeout; }
                             continue;
                         }
                         Response::Preview {
                             committed,
                             tentative,
                         } => {
+                            if matches!(self.operation, "stream_feed" | "stream_finalize") { deadline = Instant::now() + timeout; }
                             preview(committed, tentative);
                             continue;
                         }
@@ -420,7 +425,7 @@ impl Inference {
     }
     pub fn stream(
         &mut self,
-        receive: &mpsc::Receiver<StreamInput>,
+        receive: &crate::stream_queue::Receiver,
         cancelled: impl Fn() -> bool,
         mut preview: impl FnMut(String, String),
     ) -> Result<Option<String>> {
@@ -428,6 +433,9 @@ impl Inference {
         let mut feed_calls = 0_u64;
         let mut max_queue_ms = 0_f64;
         let mut max_call_ms = 0_f64;
+        let mut lag_warned = false;
+        let mut recent_real_time_factor = 0_f64;
+        let mut max_backlog_seconds = 0_f64;
         let first_preview_ms = std::cell::Cell::new(None);
         let worker_pid = self.child.id();
         let mut preview_timed = |committed: String, tentative: String| {
@@ -469,40 +477,69 @@ impl Inference {
                 };
                 match input {
                     StreamInput::Audio { samples, queued } => {
-                        let queue_ms = queued.elapsed().as_secs_f64() * 1000.;
-                        max_queue_ms = max_queue_ms.max(queue_ms);
-                        feed_calls += 1;
-                        let call_started = Instant::now();
-                        let response = self.send(&Request::Audio { samples }).and_then(|()| {
-                            self.response(CALL_TIMEOUT, &cancelled, &mut preview_timed)
-                        });
-                        let call_ms = call_started.elapsed().as_secs_f64() * 1000.;
-                        max_call_ms = max_call_ms.max(call_ms);
-                        let significant = call_ms >= 10. || queue_ms >= 100. || response.is_err();
-                        if significant || log::log_enabled!(log::Level::Debug) || cfg!(test) {
-                            let mut details = crate::logging::current_context();
-                            details["event"] = "audio_queue_timing".into();
-                            details["worker_pid"] = worker_pid.into();
-                            details["feed_call"] = feed_calls.into();
-                            details["audio_samples"] = self.audio_samples.into();
-                            details["queue_ms"] = queue_ms.into();
-                            details["call_ms"] = call_ms.into();
-                            details["success"] = response.is_ok().into();
+                        let backlog_seconds = receive.backlog_seconds();
+                        max_backlog_seconds = max_backlog_seconds.max(backlog_seconds);
+                        // Chunking only at IPC keeps a delayed capture callback from
+                        // exceeding the wire limit; native buffered feeds retain order.
+                        for chunk in samples.chunks(STREAM_IPC_MAX_SAMPLES) {
+                            let sample_count = chunk.len();
+                            let queue_ms = queued.elapsed().as_secs_f64() * 1000.;
+                            max_queue_ms = max_queue_ms.max(queue_ms);
+                            feed_calls += 1;
+                            let call_started = Instant::now();
+                            let response = self
+                                .send(&Request::Audio {
+                                    samples: chunk.to_vec(),
+                                })
+                                .and_then(|()| {
+                                    self.response(CALL_TIMEOUT, &cancelled, &mut preview_timed)
+                                });
+                            let call_ms = call_started.elapsed().as_secs_f64() * 1000.;
+                            max_call_ms = max_call_ms.max(call_ms);
+                            recent_real_time_factor = call_ms * 16. / sample_count as f64;
+                            let backlog_seconds = receive.backlog_seconds();
+                            max_backlog_seconds = max_backlog_seconds.max(backlog_seconds);
+                            if !lag_warned
+                                && backlog_seconds > crate::stream_queue::STREAM_LAG_WARNING_SECONDS
                             {
+                                lag_warned = true;
+                                let mut details = crate::logging::current_context();
+                                details["event"] = "stream_lagging".into();
+                                details["backlog_seconds"] = backlog_seconds.into();
+                                details["recent_real_time_factor"] = recent_real_time_factor.into();
                                 #[cfg(test)]
                                 self.timing_records.push(details.clone());
                                 let _context = crate::logging::context(details);
-                                if significant {
-                                    log::info!("Audio queue timing");
-                                } else {
-                                    log::debug!("Audio queue timing");
+                                log::warn!("Streaming inference is falling behind capture");
+                            }
+                            let significant =
+                                call_ms >= 10. || queue_ms >= 100. || response.is_err();
+                            if significant || log::log_enabled!(log::Level::Debug) || cfg!(test) {
+                                let mut details = crate::logging::current_context();
+                                details["event"] = "audio_queue_timing".into();
+                                details["worker_pid"] = worker_pid.into();
+                                details["feed_call"] = feed_calls.into();
+                                details["audio_samples"] = self.audio_samples.into();
+                                details["queue_ms"] = queue_ms.into();
+                                details["call_ms"] = call_ms.into();
+                                details["success"] = response.is_ok().into();
+                                {
+                                    #[cfg(test)]
+                                    self.timing_records.push(details.clone());
+                                    let _context = crate::logging::context(details);
+                                    if significant {
+                                        log::info!("Audio queue timing");
+                                    } else {
+                                        log::debug!("Audio queue timing");
+                                    }
                                 }
                             }
+                            anyhow::ensure!(
+                                matches!(response?, Response::Ack),
+                                "Expected audio acknowledgement"
+                            );
+                            receive.acknowledge(sample_count);
                         }
-                        anyhow::ensure!(
-                            matches!(response?, Response::Ack),
-                            "Expected audio acknowledgement"
-                        );
                     }
                     StreamInput::Finish => {
                         self.send(&Request::Finish)?;
@@ -522,6 +559,13 @@ impl Inference {
         details["audio_samples"] = self.audio_samples.into();
         details["max_queue_ms"] = max_queue_ms.into();
         details["max_call_ms"] = max_call_ms.into();
+        details["max_backlog_seconds"] = max_backlog_seconds.into();
+        details["final_backlog_seconds"] = receive.backlog_seconds().into();
+        details["backlog_at_finish_seconds"] = serde_json::json!(receive.finish().map(|(_, n)| n));
+        details["catch_up_ms"] = serde_json::json!(receive
+            .finish()
+            .map(|(t, _)| t.elapsed().as_secs_f64() * 1000.));
+        details["recent_real_time_factor"] = recent_real_time_factor.into();
         details["first_preview_ms"] = serde_json::json!(first_preview_ms.get());
         details["stream_elapsed_ms"] = (started.elapsed().as_secs_f64() * 1000.).into();
         details["outcome"] = match &result {
@@ -651,7 +695,11 @@ pub fn child() -> Result<()> {
                 match config.string("transcription", "model") {
                     "test-crash" => std::process::exit(17),
                     "test-stall" => std::thread::sleep(Duration::from_secs(60)),
-                    mode @ ("test-echo" | "test-warmup-fail" | "test-warmup-stall") => {
+                    mode @ ("test-echo"
+                    | "test-slow-stream"
+                    | "test-stream-progress"
+                    | "test-warmup-fail"
+                    | "test-warmup-stall") => {
                         synthetic = Some(mode.to_owned());
                         write_frame(
                             &mut socket,
@@ -665,6 +713,22 @@ pub fn child() -> Result<()> {
                 }
             }
             if let Some(mode) = &synthetic {
+                if mode == "test-stream-progress"
+                    && matches!(request, Request::Audio { .. } | Request::Finish)
+                {
+                    for _ in 0..4 {
+                        std::thread::sleep(Duration::from_millis(50));
+                        write_frame(
+                            &mut socket,
+                            &Response::Timing {
+                                details: serde_json::json!({"event":"native_timing", "stage":"synthetic_progress"}),
+                            },
+                        )?;
+                    }
+                }
+                if mode == "test-slow-stream" && matches!(request, Request::Audio { .. }) {
+                    std::thread::sleep(Duration::from_millis(16));
+                }
                 if matches!(request, Request::IdleWarmup) {
                     if mode == "test-warmup-stall" {
                         std::thread::sleep(Duration::from_secs(60));
@@ -963,7 +1027,7 @@ mod tests {
         let pid = worker.child.id();
         let _context = crate::logging::context(serde_json::json!({"job_id":123}));
         // Producer queues real input while warmup runs; synthetic samples never enter this queue.
-        let (send, receive) = mpsc::channel();
+        let (send, receive) = crate::stream_queue::channel();
         let producer = std::thread::spawn(move || {
             send.send(StreamInput::audio(vec![0.25; 1600])).unwrap();
             send.send(StreamInput::Finish).unwrap();
@@ -1071,7 +1135,7 @@ mod tests {
         let (_root, c) = config("test-echo");
         let mut worker = Inference::load(&c, || false).unwrap();
         let pid = worker.child.id();
-        let (send, receive) = mpsc::channel();
+        let (send, receive) = crate::stream_queue::channel();
         send.send(StreamInput::audio(vec![0.; 1600])).unwrap();
         send.send(StreamInput::Finish).unwrap();
         assert_eq!(
@@ -1114,11 +1178,98 @@ mod tests {
                 && r["worker_pid"] == pid));
     }
     #[test]
+    fn streaming_timeout_tracks_inactivity_instead_of_total_catch_up() {
+        let (_root, c) = config("test-stream-progress");
+        let mut worker = Inference::load(&c, || false).unwrap();
+        worker.send(&Request::Stream).unwrap();
+        assert!(matches!(
+            worker
+                .response(CALL_TIMEOUT, &|| false, &mut |_, _| {})
+                .unwrap(),
+            Response::Ack
+        ));
+        for request in [
+            Request::Audio {
+                samples: vec![0.; 2000],
+            },
+            Request::Finish,
+        ] {
+            worker.send(&request).unwrap();
+            let started = Instant::now();
+            let response = worker
+                .response(Duration::from_millis(150), &|| false, &mut |_, _| {})
+                .unwrap();
+            assert!(started.elapsed() >= Duration::from_millis(200));
+            assert!(matches!(
+                response,
+                Response::Ack | Response::Complete { .. }
+            ));
+        }
+    }
+    #[test]
+    fn oversized_capture_callback_drains_through_bounded_ipc_frames() {
+        let (_root, c) = config("test-echo");
+        let mut worker = Inference::load(&c, || false).unwrap();
+        let (send, receive) = crate::stream_queue::channel();
+        // This would exceed the 2 MB JSON frame limit if sent as one request.
+        let count = 400_001;
+        send.try_send(StreamInput::audio(vec![0.123_456_7; count]))
+            .unwrap();
+        send.try_send(StreamInput::Finish).unwrap();
+        assert_eq!(
+            worker
+                .stream(&receive, || false, |_, _| {})
+                .unwrap()
+                .as_deref(),
+            Some("synthetic streaming transcript")
+        );
+        assert_eq!(worker.last_ack_samples, count as u64);
+        assert_eq!(receive.backlog_seconds(), 0.);
+        assert_eq!(worker.timing_records.last().unwrap()["feed_calls"], 26);
+    }
+    #[test]
+    fn slow_stream_drains_large_backlog_and_warns_once() {
+        let (_root, c) = config("test-slow-stream");
+        let mut worker = Inference::load(&c, || false).unwrap();
+        let pid = worker.child.id();
+        let _context = crate::logging::context(serde_json::json!({"job_id":987}));
+        let (send, receive) = crate::stream_queue::channel();
+        for _ in 0..320 {
+            send.try_send(StreamInput::audio(vec![0.; 200])).unwrap();
+        }
+        send.try_send(StreamInput::Finish).unwrap();
+        assert_eq!(
+            worker
+                .stream(&receive, || false, |_, _| {})
+                .unwrap()
+                .as_deref(),
+            Some("synthetic streaming transcript")
+        );
+        assert_eq!(worker.child.id(), pid);
+        assert_eq!(worker.last_ack_samples, 64_000);
+        assert_eq!(worker.inference_attempts, 1);
+        let warnings: Vec<_> = worker
+            .timing_records
+            .iter()
+            .filter(|r| r["event"] == "stream_lagging")
+            .collect();
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0]["job_id"], 987);
+        assert!(warnings[0]["backlog_seconds"].as_f64().unwrap() > 3.);
+        assert!(warnings[0]["recent_real_time_factor"].as_f64().unwrap() > 1.);
+        let summary = worker.timing_records.last().unwrap();
+        assert_eq!(summary["event"], "stream_timing_summary");
+        assert_eq!(summary["final_backlog_seconds"], 0.);
+        assert_eq!(summary["backlog_at_finish_seconds"], 4.);
+        assert!(summary["catch_up_ms"].as_f64().unwrap() >= 5000.);
+        assert_eq!(summary["outcome"], "completed");
+    }
+    #[test]
     fn stream_summary_survives_cancellation_and_worker_failure() {
         for fail in [false, true] {
             let (_root, c) = config("test-echo");
             let mut worker = Inference::load(&c, || false).unwrap();
-            let (send, receive) = mpsc::channel();
+            let (send, receive) = crate::stream_queue::channel();
             if fail {
                 worker.child.kill().unwrap();
                 worker.child.wait().unwrap();
@@ -1140,7 +1291,7 @@ mod tests {
     fn cancelled_call_retains_cancelled_summary() {
         let (_root, c) = config("test-echo");
         let mut worker = Inference::load(&c, || false).unwrap();
-        let (_send, receive) = mpsc::channel();
+        let (_send, receive) = crate::stream_queue::channel();
         assert!(worker.stream(&receive, || true, |_, _| {}).is_err());
         assert_eq!(
             worker.timing_records.last().unwrap()["outcome"],
@@ -1194,7 +1345,7 @@ mod tests {
             if iteration == 1 {
                 worker.last_completed = Instant::now() - Duration::from_secs(61);
             }
-            let (send, receive) = mpsc::channel();
+            let (send, receive) = crate::stream_queue::channel();
             let audio = samples.clone();
             let producer = std::thread::spawn(move || {
                 for chunk in audio.chunks(1024) {

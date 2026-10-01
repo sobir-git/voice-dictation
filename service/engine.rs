@@ -147,6 +147,7 @@ fn load_transcribe_model(path: PathBuf, config: &Config) -> Result<transcribe_cp
     )?)
 }
 
+#[derive(Debug)]
 pub enum StreamInput {
     Audio { samples: Vec<f32>, queued: Instant },
     Finish,

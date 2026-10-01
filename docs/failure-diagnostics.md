@@ -164,7 +164,26 @@ call time. INFO retains calls of at least 10 ms and queue ages of at least 100 m
 DEBUG retains every audio request and completion. `first_preview` records the
 first nonempty result without logging its text. `stream_timing_summary` retains
 maximum queue/call times, feed/sample counts and outcome, including cancellation
-and failure. `dictation_stage` records each coordinator stage duration and elapsed
+and failure. A stream queue holds up to ten minutes of unacknowledged 16 kHz
+mono audio (38.4 MB of f32 samples, plus message overhead), including in-flight
+feeds. Each capture callback occupies one message. Normal backlog does not stop
+recording; `Finish` queues behind audio and the resident worker drains it.
+Oversized callbacks are split only at IPC to stay below the frame limit.
+Exceeding the audio duration cap still invokes saved-audio recovery, as do
+worker faults. Feed/finalization timeouts measure inactivity, with native diagnostics
+and previews refreshing the deadline; there is no whole-stream catch-up deadline.
+
+The first observed backlog above three seconds produces one WARN per job with
+`event: "stream_lagging"`, `job_id`, `backlog_seconds`, and
+`recent_real_time_factor` (last IPC feed wall time divided by its audio duration;
+this includes IPC overhead and can vary across native chunk boundaries).
+`stream_timing_summary` also records `max_backlog_seconds`,
+`backlog_at_finish_seconds` when Finish is enqueued, `final_backlog_seconds` at
+exit, and `catch_up_ms` from Finish enqueue through stream completion. These
+backlogs count captured audio not yet acknowledged by the worker; they do not
+include the native stream's bounded right-context buffer.
+
+`dictation_stage` records each coordinator stage duration and elapsed
 time since recording stop; `dictation_terminal` includes the last delivery stage.
 These records share daemon session, job ID and native worker PID. Logging stays
 asynchronous and produces no periodic inference telemetry while idle.

@@ -23,3 +23,5 @@ pub mod protocol;
 pub mod storage;
 
 pub mod paging;
+
+pub mod stream_queue;

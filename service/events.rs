@@ -245,7 +245,7 @@ impl Daemon {
             if let Err(error) = stream.try_send(StreamInput::Finish) {
                 if !has_result {
                     let reason = match error {
-                        mpsc::TrySendError::Full(_) => "finish_queue_full",
+                        mpsc::TrySendError::Full(_) => "finish_audio_duration_cap",
                         mpsc::TrySendError::Disconnected(_) => "finish_worker_disconnected",
                     };
                     job.recover_stream(reason);

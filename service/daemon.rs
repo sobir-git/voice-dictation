@@ -79,7 +79,7 @@ enum Work {
         generation: u64,
         cancelled: Arc<AtomicBool>,
         config: Config,
-        receive: mpsc::Receiver<StreamInput>,
+        receive: crate::stream_queue::Receiver,
         queued: Instant,
         finished: Arc<OnceLock<Instant>>,
     },
@@ -515,7 +515,7 @@ impl Daemon {
             && config.number("audio", "sample_rate") == 16000
             && config.number("audio", "channels") == 1
             && config.string("audio", "format") == "S16_LE";
-        let (audio, receive) = mpsc::sync_channel(256);
+        let (audio, receive) = crate::stream_queue::channel();
         if streaming {
             let job = self.jobs.active.get_mut(&id).unwrap();
             job.stream = Some(audio.clone());
@@ -562,30 +562,32 @@ impl Daemon {
             let capture_started = Instant::now();
             let (owner, owner_lifetime) = mpsc::channel();
             let result = Capture::start(&config, move |samples, level, db| {
+                let callback_samples = samples.len();
                 if streaming && !overrun.load(Ordering::Relaxed) {
-                    for chunk in samples.chunks(1600) {
-                        match audio.try_send(StreamInput::audio(chunk.to_vec())) {
-                            Ok(()) => {
-                                accepted_samples.fetch_add(chunk.len() as u64, Ordering::Relaxed);
-                                accepted_chunks.fetch_add(1, Ordering::Relaxed);
-                            }
-                            Err(error) => {
-                                let reason = match error {
-                                    mpsc::TrySendError::Full(_) => "queue_full",
-                                    mpsc::TrySendError::Disconnected(_) => "worker_disconnected",
-                                };
-                                let _context = crate::logging::context(json!({
-                                    "event":"stream_delivery_failed", "job_id":id, "reason":reason,
-                                    "queue_capacity_chunks":256, "accepted_chunks":accepted_chunks.load(Ordering::Relaxed),
-                                    "accepted_samples":accepted_samples.load(Ordering::Relaxed),
-                                    "callback_samples":samples.len(), "rejected_chunk_samples":chunk.len(),
-                                    "capture_elapsed_ms":capture_started.elapsed().as_millis()
-                                }));
-                                log::error!("Stream delivery failed: job={id} reason={reason} capacity_chunks=256 accepted_chunks={} accepted_audio_seconds={:.3} capture_elapsed_ms={} recovery=transcribe_saved_audio",accepted_chunks.load(Ordering::Relaxed),accepted_samples.load(Ordering::Relaxed) as f64 / 16000.,capture_started.elapsed().as_millis());
-                                overrun.store(true, Ordering::Relaxed);
-                                let _=events.send(Event::CaptureFault(id,format!("Streaming interrupted ({reason}); recovering the saved recording.")));
-                                break;
-                            }
+                    match audio.try_send(StreamInput::audio(samples)) {
+                        Ok(()) => {
+                            accepted_samples.fetch_add(callback_samples as u64, Ordering::Relaxed);
+                            accepted_chunks.fetch_add(1, Ordering::Relaxed);
+                        }
+                        Err(error) => {
+                            let reason = match error {
+                                mpsc::TrySendError::Full(_) => "audio_duration_cap",
+                                mpsc::TrySendError::Disconnected(_) => "worker_disconnected",
+                            };
+                            let _context = crate::logging::context(json!({
+                                "event":"stream_delivery_failed", "job_id":id, "reason":reason,
+                                "queue_capacity_samples":crate::stream_queue::STREAM_BACKLOG_MAX_SAMPLES, "accepted_chunks":accepted_chunks.load(Ordering::Relaxed),
+                                "accepted_samples":accepted_samples.load(Ordering::Relaxed),
+                                "callback_samples":callback_samples, "rejected_chunk_samples":callback_samples,
+                                "capture_elapsed_ms":capture_started.elapsed().as_millis()
+                            }));
+                            log::error!("Stream delivery failed: job={id} reason={reason} capacity_seconds=600 accepted_chunks={} accepted_audio_seconds={:.3} capture_elapsed_ms={} recovery=transcribe_saved_audio",accepted_chunks.load(Ordering::Relaxed),accepted_samples.load(Ordering::Relaxed) as f64 / 16000.,capture_started.elapsed().as_millis());
+                            overrun.store(true, Ordering::Relaxed);
+                            // Fault delivery may wait for the coordinator, never the audio callback.
+                            let faults = events.clone();
+                            thread::spawn(move || {
+                                let _ = faults.send(Event::CaptureFault(id, format!("Streaming interrupted ({reason}); recovering the saved recording.")));
+                            });
                         }
                     }
                 }

@@ -1,9 +1,9 @@
 //! The coordinator's source of truth. Pending and recording state are derived,
 //! never balanced with increments/decrements in unrelated completion handlers.
-use crate::{audio::Capture, config::Config, engine::StreamInput};
+use crate::{audio::Capture, config::Config};
 use std::{
     collections::BTreeMap,
-    sync::{atomic::AtomicBool, mpsc, Arc, OnceLock},
+    sync::{atomic::AtomicBool, Arc, OnceLock},
     time::Instant,
 };
 pub type JobId = u64;
@@ -54,7 +54,7 @@ pub struct Job {
     pub history_id: Option<i64>,
     pub capture: Option<Capture>,
     pub capture_ready: bool,
-    pub stream: Option<mpsc::SyncSender<StreamInput>>,
+    pub stream: Option<crate::stream_queue::Sender>,
     pub finished: Arc<OnceLock<Instant>>,
     pub started: Instant,
     stage_started: Instant,
