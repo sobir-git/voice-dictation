@@ -1,0 +1,147 @@
+{
+  "created": 1790966488,
+  "host": {
+    "arch": "x86_64",
+    "cpu": "12th Gen Intel(R) Core(TM) i5-12500H",
+    "fixture": "synthetic-english-v1",
+    "kernel": "7.0.0-31-generic",
+    "logical_cpus": 16,
+    "native_engine": "transcribe.cpp 0.2.3+canary-hybrid / CTranslate2 via ct2rs 0.10.1",
+    "os": "linux",
+    "protocol": 1,
+    "version": "0.3.1",
+    "vulkan_build": true
+  },
+  "memory_note": "Process peak RSS and sampled resident GPU buffers in MiB, measured separately. Integrated GPUs use system RAM; peaks may overlap. Unavailable counters are null.",
+  "method": "Synthetic English speech, one warmup and two warm measurements per fresh process. Same words compares against the standard CPU path, not a reference transcript. Ordinary Parakeet uses buffered streaming compute without real-time audio delays; ordinary Canary uses quiet-boundary chunks.",
+  "performance": {
+    "by_model": {
+      "base.en": {
+        "profile": "adaptive",
+        "threads": 8
+      },
+      "canary-180m-flash": {
+        "profile": "hybrid",
+        "threads": 0
+      },
+      "parakeet-unified-en-0.6b": {
+        "profile": "vulkan",
+        "threads": 0
+      }
+    },
+    "profile": "vulkan",
+    "threads": 0
+  },
+  "rows": [
+    {
+      "candidate": {
+        "devices": [
+          {
+            "description": "Intel(R) Iris(R) Xe Graphics (ADL GT2)",
+            "id": "0000:00:02.0",
+            "kind": "vulkan",
+            "name": "Vulkan0"
+          },
+          {
+            "description": "12th Gen Intel(R) Core(TM) i5-12500H",
+            "id": null,
+            "kind": "cpu",
+            "name": "CPU"
+          }
+        ],
+        "gpu_memory_measurement": "sampled_peak_100ms",
+        "gpu_resident_mib": 781.984375,
+        "load_seconds": 2.828968358,
+        "performance": {
+          "by_model": {
+            "base.en": {
+              "profile": "adaptive",
+              "threads": 8
+            },
+            "canary-180m-flash": {
+              "profile": "hybrid",
+              "threads": 0
+            },
+            "parakeet-unified-en-0.6b": {
+              "profile": "vulkan",
+              "threads": 0
+            }
+          },
+          "profile": "vulkan",
+          "threads": 0
+        },
+        "process_peak_mib": 176.7734375,
+        "samples_seconds": [
+          8.087116072,
+          7.813153456
+        ],
+        "schema_version": 1,
+        "seconds": 15,
+        "stable_words": true,
+        "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in the quiet room upstairs. Please return everything before the end of the month and keep your receipt. Our garden needs more water during the summer. The tomatoes are growing well beside them",
+        "transcription": {
+          "beam_size": 5,
+          "compute_type": "int8",
+          "language": "en",
+          "model": "parakeet-unified-en-0.6b",
+          "vad_filter": true
+        },
+        "warm_seconds": 7.950134764,
+        "warmup_seconds": 8.398219221
+      },
+      "reference": {
+        "devices": [],
+        "gpu_memory_measurement": "sampled_peak_100ms",
+        "gpu_resident_mib": 0.0,
+        "load_seconds": 4.368595727,
+        "performance": {
+          "by_model": {
+            "base.en": {
+              "profile": "adaptive",
+              "threads": 8
+            },
+            "canary-180m-flash": {
+              "profile": "hybrid",
+              "threads": 0
+            },
+            "parakeet-unified-en-0.6b": {
+              "profile": "vulkan",
+              "threads": 0
+            }
+          },
+          "profile": "standard",
+          "threads": 0
+        },
+        "process_peak_mib": 1186.6875,
+        "samples_seconds": [
+          40.533034292,
+          46.077118387
+        ],
+        "schema_version": 1,
+        "seconds": 15,
+        "stable_words": true,
+        "text": "The library opens early on Monday morning. Students can borrow books and read newspapers in the quiet room upstairs. Please return everything before the end of the month and keep your receipt. Our garden needs more water during the summer. The tomatoes are growing well beside them",
+        "transcription": {
+          "beam_size": 5,
+          "compute_type": "int8",
+          "language": "en",
+          "model": "parakeet-unified-en-0.6b",
+          "vad_filter": true
+        },
+        "warm_seconds": 43.3050763395,
+        "warmup_seconds": 29.714543341
+      },
+      "same_words": true,
+      "seconds": 15,
+      "speedup": 5.447087077768182
+    }
+  ],
+  "schema_version": 1,
+  "transcription": {
+    "beam_size": 5,
+    "compute_type": "int8",
+    "language": "en",
+    "model": "parakeet-unified-en-0.6b",
+    "vad_filter": true
+  }
+}

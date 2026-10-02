@@ -1,0 +1,97 @@
+{
+  "synthetic_audio_seconds": 15,
+  "cpu_warm_seconds": [
+    40.533034292,
+    46.077118387
+  ],
+  "vulkan_warm_seconds": [
+    8.087116072,
+    7.813153456
+  ],
+  "normalized_words_match": true,
+  "config_unchanged": true,
+  "daemon_restored": true,
+  "case_metrics": {
+    "cpu": {
+      "pid": 2067418,
+      "sampled_process_lifetime_seconds": 121.19987678527832,
+      "package_temperature_c_min_median_max": [
+        57.0,
+        73.5,
+        94.0
+      ],
+      "gpu_actual_frequency_mhz_min_median_max": [
+        650,
+        1000.0,
+        1300
+      ],
+      "cpu0_package_throttle_count_delta": 4706,
+      "gpu_render_busy_seconds_by_client": {
+        "284978:Xorg": 23.492496924,
+        "291663:brave": 17.593254639999994,
+        "285900:gnome-shell": 10.337355964,
+        "3513256:Telegram": 0.924004432,
+        "1619074:ChatGPT": 0.0025001599999999995,
+        "286029:mutter-x11-fram": 0.0,
+        "286440:flameshot": 0.0,
+        "287213:xdg-desktop-por": 0.0,
+        "288046:snapd-desktop-i": 0.0,
+        "1472999:chrome": 0.0,
+        "1555007:WeChatAppEx": 0.0,
+        "3512718:copyq": 0.0,
+        "2067418:speech-service": 0.0
+      }
+    },
+    "vulkan": {
+      "pid": 2070327,
+      "sampled_process_lifetime_seconds": 27.730252742767334,
+      "package_temperature_c_min_median_max": [
+        61.0,
+        67.0,
+        72.0
+      ],
+      "gpu_actual_frequency_mhz_min_median_max": [
+        1100,
+        1300,
+        1300
+      ],
+      "cpu0_package_throttle_count_delta": 0,
+      "gpu_render_busy_seconds_by_client": {
+        "2070327:speech-service": 20.733857768,
+        "284978:Xorg": 2.043528812,
+        "291663:brave": 0.8993819639999998,
+        "285900:gnome-shell": 0.507139984,
+        "1619074:ChatGPT": 0.000445068,
+        "286029:mutter-x11-fram": 0.0,
+        "286440:flameshot": 0.0,
+        "287213:xdg-desktop-por": 0.0,
+        "288046:snapd-desktop-i": 0.0,
+        "1472999:chrome": 0.0,
+        "1555007:WeChatAppEx": 0.0,
+        "3512718:copyq": 0.0,
+        "3513256:Telegram": 0.0
+      }
+    }
+  },
+  "conclusion": "Historical encoder slowdown/backlog confirmed; fresh Vulkan test does not reproduce slower-than-real-time inference. CPU test thermally throttled; Vulkan test did not. No historical GPU telemetry to attribute October 2 21:57 onset to contention, power or persistent-session behavior.",
+  "measurement_scope": {
+    "primary_metric": "recording stop to first visible text",
+    "primary_metric_measured": false,
+    "historical_metric": "recording stop to inference completion; excludes text insertion",
+    "synthetic_metric": "buffered streaming compute time; excludes real-time capture and text output",
+    "limitations": [
+      "Two warm samples per backend; insufficient for tail latency estimates.",
+      "CPU ran before Vulkan; order and workstation activity are potential confounders.",
+      "GPU telemetry covers this fresh-process test only, not the historical slowdown."
+    ]
+  },
+  "historical_slowest_dictation": {
+    "audio_seconds": 124.9261875,
+    "stop_to_inference_completion_seconds": 35.785026558,
+    "backlog_at_stop_audio_seconds": 26.1761875,
+    "catch_up_seconds": 35.645692908,
+    "finalize_seconds": 1.407449926,
+    "major_page_faults_during_attempt": 0,
+    "runtime_profile": "vulkan"
+  }
+}

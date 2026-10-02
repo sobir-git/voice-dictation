@@ -1,0 +1,16 @@
+{
+  "command": [
+    "speech-service",
+    "--benchmark",
+    "--profile",
+    "vulkan",
+    "--threads",
+    "0",
+    "--seconds",
+    "15"
+  ],
+  "executable_sha256": "87eae90a7905f2be65aa28a2392035ee52661cc9e37c0198f084a0b215b566b4",
+  "config_sha256_before": "555e5ccc3441d37d241eaa6ae64890b6226242d251ceec689420e3eed3d454df",
+  "started": 1790966335.2918456,
+  "installation_id": "89cb8705772c497fb40f66f0c18fb016"
+}
