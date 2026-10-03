@@ -22,6 +22,7 @@ pub mod jobs;
 pub mod protocol;
 pub mod storage;
 
+pub mod execution;
 pub mod paging;
 
 pub mod stream_queue;

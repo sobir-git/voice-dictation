@@ -131,3 +131,15 @@ for their own hosts, either in Settings or through the CLI. Avoid automatic prof
 hard-coded CPU affinity and dependencies needed only by an experiment. If a
 specialized inference engine becomes justified, prove it as an isolated backend
 against the same measurements before replacing a working engine.
+
+Significant native-call execution evidence lives in `service/execution.rs`, framed
+from `service/engine.rs` with per-attempt backend/thread identity in
+`service/inference.rs`. See [native execution evidence](failure-diagnostics.md#native-execution-evidence)
+for bounded sampling, null/partial semantics, units, overhead and interpretation.
+This telemetry can narrow scheduling/resource/power hypotheses; it does not
+replace destination first-visible-text measurement or assign an automatic cause.
+The ignored `inference::tests::native_latency_probe` accepts
+`VOICE_LATENCY_MODEL` for an existing cached GGUF and `VOICE_LATENCY_PROFILE=standard`
+to exercise CPU even with a Vulkan-enabled test artifact. Use the composed fixed
+AVX2 environment and existing verification target on this supported host; do not
+build a separate default CPU target merely for this probe.

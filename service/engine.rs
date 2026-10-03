@@ -413,7 +413,7 @@ impl Engine {
                 received += chunk.len();
                 if received >= target {
                     wall_ms +=
-                        paging_call("batch_stream_feed", emit, || Ok(stream.feed(chunk)?))?.1;
+                        paging_call_fields("batch_stream_feed", serde_json::json!({"feed_call":received.div_ceil(1600),"audio_samples":received}), emit, || Ok(stream.feed(chunk)?))?.1;
                     while target <= received {
                         target += 16_640;
                     }
@@ -423,7 +423,13 @@ impl Engine {
                     wall_ms += started.elapsed().as_secs_f64() * 1000.;
                 }
             }
-            wall_ms += paging_call("batch_stream_finalize", emit, || Ok(stream.finalize()?))?.1;
+            wall_ms += paging_call_fields(
+                "batch_stream_finalize",
+                serde_json::json!({"audio_samples":received}),
+                emit,
+                || Ok(stream.finalize()?),
+            )?
+            .1;
             emit(native_timing_record(
                 "batch_stream_inference",
                 wall_ms,
@@ -629,6 +635,7 @@ impl Engine {
                             next_memory_target += 16_640;
                         }
                     }
+                    let execution_before = significant.then(crate::execution::Snapshot::read);
                     let memory_before = significant.then(crate::paging::Snapshot::read);
                     if let Some(before) = &memory_before {
                         emit(before.record("stream_feed", "before", None))?;
@@ -638,9 +645,36 @@ impl Engine {
                             serde_json::json!({"event":"native_timing", "stage":"stream_feed_start", "feed_call":calls, "audio_samples":samples_received, "next_processed_chunk":chunks+1}),
                         )?;
                     }
+                    if let Some(before) = &execution_before {
+                        let mut record = before.record("stream_feed", "before", None);
+                        record["feed_call"] = calls.into();
+                        record["audio_samples"] = samples_received.into();
+                        record["next_processed_chunk"] = (chunks + 1).into();
+                        emit(record)?;
+                    }
+                    let clock = significant.then(crate::execution::CallClock::start);
                     let call_started = Instant::now();
                     let result = stream.feed(&samples);
-                    let wall_ms = call_started.elapsed().as_secs_f64() * 1000.;
+                    let elapsed = call_started.elapsed().as_secs_f64() * 1000.;
+                    let measurement = clock.map(crate::execution::CallClock::finish);
+                    let wall_ms = measurement.as_ref().map_or(elapsed, |m| m.wall_ms);
+                    if let (Some(before), Some(measurement)) = (&execution_before, &measurement) {
+                        let mut record = crate::execution::Snapshot::read().record(
+                            "stream_feed",
+                            "after",
+                            Some(before),
+                        );
+                        record["feed_call"] = calls.into();
+                        record["audio_samples"] = samples_received.into();
+                        record["processed_chunk"] = result
+                            .as_ref()
+                            .ok()
+                            .map(|u| u.audio_committed_ms as u64 / 1040)
+                            .into();
+                        record["success"] = result.is_ok().into();
+                        measurement.attach(&mut record);
+                        emit(record)?;
+                    }
                     if let Some(before) = &memory_before {
                         emit(crate::paging::Snapshot::read().record(
                             "stream_feed",
@@ -686,11 +720,29 @@ impl Engine {
                     emit(
                         serde_json::json!({"event":"native_timing", "stage":"stream_finalize_start", "audio_samples":samples_received}),
                     )?;
+                    let execution_before = crate::execution::Snapshot::read();
+                    let mut record = execution_before.record("stream_finalize", "before", None);
+                    record["audio_samples"] = samples_received.into();
+                    record["feed_call"] = calls.into();
+                    record["processed_chunk"] = chunks.into();
+                    emit(record)?;
                     let memory_before = crate::paging::Snapshot::read();
                     emit(memory_before.record("stream_finalize", "before", None))?;
-                    let call_started = Instant::now();
+                    let clock = crate::execution::CallClock::start();
                     let result = stream.finalize();
-                    let wall_ms = call_started.elapsed().as_secs_f64() * 1000.;
+                    let measurement = clock.finish();
+                    let wall_ms = measurement.wall_ms;
+                    let mut record = crate::execution::Snapshot::read().record(
+                        "stream_finalize",
+                        "after",
+                        Some(&execution_before),
+                    );
+                    record["audio_samples"] = samples_received.into();
+                    record["feed_call"] = calls.into();
+                    record["processed_chunk"] = chunks.into();
+                    record["success"] = result.is_ok().into();
+                    measurement.attach(&mut record);
+                    emit(record)?;
                     emit(crate::paging::Snapshot::read().record(
                         "stream_finalize",
                         "after",
@@ -720,6 +772,26 @@ impl Engine {
         Ok(None)
     }
 }
+fn paging_call_fields<T>(
+    stage: &str,
+    fields: serde_json::Value,
+    emit: &mut impl FnMut(serde_json::Value) -> Result<()>,
+    call: impl FnOnce() -> Result<T>,
+) -> Result<(T, f64)> {
+    paging_call(
+        stage,
+        &mut |mut record| {
+            if let Some(fields) = fields.as_object() {
+                for (key, value) in fields {
+                    record[key] = value.clone();
+                }
+            }
+            emit(record)
+        },
+        call,
+    )
+}
+
 fn paging_call<T>(
     stage: &str,
     emit: &mut impl FnMut(serde_json::Value) -> Result<()>,
@@ -727,9 +799,17 @@ fn paging_call<T>(
 ) -> Result<(T, f64)> {
     let before = crate::paging::Snapshot::read();
     emit(before.record(stage, "before", None))?;
-    let started = Instant::now();
+    let execution_before = crate::execution::Snapshot::read();
+    emit(execution_before.record(stage, "before", None))?;
+    let clock = crate::execution::CallClock::start();
     let result = call();
-    let wall_ms = started.elapsed().as_secs_f64() * 1000.;
+    let measurement = clock.finish();
+    let wall_ms = measurement.wall_ms;
+    let mut execution =
+        crate::execution::Snapshot::read().record(stage, "after", Some(&execution_before));
+    execution["success"] = result.is_ok().into();
+    measurement.attach(&mut execution);
+    emit(execution)?;
     let mut after = crate::paging::Snapshot::read().record(stage, "after", Some(&before));
     after["success"] = result.is_ok().into();
     after["native_wall_ms"] = wall_ms.into();
@@ -750,7 +830,9 @@ fn parakeet_warmup(
     emit(
         serde_json::json!({"event":"native_timing", "stage":format!("{stage}_start"), "audio_samples":33280,"fixture":"silence"}),
     )?;
-    let started = Instant::now();
+    let execution_before = crate::execution::Snapshot::read();
+    emit(execution_before.record(stage, "before", None))?;
+    let clock = crate::execution::CallClock::start();
     let result = (|| -> Result<transcribe_cpp::Timings> {
         let run = transcribe_cpp::RunOptions {
             language: Some("en".into()),
@@ -771,7 +853,14 @@ fn parakeet_warmup(
             decode_ms: (current.decode_ms - baseline.decode_ms).max(0.),
         })
     })();
-    let wall_ms = started.elapsed().as_secs_f64() * 1000.;
+    let measurement = clock.finish();
+    let wall_ms = measurement.wall_ms;
+    let mut execution =
+        crate::execution::Snapshot::read().record(stage, "after", Some(&execution_before));
+    execution["success"] = result.is_ok().into();
+    execution["audio_samples"] = 33280.into();
+    measurement.attach(&mut execution);
+    emit(execution)?;
     let mut memory = crate::paging::Snapshot::read().record(stage, "after", Some(&before));
     memory["success"] = result.is_ok().into();
     emit(memory)?;
@@ -921,8 +1010,11 @@ mod tests {
             "IPC emission must not be timed as native work"
         );
         assert_eq!(records[0]["phase"], "before");
-        assert_eq!(records[1]["phase"], "after");
-        assert_eq!(records[1]["native_wall_ms"], wall_ms);
+        assert_eq!(records[3]["phase"], "after");
+        assert_eq!(records[3]["native_wall_ms"], wall_ms);
+        assert_eq!(records[2]["event"], "execution_snapshot");
+        assert_eq!(records[2]["native_wall_ms"], wall_ms);
+        assert!(records[2]["process_cpu_ms_all_threads"].is_number());
         records.clear();
         let result: anyhow::Result<((), f64)> = super::paging_call(
             "failed_call",
@@ -933,8 +1025,9 @@ mod tests {
             || anyhow::bail!("fake native failure"),
         );
         assert!(result.is_err());
-        assert_eq!(records[1]["success"], false);
-        assert_eq!(records[1]["phase"], "after");
+        assert_eq!(records[2]["success"], false);
+        assert_eq!(records[3]["success"], false);
+        assert_eq!(records[3]["phase"], "after");
     }
 
     use super::*;

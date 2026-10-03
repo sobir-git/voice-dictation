@@ -792,6 +792,28 @@ pub fn child() -> Result<()> {
             Request::Stream => Some("stream_attempt"),
             _ => None,
         };
+        if attempt_stage.is_some() {
+            if let Some(c) = &loaded_config {
+                let profile = optimization::profile(c);
+                let cpp = c.string("transcription", "model") == crate::engine::PARAKEET_MODEL
+                    || c.string("transcription", "model") == crate::engine::CANARY_MODEL
+                    || c.string("transcription", "model").ends_with(".gguf");
+                let requested = optimization::threads(c, if cpp { 0 } else { 4 });
+                write_frame(
+                    &mut socket,
+                    &Response::Timing {
+                        details: serde_json::json!({
+                            "event":"execution_identity", "model":c.string("transcription","model"),
+                            "runtime_profile":profile,"backend":if cpp { "transcribe.cpp" } else { "CTranslate2" },
+                            "device":if matches!(profile,"vulkan"|"vulkan-full"|"hybrid") { "vulkan" } else { "cpu" },
+                            "configured_threads":c.number("performance","threads"),"requested_threads":requested,
+                            "resolved_threads":if requested == 0 { None } else { Some(requested) },
+                            "thread_resolution":if requested == 0 { "native_default_not_exposed" } else { "explicit_backend_setting" }
+                        }),
+                    },
+                )?;
+            }
+        }
         let memory_before = attempt_stage.map(|stage| {
             let before = crate::paging::Snapshot::read();
             (stage, before)
@@ -1311,11 +1333,21 @@ mod tests {
     #[test]
     #[ignore = "requires an explicitly supplied cached GGUF model and synthetic speech fixture"]
     fn native_latency_probe() {
+        let mut snapshot_cost = Vec::new();
+        for _ in 0..16 {
+            let started = Instant::now();
+            let snap = crate::execution::Snapshot::read();
+            let record = snap.record("cost_probe", "before", None);
+            let bytes = record.to_string().len();
+            snapshot_cost.push(serde_json::json!({"read_ms":snap.sample_ms,"record_build_ms":record["record_build_ms"],"read_build_serialize_ms":started.elapsed().as_secs_f64()*1000.,"bytes":bytes,"sampling_capped":record["sampling_capped"]}));
+        }
         let model = std::env::var("VOICE_LATENCY_MODEL")
             .expect("Set VOICE_LATENCY_MODEL to a cached Parakeet GGUF file");
         assert!(std::path::Path::new(&model).is_file());
         let (_root, config) = config(&model);
-        let profile = if cfg!(feature = "vulkan") {
+        let profile = if std::env::var("VOICE_LATENCY_PROFILE").as_deref() == Ok("standard") {
+            "standard"
+        } else if cfg!(feature = "vulkan") {
             "vulkan"
         } else {
             "standard"
@@ -1399,6 +1431,35 @@ mod tests {
             assert!(records
                 .iter()
                 .all(|r| r["job_id"] == 9001 && r["worker_pid"] == pid));
+            assert!(records
+                .iter()
+                .any(|r| r["event"] == "execution_identity" && r["backend"] == "transcribe.cpp"));
+            for r in records
+                .iter()
+                .filter(|r| r["event"] == "execution_snapshot" && r["phase"] == "after")
+            {
+                assert!(r["native_wall_ms"].is_number());
+                assert!(r["process_cpu_ms_all_threads"].is_number());
+                assert!(r["effective_parallelism"].is_number());
+                assert!(r["sample_ms"].is_number());
+                assert!(r.to_string().len() < 16_384);
+                if r["stage"] == "stream_feed" {
+                    let timing = records
+                        .iter()
+                        .find(|t| {
+                            t["event"] == "native_timing"
+                                && t["stage"] == "stream_feed"
+                                && t["feed_call"] == r["feed_call"]
+                        })
+                        .unwrap();
+                    assert_eq!(r["native_wall_ms"], timing["wall_ms"]);
+                    assert_eq!(r["processed_chunk"], timing["processed_chunk"]);
+                    assert_eq!(r["audio_samples"], timing["audio_samples"]);
+                }
+                if r["sched_schedstats"] == 0 {
+                    assert!(r["thread_delta"]["matched_tid_sums"]["runqueue_wait_ns"].is_null());
+                }
+            }
             assert_eq!(worker.child.id(), pid);
         }
         assert_eq!(
@@ -1407,7 +1468,7 @@ mod tests {
         );
         println!(
             "{}",
-            serde_json::json!({"profile":profile,"records":worker.timing_records})
+            serde_json::json!({"profile":profile,"snapshot_cost":snapshot_cost,"records":worker.timing_records})
         );
     }
 }

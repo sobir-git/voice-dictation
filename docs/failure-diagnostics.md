@@ -287,3 +287,135 @@ systemd can ignore the resource control; inference still works and missing
 `/proc` fields remain null. The setting is not a promise of enforcement on those
 hosts. This task changes installer sources only, without installing or restarting
 the active service.
+
+## Native execution evidence
+
+`execution_snapshot` complements `paging_snapshot` and `native_timing` on the
+inference child, through the existing Timing IPC and bounded asynchronous log
+writer. Follow daemon PID + job ID + worker PID + receiving request sequence;
+match `stage`, `feed_call`, `audio_samples` and `processed_chunk` to a native timing
+record. A before feed carries `next_processed_chunk`; one feed can process multiple
+chunks. Finalization carries the preceding committed chunk count. Buffered batch
+feeds carry feed/sample counts, and their native summary remains aggregate.
+`execution_identity` reports model, runtime profile, backend/device, configured
+and requested threads once per attempt. Resolved threads are null when the native
+backend chooses its default without exposing the result; observed task count is
+not a substitute for that value.
+
+After records include `success`, `native_wall_ms`,
+`process_cpu_ms_all_threads` and `effective_parallelism`. The process clock uses
+Linux `CLOCK_PROCESS_CPUTIME_ID`: **CPU time summed across all process threads**,
+not elapsed time or encoder-exclusive compute. CPU time divided by native wall
+can exceed one (for example eight threads can consume roughly eight CPU seconds
+in one wall second). It brackets the whole native call, including backend waits
+and other work inside it. Warmup brackets its existing aggregate session/feed/
+finalize/accessor work. Native encoder counters retain their narrower semantics.
+A before record can survive a stall; no after record is guaranteed after a kill.
+
+`sample_ms` reports each endpoint's filesystem-read/parse duration;
+`record_build_ms` reports construction and payload-budget checks. These reads,
+record construction and IPC/log emission are outside the native wall/process CPU
+bracket. Endpoint counters are sequential reads, not an atomic snapshot: their
+interval includes sampling skew and intervening diagnostic IPC. Sampling and
+serialization still add real latency to the pipeline. The reported sampling cost
+excludes channel transmission and eventual asynchronous disk writes; it is not a
+claim of zero overhead. Only already-significant feeds (33,280 samples first,
+then each 16,640 samples), finalize, existing batch calls and warmups sample this
+module. Cheap 100 ms feeds, capture callbacks, UI and idle polling do not.
+
+Interpret the fields as evidence with the following limits:
+
+- `thread_delta.matched_tid_sums` reports runtime and runqueue wait in **ns**,
+  timeslices and voluntary/involuntary context switches as **counts**. Match TID
+  and `/proc/self/task/TID/stat` start time before subtracting. Missing counters,
+  resets or disabled wait accounting yield null; churn/caps produce partial
+  coverage. Threads born and gone within a call are absent from these sums, but
+  included in process CPU time. Placement lists retain up to 16 TIDs with their
+  last processor and allowed CPU lists; `placement_capped` reports omissions.
+  `sched_schedstats` records the kernel switch. `schedstat_wait_available` also
+  requires readable wait counters across the sampled TIDs; its delta counterpart
+  requires both endpoints. An enabled knob with unreadable counters is unavailable.
+  With zero or unknown switch,
+  runqueue wait and timeslice deltas are null: zero wait is not evidence of no
+  contention. Context switches remain usable. No global sysctl is changed.
+- `host_cpu` intervals contain busy, idle, iowait and steal **USER_HZ ticks summed
+  across CPUs**. Busy includes user/nice/system/irq/softirq and excludes guest
+  fields already included in user/nice. Do not divide a summed counter by wall
+  alone and call it a percentage; use the interval's tick total as denominator.
+  Linux iowait accounting is imperfect and can decrease (then delta is null).
+  `loadavg`, runnable/task counts and `procs_running`/`procs_blocked` are endpoint
+  observations, not interval maxima or records of competing process identities.
+- Host and own-cgroup CPU/memory/io PSI `some_us`/`full_us` are total stall-time
+  deltas in **microseconds**, not recent avg10 percentages or thread sums.
+  Host CPU `full` is undefined (kernels can expose compatibility zero). These
+  indicate pressure in their scope, not attribution to this inference call.
+- `cgroup_path` uses the standard unified `/sys/fs/cgroup` mount. Own cgroup and
+  up to seven ancestors retain `cpu.max` and `cpu.stat`; own memory events and
+  PSI are included when readable. Paths, own directory device/inode and counters
+  must match before deltas are accepted. Missing, reset, changed or unavailable
+  paths yield null/partial data. Nonstandard/hidden mounts can prevent observation;
+  the module does not claim complete host-ancestor visibility. `throttled_usec`
+  is **quota throttling**, distinct from thermal throttle events. Ancestor counts
+  include other descendants and must not be summed as this worker's stall time.
+- Frequency policy endpoints retain driver, governor, affected CPUs and min/max/
+  current frequency in **kHz**. `scaling_cur_freq` may describe a requested state,
+  depending on the driver. These are endpoint observations, not measured average
+  realized frequency, interval minima or a guarantee that all used CPUs were
+  sampled. Temperatures are **millidegrees C**; temperature or low frequency alone
+  does not establish thermal or power throttling. Thermal core/package event
+  deltas remain under their individual CPU identities: shared package events
+  must never be summed across cores. Available battery/AC status is an endpoint
+  hint, not a power-consumption measurement.
+
+Each endpoint attempts at most 64 threads, 128 directory entries per walk, 16
+frequency policies, eight thermal zones, 16 CPU thermal paths and four power
+supplies. Reads are limited to 16 KiB per file and 256 KiB/512 files per snapshot;
+a cooperative 20 ms budget stops further reads but cannot interrupt a slow kernel
+read already underway. `sampling_capped` and bounded `unknown` reasons identify
+budget, permission and missing/malformed sources; thread coverage is independent
+of later hardware caps. Records are reduced to about 12 KiB before attached call
+and supervisor fields, below the logger's 16 KiB budget; `payload_partial` marks
+removed optional sections. Missing numeric evidence is null or absent with a
+reason, never invented as zero. Inability to obtain evidence does not fail
+inference. No subprocesses, privileges, new dependencies, global tuning, process
+command lines, environment dumps, transcript or audio content are collected.
+
+For the next incident, compare adjacent slow/fast calls on the same attempt.
+Falling effective parallelism together with rising matched-thread wait, PSI or
+quota counters supports a scheduling/resource hypothesis; sustained CPU time
+with longer compute and frequency/thermal changes supports further compute/power
+investigation. Neither establishes exclusive causality. A CPU ratio alone cannot
+separate slow arithmetic, memory bandwidth, spinning workers, backend waits or
+frequency changes. Preserve unknowns and conflicting evidence rather than
+assigning an automatic cause.
+
+The motivating laptop incident (2026-10-03 12:51 +05, history 7173, daemon 2814381,
+job 8, worker 2814416) used the warmed fixed-AVX2 Standard CPU model without reload,
+process swap or major faults. Recording lasted 27.3901875 s; stop to inference
+completion was 13.916 s, delivery-start 13.9366 s and delivery-complete 14.2832 s.
+Those delivery timestamps are proxies: **first visible text was not measured**.
+Encoder chunks slowed from about 0.77–0.81 s to intermittent 2–3.25 s calls;
+backlog at finish was 7.640 s and finalize 2.756 s. Existing evidence does not
+establish the precise CPU slowdown cause.
+
+VM implementation evidence is under
+`/workspace/remote-dev/evidence/voice-dictation/resource-latency-20261003/`:
+`inference-tests-native_latency_probe.log`, `native-probe.json` and
+`probe-summary.json`. The ignored probe uses the bundled synthetic fixture at
+real-time feed speed, an explicitly supplied cached GGUF, temporary config/data
+and Standard CPU on the same resident child. It checks job/request correlation,
+clock fields, exact significant-feed timing matches, payload size and disabled
+schedstats handling. It exercises native streaming, not a destination application;
+first-visible-text latency remains unmeasured. Six measured native calls in the
+initial probe had effective parallelism about 7.36–7.75; disabled schedstats
+correctly left wait unknown. Sixteen snapshot-cost samples had median read cost
+0.470 ms and median read/build/serialize cost 0.555 ms (maximum 0.847 ms). Worker
+endpoint reads had median 1.152 ms, maximum 2.317 ms; the largest correlated payload
+was 5,386 bytes. These are this VM's measurements, not laptop overhead guarantees.
+
+Kernel semantics: [task scheduler counters](https://docs.kernel.org/scheduler/sched-stats.html),
+[proc accounting](https://docs.kernel.org/filesystems/proc.html),
+[PSI](https://docs.kernel.org/accounting/psi.html),
+[cgroup v2](https://docs.kernel.org/admin-guide/cgroup-v2.html),
+[CPU frequency](https://docs.kernel.org/admin-guide/pm/cpufreq.html), and
+[Intel thermal events](https://docs.kernel.org/admin-guide/thermal/intel_thermal_throttle.html).
