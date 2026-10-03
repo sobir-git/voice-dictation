@@ -39,4 +39,14 @@ Raw reports are local under `~/.local/share/speech-to-text/benchmarks/`. There i
 
 Default builds retain the existing CPU dependencies plus approximately 1 MB of bundled synthetic speech. Vulkan currently adds roughly 40 MB, so it is opt-in. For prebuilt releases, configure native CPU ISA flags for the supported host floor; locally native-tuned binaries are not universal binaries. See [performance experiments](performance-lab.md) for the available profiles and build requirements.
 
+The fixed CPU ISA preset is explicit:
+`python3 tools/verify.py full --backend vulkan --cpu-isa avx2`.
+Source installation accepts `VOICE_DICTATION_CPU_ISA=avx2` and preserves that
+receipt selection on later installs. It leaves the existing Vulkan profile and
+model settings intact. Require Linux x86-64 SSE4.2/AVX/AVX2/FMA/F16C/BMI2 and
+OS-enabled AVX; the installer checks this before running a candidate executable.
+Unspecified fresh builds retain the existing flags. See
+[installation](installation.md#explicit-fixed-avx2-build) and the
+[same-host primary latency evidence](performance-evidence/2026-10-02-avx2-stop-to-text.md).
+
 History rows also expose `model` and `transcription_seconds`. These describe the latest completed or failed attempt, including retries. Transcription time is measured from recording stop or retry request through queueing, any subsequent model loading, audio preparation and completed inference. It excludes spoken recording time and text insertion. Older records retain null metadata. This end-to-end wait is distinct from warm inference time in benchmark reports.

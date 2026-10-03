@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'tools'))
 import verify
+import native_cpu
 
 
 class ProvenanceTests(unittest.TestCase):
@@ -77,3 +78,28 @@ class ProvenanceTests(unittest.TestCase):
                 self.assertEqual(verify.main(), 1)
                 run.assert_called_once()
             self.assertEqual(len(list((root/'artifacts/verification').glob('*cargo-test.log'))), 1)
+
+    def test_cli_preset_reaches_every_step_and_provenance(self):
+        import json
+        import subprocess
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root/'artifacts/verification/target/vulkan/release'
+            target.mkdir(parents=True)
+            for name in ('voice-dictation', 'speech-service'):
+                (target/name).write_text('synthetic pair')
+            def run(command, **kwargs):
+                self.assertEqual(kwargs['env']['TRANSCRIBE_CMAKE_ARGS'], native_cpu.AVX2_CMAKE_ARGS)
+                self.assertEqual(kwargs['env'][native_cpu.ENV], 'avx2')
+                return subprocess.CompletedProcess(command, 0)
+            with patch.object(verify, '__file__', str(root/'tools/verify.py')), \
+                    patch.object(sys, 'argv', ['verify.py', 'full', '--backend', 'vulkan', '--cpu-isa', 'avx2']), \
+                    patch.dict(os.environ, {}, clear=True), patch.object(native_cpu, 'require_host'), \
+                    patch.object(verify, 'git_inputs', return_value=[]), \
+                    patch.object(verify, 'command_output', return_value='fixture tool'), \
+                    patch.object(verify, 'mode_steps', return_value=[('release-build', ['fixture'], 1), ('native-probe', ['fixture'], 1)]), \
+                    patch.object(verify.subprocess, 'run', side_effect=run):
+                self.assertEqual(verify.main(), 0)
+            manifest = json.loads((root/'artifacts/verification/provenance-vulkan.json').read_text())
+            self.assertEqual(manifest['build_flags']['cpu_isa'], 'avx2')
+            self.assertEqual(manifest['verification']['status'], 'passed')

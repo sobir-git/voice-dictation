@@ -15,12 +15,14 @@ import subprocess
 import sys
 import time
 from typing import Any
+import native_cpu
 
 
 SCHEMA = 2
 MODES = ("ui-layout", "ui-behavior", "full")
 BACKENDS = ("cpu", "vulkan")
 PROVENANCE_ENV = (
+    "VOICE_DICTATION_CPU_ISA", "TRANSCRIBE_DIR",
     "RUSTFLAGS",
     "CARGO_PROFILE_RELEASE_LTO",
     "TRANSCRIBE_CMAKE_ARGS",
@@ -67,7 +69,8 @@ def command_output(command: list[str], root: Path) -> str:
 
 
 
-def source_fingerprint(root: Path, backend: str, target_dir: Path) -> dict[str, Any]:
+def source_fingerprint(root: Path, backend: str, target_dir: Path, environment=None) -> dict[str, Any]:
+    effective_env = os.environ if environment is None else environment
     digest = hashlib.sha256()
     inputs = git_inputs(root)
     for relative in inputs:
@@ -77,9 +80,9 @@ def source_fingerprint(root: Path, backend: str, target_dir: Path) -> dict[str, 
         digest.update(b"\0")
     rustc = command_output(["rustc", "-Vv"], root)
     cargo = command_output(["cargo", "-V"], root)
-    environment_names = set(PROVENANCE_ENV) | {name for name in os.environ if name.startswith((
+    environment_names = set(PROVENANCE_ENV) | {name for name in effective_env if name.startswith((
         "CARGO_TARGET_", "CC_", "CXX_", "CFLAGS_", "CXXFLAGS_"))}
-    environment = {name: hashlib.sha256(os.environ.get(name, "").encode()).hexdigest() for name in sorted(environment_names)}
+    environment = {name: hashlib.sha256(effective_env.get(name, "").encode()).hexdigest() for name in sorted(environment_names)}
     payload: dict[str, Any] = {
         "schema": SCHEMA,
         "backend": backend,
@@ -87,7 +90,8 @@ def source_fingerprint(root: Path, backend: str, target_dir: Path) -> dict[str, 
         "profile": "release",
         "target_dir": str(target_dir),
         "build_flags": {
-            "profile.release": "opt-level=3,lto=thin,codegen-units=1,strip=true"
+            "profile.release": "opt-level=3,lto=thin,codegen-units=1,strip=true",
+            **native_cpu.build_flags(effective_env),
         },
         "rustc": rustc,
         "cargo": cargo,
@@ -96,7 +100,7 @@ def source_fingerprint(root: Path, backend: str, target_dir: Path) -> dict[str, 
     }
     payload["source_digest"] = digest.hexdigest()
     payload["native_toolchain"] = {
-        name: command_output(shlex.split(os.environ.get(variable, "") or default) + ["--version"], root)
+        name: command_output(shlex.split(effective_env.get(variable, "") or default) + ["--version"], root)
         for name, variable, default in (("cmake", "CMAKE", "cmake"), ("cc", "CC", "cc"),
                                         ("c++", "CXX", "c++"), ("glslc", "GLSLC", "glslc"))
     }
@@ -200,10 +204,17 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", nargs="?", choices=MODES, default="ui-layout")
     parser.add_argument("--backend", choices=BACKENDS, default="cpu")
+    parser.add_argument("--cpu-isa", choices=native_cpu.PRESETS, help="explicit native ISA; default preserves existing build flags")
     parser.add_argument("--dry-run", action="store_true", help="print selected checks without running them")
     parser.add_argument("--no-reuse", action="store_true", help="force a fresh release artifact")
     parser.add_argument("--full", action="store_true", help="escalate any mode to the full integration gate")
     args = parser.parse_args()
+    try:
+        env = native_cpu.compose(os.environ, args.cpu_isa)
+        if not args.dry_run:
+            native_cpu.require_host(env.get(native_cpu.ENV, 'default'))
+    except ValueError as error:
+        parser.error(str(error))
     mode = "full" if args.full else args.mode
     root = Path(__file__).resolve().parents[1]
     configured_target = os.environ.get("CARGO_TARGET_DIR")
@@ -221,7 +232,9 @@ def main() -> int:
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     report_path = report_dir / f"{stamp}-{mode}-{args.backend}.json"
     manifest_path = report_dir / f"provenance-{args.backend}.json"
-    provenance = source_fingerprint(root, args.backend, target_dir)
+    env["CARGO_TARGET_DIR"] = str(target_dir)
+    env["STT_TEST_BINARY"] = str(target_dir / "debug" / "speech-service")
+    provenance = source_fingerprint(root, args.backend, target_dir, env)
     report: dict[str, Any] = {
         "schema": SCHEMA,
         "mode": mode,
@@ -235,12 +248,12 @@ def main() -> int:
         "provenance": provenance,
         "steps": [],
     }
-    env = os.environ.copy()
-    env["CARGO_TARGET_DIR"] = str(target_dir)
-    env["STT_TEST_BINARY"] = str(target_dir / "debug" / "speech-service")
     steps = mode_steps(mode, args.backend, binary)
     print(f"Verification mode: {mode} (backend: {args.backend})", flush=True)
     print(f"Target directory: {target_dir}", flush=True)
+    print(f"Native CPU ISA: {native_cpu.build_flags(env)['cpu_isa']}", flush=True)
+    if native_cpu.build_flags(env)['cpu_isa'] == 'avx2':
+        print(f"TRANSCRIBE_CMAKE_ARGS={env['TRANSCRIBE_CMAKE_ARGS']}", flush=True)
     if args.dry_run:
         print("Dry run: no commands will execute and no installation will occur.", flush=True)
 
@@ -355,7 +368,7 @@ def main() -> int:
 
     if not args.dry_run:
         manifest = json.loads(manifest_path.read_text())
-        if source_fingerprint(root, args.backend, target_dir) != provenance or artifact_hashes(artifact_dir) != manifest['binary_sha256']:
+        if source_fingerprint(root, args.backend, target_dir, env) != provenance or artifact_hashes(artifact_dir) != manifest['binary_sha256']:
             report['result'] = 'failed'
             report['error'] = 'Source/provenance or artifact pair changed during verification'
             report['finished_at'] = now()

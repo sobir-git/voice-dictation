@@ -39,6 +39,36 @@ to reconstruct them; they are evidence and starting points, not portable tooling
 
 ## Routine for each experiment
 
+### Primary benchmark metric: finish recording to first text
+
+The owner's definition of benchmarking includes the perceived wait after recording
+as the primary metric. Start the clock at recording-key release or the stop request;
+stop it when the first text appears in the destination application. Measure through
+the actual capture, streaming, finalization, persistence and text-output path.
+Feed synthetic speech at real-time speed into an isolated test setup with a temporary
+output destination; keep test text out of the user's active application and history.
+Buffered inference can process the whole clip without waiting for audio to arrive,
+so its total runtime is not the user's post-recording wait.
+
+Compare the original and candidate on the same host, audio, duration and settings.
+Include short and long dictations, repeated warm sessions and model-load cases
+separately. Record the stop timestamp, first-visible-text timestamp, output completion,
+stream backlog at stop and exact measurement method. Use a monotonic clock for
+elapsed times. Report each sample and median; report tail latency only when enough
+samples support it. Keep CPU and GPU results separate, and accompany them with
+memory and transcript/endings checks.
+
+Existing `dictation_stage` logs record elapsed time since recording stopped at
+`ready` and `delivering`; `dictation_terminal` records delivery completion. These
+are useful diagnostic proxies, not measurements of the first visible character.
+If a run only has those timestamps, state that limit explicitly. The existing
+`--benchmark` and `--benchmark-case` buffered timings remain supporting throughput
+measurements and do not complete a perceived-latency benchmark by themselves.
+Do not adopt an optimization based only on kernel or total inference speedup when
+its effect on this primary metric has not been established.
+
+### Supporting checks and evidence
+
 1. Record the source revision and local diff, dependency versions, build flags,
    model revision or file hash, host CPU/GPU, driver, precision, beam size, VAD,
    language and thread settings. Save the current profile for restoration.
@@ -70,6 +100,15 @@ Report full-pipeline speedup directly. A kernel speedup is not an application
 speedup, and multipliers from separate experiments must not be multiplied.
 
 ## Current state and next experiments
+
+The explicit fixed AVX2 build preset is the measured CPU improvement; it does
+not integrate the research matrix/packing kernels. Use
+`python3 tools/verify.py full --backend vulkan --cpu-isa avx2` on supported
+Linux x86-64 hosts, with the existing native cache. See
+[installation and compatibility](installation.md#explicit-fixed-avx2-build)
+and [actual stop-to-first-painted-text results](performance-evidence/2026-10-02-avx2-stop-to-text.md).
+Default fresh build behavior and the user's runtime profile remain unchanged.
+The CPU result is not a measured Vulkan improvement or a zero-RSS claim.
 
 | Track | Established starting point | Next useful experiment |
 |---|---|---|

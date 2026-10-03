@@ -15,6 +15,7 @@ import time
 import uuid
 
 from verify import artifact_hashes, now, source_fingerprint
+import native_cpu
 
 NAMES = ('voice-dictation', 'speech-service')
 
@@ -81,6 +82,7 @@ def selection(root, release, receipt):
             raise ValueError('VOICE_DICTATION_FEATURES must be empty (CPU) or vulkan')
         return ('vulkan' if features else 'cpu'), 'explicit'
     if receipt is not None:
+        native_cpu.require_host(native_cpu.provenance_isa(receipt['provenance']))
         if capability(release) != receipt['backend']:
             raise ValueError('Installed receipt disagrees with binary capability')
         if artifact_hashes(release) != receipt['binary_sha256']:
@@ -111,6 +113,11 @@ def verified_artifact(root, manifest_path, backend):
         artifact = manifest_path.parent/artifact
     if artifact_hashes(artifact) != manifest['binary_sha256']:
         raise ValueError('Verified artifact pair hash mismatch')
+    isa = native_cpu.provenance_isa(manifest)
+    if native_cpu.ENV in os.environ and native_cpu.preset(os.environ[native_cpu.ENV]) != isa:
+        raise ValueError('Verified artifact CPU ISA disagrees with explicit selection')
+    # This check must precede capability(), which executes the candidate service.
+    native_cpu.require_host(isa)
     return artifact, manifest
 
 
@@ -123,8 +130,10 @@ def install(root, verified=None):
         staging = None
         try:
             old, receipt = current()
+            isa, isa_reason = native_cpu.selection(receipt, os.environ)
             backend, reason = selection(root, old, receipt)
             fields.update(backend=backend, selection_source=reason,
+                          cpu_isa=isa, cpu_isa_selection_source=isa_reason,
                           old_backend=receipt['backend'] if receipt else 'historical_unknown',
                           previous_install_id=receipt['install_id'] if receipt else None)
             event(stage, **fields)
@@ -137,19 +146,23 @@ def install(root, verified=None):
             stage = 'artifact_validation' if verified else 'build'
             if verified:
                 artifact, provenance = verified_artifact(root, verified.resolve(), backend)
+                isa = native_cpu.provenance_isa(provenance)
+                fields.update(cpu_isa=isa, cpu_isa_selection_source='verified_artifact')
             else:
+                environment = native_cpu.compose(os.environ, isa)
+                native_cpu.require_host(isa)
                 configured = Path(os.environ.get('CARGO_TARGET_DIR', str(root/'artifacts/installation/target')))
                 if not configured.is_absolute():
                     configured = Path.cwd()/configured
                 target = configured.resolve()/backend
-                provenance = source_fingerprint(root, backend, target)
-                environment = dict(os.environ, CARGO_TARGET_DIR=str(target))
+                environment['CARGO_TARGET_DIR'] = str(target)
+                provenance = source_fingerprint(root, backend, target, environment)
                 command = ['cargo', 'build', '--manifest-path', str(root/'Cargo.toml'), '--locked', '--release']
                 if backend == 'vulkan':
                     command += ['--features', 'vulkan']
                 event(stage, 'started', target_dir=str(target), build_id=provenance['fingerprint'], **fields)
                 subprocess.run(command, env=environment, cwd=root, check=True)
-                if source_fingerprint(root, backend, target) != provenance:
+                if source_fingerprint(root, backend, target, environment) != provenance:
                     raise ValueError('Build inputs changed during compilation')
                 artifact = target/'release'
             fields.update(build_id=provenance['fingerprint'], source_digest=provenance['source_digest'],
@@ -168,6 +181,7 @@ def install(root, verified=None):
             if artifact_hashes(staging) != hashes or capability(staging) != backend:
                 raise ValueError('Staged pair changed during publication')
             record = dict(schema=1, install_id=install_id, backend=backend, features=provenance['features'],
+                          cpu_isa=isa, cpu_isa_selection_source=fields['cpu_isa_selection_source'],
                           selection_source=reason, installed_at=now(), binary_sha256=hashes,
                           build_id=provenance['fingerprint'], provenance=provenance,
                           source_revision=subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=root, capture_output=True, text=True, check=True).stdout.strip())
@@ -204,6 +218,7 @@ def resolve(component='desktop'):
         release, receipt = current()
         if release is None or not all(os.access(release/name, os.X_OK) for name in NAMES):
             raise ValueError('No installed executable pair. Run ./install.sh (or ./update_local.sh) first.')
+        native_cpu.require_host(native_cpu.provenance_isa(receipt['provenance']))
         event('launch', install_id=receipt['install_id'], build_id=receipt['build_id'],
               backend=receipt['backend'], release=str(release), component=component,
               executable=str(release/('speech-service' if component == 'daemon' else 'voice-dictation')))

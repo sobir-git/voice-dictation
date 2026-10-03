@@ -34,6 +34,46 @@ the invoking working directory. The verification runner retains its existing
 semantics: an explicit `CARGO_TARGET_DIR` is its exact build directory.
 Only empty features or `vulkan` are accepted by installation.
 
+## Explicit fixed AVX2 build
+
+On compatible Linux x86-64 hosts, opt into the measured native CPU preset:
+
+```sh
+python3 tools/verify.py full --backend vulkan --cpu-isa avx2
+VOICE_DICTATION_CPU_ISA=avx2 ./update_local.sh
+# A fresh Vulkan source installation also needs VOICE_DICTATION_FEATURES=vulkan.
+```
+
+This retains Vulkan and optimizes the native CPU path, including CPU fallback.
+It does not change the runtime profile, model, threads, streaming or configuration.
+The host floor is SSE4.2, AVX, AVX2, FMA, F16C and BMI2, with OS-enabled AVX state.
+Installation checks every Linux-exposed CPU's flags before executing an AVX2
+candidate, including the backend-capability probe. Unsupported hosts receive a
+clear error and keep the previous release. This is an explicit build edition,
+not runtime ISA dispatch or a universal binary.
+
+`tools/native_cpu.py` supplies the fixed recipe: conservative x86 mode OFF,
+GGML_NATIVE OFF, the six instruction switches ON, and AVX512/VBMI/VNNI/BF16 and
+AVX_VNNI OFF. It never adds `-march=native`. Conflicting CMake definitions,
+compiler/Rust target overrides and unverified `TRANSCRIBE_DIR` prebuilts are
+rejected for this preset. Unrelated CMake options remain available. Schema-2
+provenance records `build_flags.cpu_isa`, `cpu_isa_floor` and hashes of the
+controlling environment, so a changed preset invalidates artifact reuse.
+
+Without an ISA selection, a fresh build retains the existing native defaults.
+Subsequent source installs preserve the installed receipt's preset, independently
+of its CPU/Vulkan backend. `VOICE_DICTATION_CPU_ISA=default` explicitly resets
+that selection; clear any manually supplied low-level target flags as well.
+Verification accepts `--cpu-isa default`, or the same environment selector.
+Verified bundles use their own recorded preset; an explicit conflicting selector
+is rejected. Original VM provenance remains in the installation receipt.
+
+For a passed AVX2 Vulkan bundle, use the existing export/install flow above; no
+laptop compilation is necessary. Keep the bundle and matching source together,
+including untracked source inputs recorded in its manifest. See the
+[measured stop-to-text comparison](performance-evidence/2026-10-02-avx2-stop-to-text.md)
+for benefit, memory and quality limits.
+
 ## Verification and portable artifacts
 
 ```sh

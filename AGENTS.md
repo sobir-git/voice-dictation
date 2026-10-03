@@ -16,6 +16,17 @@ or compatibility aliases.
 Keep the app dark, responsive when resized and quiet when idle. Use temporary
 data and synthetic dictations in automated checks. Only the daemon autostarts.
 
+For this project, a request to benchmark includes perceived dictation latency as
+the primary metric: elapsed time from finishing recording (release of the recording
+key or stop request) until the first text appears in the output destination.
+Measure it through the real streaming/capture-to-output path, with audio arriving
+at real-time speed. Report total inference time, throughput, peak RSS, GPU memory
+and transcript quality as supporting metrics. A buffered `--benchmark` or
+`--benchmark-case` run alone does not satisfy this requirement. If first visible
+text is not instrumented, label output-start/completion timestamps as proxies and
+state that the primary metric remains unmeasured; never substitute inference time
+or assume its speedup equals the reduction in the user's wait.
+
 For an integration or release handoff, run the full gate:
 
 ```sh

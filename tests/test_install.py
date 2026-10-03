@@ -1,5 +1,6 @@
 """Installation boundary contracts with temporary homes and synthetic executable pairs."""
 import json
+import hashlib
 import os
 from pathlib import Path
 import shutil
@@ -14,6 +15,7 @@ sys.path.insert(0, str(ROOT/'tools'))
 import installation
 import verify
 import export_verified_artifact
+import native_cpu
 
 
 class InstallTests(unittest.TestCase):
@@ -26,7 +28,7 @@ class InstallTests(unittest.TestCase):
         for name in ('run.sh', 'install.sh', 'config.yaml.example', '.gitignore'):
             shutil.copy2(ROOT/name, self.project/name)
         (self.project/'tools').mkdir()
-        for name in ('installation.py', 'verify.py'):
+        for name in ('installation.py', 'verify.py', 'native_cpu.py'):
             shutil.copy2(ROOT/'tools'/name, self.project/'tools'/name)
         (self.project/'install_icons.sh').write_text('#!/bin/sh\nexit 0\n')
         (self.project/'install_icons.sh').chmod(0o755)
@@ -79,7 +81,8 @@ for name in ['voice-dictation', 'speech-service']:
                             'TEST_BUILD_ARGS': str(self.root/'args'),
                             'XDG_RUNTIME_DIR': str(self.root/'runtime'),
                             'PRIVATE_TOKEN': 'must-not-appear'}
-        for key in ('VOICE_DICTATION_FEATURES', 'XDG_DATA_HOME', 'TEST_FAIL', 'TEST_MISSING', 'TEST_MISMATCH'):
+        for key in ('VOICE_DICTATION_FEATURES', 'VOICE_DICTATION_CPU_ISA', 'TRANSCRIBE_CMAKE_ARGS',
+                    'CMAKE_ARGS', 'XDG_DATA_HOME', 'TEST_FAIL', 'TEST_MISSING', 'TEST_MISMATCH'):
             self.environment.pop(key, None)
         self.env_patch = patch.dict(os.environ, self.environment, clear=True)
         self.env_patch.start()
@@ -270,3 +273,47 @@ for name in ['voice-dictation', 'speech-service']:
         record = json.loads((self.data/'installation.jsonl').read_text().splitlines()[-1])
         self.assertEqual(record['stage'], 'runtime_prerequisites')
         self.assertEqual(record['outcome'], 'failed')
+
+    def test_source_install_preserves_isa_and_explicit_default_resets_it(self):
+        with patch.object(native_cpu, 'require_host'):
+            _, receipt = self.install('vulkan', VOICE_DICTATION_CPU_ISA='avx2')
+            self.assertEqual(receipt['provenance']['build_flags']['cpu_isa'], 'avx2')
+            self.assertEqual(receipt['provenance']['environment']['TRANSCRIBE_CMAKE_ARGS'],
+                             hashlib.sha256(native_cpu.AVX2_CMAKE_ARGS.encode()).hexdigest())
+            _, receipt = self.install()
+            self.assertEqual(receipt['backend'], 'vulkan')
+            self.assertEqual(receipt['cpu_isa'], 'avx2')
+            self.assertEqual(receipt['cpu_isa_selection_source'], 'preserved_receipt')
+            _, receipt = self.install(VOICE_DICTATION_CPU_ISA='default')
+            self.assertEqual(receipt['cpu_isa'], 'default')
+            self.assertEqual(receipt['backend'], 'vulkan')
+
+    def test_verified_avx2_incompatible_host_never_executes_candidate(self):
+        old, old_receipt = self.install('vulkan')
+        with patch.dict(os.environ, native_cpu.compose(os.environ, 'avx2'), clear=True):
+            path, manifest = self.manifest()
+        with patch.object(native_cpu, 'require_host', side_effect=ValueError('Incompatible AVX2 CPU/OS')), \
+                patch.object(installation, 'capability') as capability:
+            with self.assertRaisesRegex(ValueError, 'Incompatible AVX2'):
+                installation.install(self.project, path)
+            capability.assert_not_called()
+        self.assertEqual(installation.current(), (old, old_receipt))
+
+    def test_verified_avx2_receipt_is_preserved_without_install_build(self):
+        with patch.dict(os.environ, native_cpu.compose(os.environ, 'avx2'), clear=True):
+            path, manifest = self.manifest()
+        os.environ['VOICE_DICTATION_FEATURES'] = 'vulkan'
+        with patch.object(native_cpu, 'require_host') as check:
+            installation.install(self.project, path)
+            check.assert_called_with('avx2')
+            self.assertEqual(installation.current()[1]['cpu_isa'], 'avx2')
+            self.assertFalse((self.root/'args').exists())
+            _, receipt = self.install()
+            self.assertEqual(receipt['cpu_isa'], 'avx2')
+
+    def test_verified_isa_explicit_mismatch_is_refused(self):
+        with patch.dict(os.environ, native_cpu.compose(os.environ, 'avx2'), clear=True):
+            path, _ = self.manifest()
+        with patch.dict(os.environ, VOICE_DICTATION_FEATURES='vulkan', VOICE_DICTATION_CPU_ISA='default'):
+            with self.assertRaisesRegex(ValueError, 'CPU ISA disagrees'):
+                installation.install(self.project, path)
